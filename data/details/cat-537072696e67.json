@@ -372,5 +372,81 @@
   "pitfalls": [
    "同类 this.async()。"
   ]
+ },
+ "p2-18": {
+  "principle": [
+   "REQUIRED：加入或新建同一事务。NESTED：有事务则嵌套保存点，子回滚到保存点，外层可继续；无事务则同 REQUIRED。与 REQUIRES_NEW（独立事务）不同。需 JDBC 保存点支持。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Transactional(propagation=NESTED) public void sub(){...}"
+  },
+  "asks": [
+   "REQUIRED vs NESTED？",
+   "和 REQUIRES_NEW？",
+   "保存点？",
+   "失败？"
+  ],
+  "followups": [
+   {
+    "q": "子失败？",
+    "a": "NESTED 可局部回滚。"
+   },
+   {
+    "q": "NEW？",
+    "a": "完全独立提交。"
+   },
+   {
+    "q": "自调用？",
+    "a": "失效。"
+   }
+  ],
+  "answer": [
+   "总：NESTED 用保存点嵌套。",
+   "分：不同于新事务。",
+   "实践：部分失败可恢复场景。",
+   "总结：先确认数据源支持。"
+  ],
+  "pitfalls": [
+   "与 REQUIRES_NEW 混谈。"
+  ]
+ },
+ "p2-19": {
+  "principle": [
+   "Starter：依赖聚合 + AutoConfiguration（imports）+ 条件装配 + ConfigurationProperties。用户引入 starter 即获默认 Bean，可覆盖。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
+  },
+  "asks": [
+   "starter 原理？",
+   "怎么自定义？",
+   "条件注解？",
+   "Boot3？"
+  ],
+  "followups": [
+   {
+    "q": "覆盖？",
+    "a": "@ConditionalOnMissingBean。"
+   },
+   {
+    "q": "排除？",
+    "a": "exclude 自动配置。"
+   },
+   {
+    "q": "调试？",
+    "a": "debug=true 条件报告。"
+   }
+  ],
+  "answer": [
+   "总：约定依赖+条件配置。",
+   "分：imports；可覆盖。",
+   "实践：内部 starter。",
+   "总结：自动配置可解释。"
+  ],
+  "pitfalls": [
+   "还说 spring.factories 注册自动配置（Boot3 否）。"
+  ]
  }
 }

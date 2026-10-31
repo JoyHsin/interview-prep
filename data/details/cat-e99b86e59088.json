@@ -365,5 +365,43 @@
   "pitfalls": [
    "无界队列不监控。"
   ]
+ },
+ "p2-5": {
+  "principle": [
+   "ConcurrentHashMap.size：用 baseCount + 多个 CounterCell（类似 LongAdder）分散累加，避免全局锁；并发下是近似值。JDK7 分段统计不同。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "int n = map.size(); // 并发修改时可能不是精确瞬时值"
+  },
+  "asks": [
+   "size 怎么统计？",
+   "精确吗？",
+   "为何分散？",
+   "mappingCount？"
+  ],
+  "followups": [
+   {
+    "q": "精确？",
+    "a": "要强一致需外部同步。"
+   },
+   {
+    "q": "mappingCount？",
+    "a": "返回 long 防溢出。"
+   },
+   {
+    "q": "空判断？",
+    "a": "isEmpty 同样近似。"
+   }
+  ],
+  "answer": [
+   "总：分散计数，并发近似。",
+   "分：无全局大锁。",
+   "实践：监控用够用。",
+   "总结：并发容器统计有代价。"
+  ],
+  "pitfalls": [
+   "以为绝对精确。"
+  ]
  }
 }

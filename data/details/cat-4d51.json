@@ -283,5 +283,43 @@
   "pitfalls": [
    "多线程还要求全局有序。"
   ]
+ },
+ "p2-29": {
+  "principle": [
+   "ISR：与 leader 保持同步的副本集合。acks=all 需 ISR 内全部确认（受 min.insync.replicas）。可靠性↑延迟↑。ISR 缩小可能不可写。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "acks=0/1/all；enable.idempotence；min.insync.replicas=2"
+  },
+  "asks": [
+   "ISR？",
+   "acks？",
+   "丢消息？",
+   "unclean 选举？"
+  ],
+  "followups": [
+   {
+    "q": "unclean？",
+    "a": "应关闭，防丢已提交。"
+   },
+   {
+    "q": "延迟？",
+    "a": "all 更高。"
+   },
+   {
+    "q": "副本数？",
+    "a": "常 3。"
+   }
+  ],
+  "answer": [
+   "总：ISR+acks=all 保可靠。",
+   "分：min.insync；禁 unclean。",
+   "实践：支付类 topic 高可靠配置。",
+   "总结：可靠与延迟权衡。"
+  ],
+  "pitfalls": [
+   "只设 all 不设 min.insync。"
+  ]
  }
 }

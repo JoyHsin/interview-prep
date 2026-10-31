@@ -284,5 +284,43 @@
   "pitfalls": [
    "忽略半包。"
   ]
+ },
+ "p2-15": {
+  "principle": [
+   "Reactor 单线程：一个线程一个 Selector 处理所有，实现简单。主从多线程：Boss 接受连接，Workers 处理 IO（Netty 默认）。主从多 Reactor 还可多层。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "BossGroup(1) → accept → WorkerGroup(N) → read/write/pipeline"
+  },
+  "asks": [
+   "单线程 vs 主从？",
+   "Netty？",
+   "为何主从？",
+   "线程数？"
+  ],
+  "followups": [
+   {
+    "q": "Boss 数？",
+    "a": "通常 1。"
+   },
+   {
+    "q": "Worker？",
+    "a": "默认 2*CPU。"
+   },
+   {
+    "q": "业务？",
+    "a": "另池，勿堵 EventLoop。"
+   }
+  ],
+  "answer": [
+   "总：主从分离 accept 与 IO。",
+   "分：Netty 默认主从多线程。",
+   "实践：业务线程池分离。",
+   "总结：模型匹配连接数。"
+  ],
+  "pitfalls": [
+   "业务逻辑跑 EventLoop。"
+  ]
  }
 }

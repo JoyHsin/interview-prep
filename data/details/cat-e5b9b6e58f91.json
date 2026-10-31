@@ -658,5 +658,119 @@
   "pitfalls": [
    "无界当缓冲。"
   ]
+ },
+ "p2-8": {
+  "principle": [
+   "shutdown：不再接新任务，已提交继续跑完再终止。shutdownNow：尝试中断在执行任务、返回未开始任务列表。在途任务要响应中断；钩子与 awaitTermination 优雅停机。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "pool.shutdown();\nif (!pool.awaitTermination(30, SECONDS)) pool.shutdownNow();"
+  },
+  "asks": [
+   "shutdown vs shutdownNow？",
+   "中断？",
+   "优雅停机？",
+   "拒绝？"
+  ],
+  "followups": [
+   {
+    "q": "中断？",
+    "a": "任务需处理 InterruptedException。"
+   },
+   {
+    "q": "Spring？",
+    "a": "destroyMethod 或 DisposableBean。"
+   },
+   {
+    "q": "队列任务？",
+    "a": "shutdownNow 返回未执行列表。"
+   }
+  ],
+  "answer": [
+   "总：一个温和收尾，一个尝试打断。",
+   "分：awaitTermination。",
+   "实践：服务下线流程。",
+   "总结：任务要响应中断。"
+  ],
+  "pitfalls": [
+   "直接 kill -9。"
+  ]
+ },
+ "p2-9": {
+  "principle": [
+   "死锁四条件：互斥、持有并等待、不可剥夺、循环等待。破任一即可：固定加锁顺序、超时 tryLock、一次性申请、减少锁数量。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "if (a.id()<b.id()){ lock(a); lock(b);} else { lock(b); lock(a);} "
+  },
+  "asks": [
+   "四个条件？",
+   "如何避免？",
+   "排查？",
+   "活锁？"
+  ],
+  "followups": [
+   {
+    "q": "活锁？",
+    "a": "一直重试无进展。"
+   },
+   {
+    "q": "数据库？",
+    "a": "顺序访问+重试。"
+   },
+   {
+    "q": "检测？",
+    "a": "jstack。"
+   }
+  ],
+  "answer": [
+   "总：破环或超时。",
+   "分：顺序与 tryLock 最实用。",
+   "实践：转账案例。",
+   "总结：设计阶段就防。"
+  ],
+  "pitfalls": [
+   "只靠检测不防。"
+  ]
+ },
+ "p2-49": {
+  "principle": [
+   "InheritableThreadLocal：创建子线程时拷贝父值；线程池复用线程不会再拷贝。TTL（TransmittableThreadLocal）增强：提交任务时传递上下文，适合线程池与异步。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 线程池场景用 TTL 包装执行器\nExecutor ttlExec = TtlExecutors.getTtlExecutorService(pool);"
+  },
+  "asks": [
+   "子线程传值？",
+   "线程池？",
+   "TTL？",
+   "清理？"
+  ],
+  "followups": [
+   {
+    "q": "ITL 坑？",
+    "a": "池化线程脏数据。"
+   },
+   {
+    "q": "TTL？",
+    "a": "阿里开源，任务提交捕获。"
+   },
+   {
+    "q": "清理？",
+    "a": "finally remove。"
+   }
+  ],
+  "answer": [
+   "总：池化用 TTL，创建时用 ITL。",
+   "分：仍要 remove。",
+   "实践：traceId 传递。",
+   "总结：异步上下文要显式。"
+  ],
+  "pitfalls": [
+   "线程池用 ITL 以为够。"
+  ]
  }
 }

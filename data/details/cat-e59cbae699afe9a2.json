@@ -285,5 +285,43 @@
   "pitfalls": [
    "全球统一推。"
   ]
+ },
+ "p2-34": {
+  "principle": [
+   "落地：Token 一消；业务唯一单号+唯一索引；状态机条件更新；Redis SETNX；Idempotency-Key。最终靠 DB 约束兜底。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "INSERT ... ; // uk_request_id\nUPDATE t SET status='DONE' WHERE id=? AND status='INIT';"
+  },
+  "asks": [
+   "幂等落地？",
+   "Token？",
+   "唯一索引？",
+   "并发？"
+  ],
+  "followups": [
+   {
+    "q": "处理中？",
+    "a": "占位态防并发。"
+   },
+   {
+    "q": "返回？",
+    "a": "重复请求返回首次结果。"
+   },
+   {
+    "q": "MQ？",
+    "a": "同样唯一键。"
+   }
+  ],
+  "answer": [
+   "总：唯一键+原子占位。",
+   "分：多层，DB 兜底。",
+   "实践：下单支付。",
+   "总结：前端防抖不够。"
+  ],
+  "pitfalls": [
+   "只做按钮置灰。"
+  ]
  }
 }

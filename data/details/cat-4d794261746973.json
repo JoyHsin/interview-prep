@@ -36,5 +36,43 @@
   "pitfalls": [
    "${} 拼搜索词。"
   ]
+ },
+ "p2-39": {
+  "principle": [
+   "动态 SQL：where/trim/set 去多余 AND；foreach 注意空；${} 仅白名单；过大 if-else 难维护可拆语句或用脚本谨慎。"
+  ],
+  "example": {
+   "lang": "xml",
+   "code": "<where><if test=\"name!=null\">AND name=#{name}</if></where>"
+  },
+  "asks": [
+   "动态 SQL 注意？",
+   "注入？",
+   "维护？",
+   "与注解？"
+  ],
+  "followups": [
+   {
+    "q": "空集合？",
+    "a": "foreach 防语法错。"
+   },
+   {
+    "q": "复杂？",
+    "a": "可 XML 分离。"
+   },
+   {
+    "q": "调试？",
+    "a": "打日志看最终 SQL。"
+   }
+  ],
+  "answer": [
+   "总：标签处理拼接，防 ${} 注入。",
+   "分：可维护性。",
+   "实践：搜索条件动态。",
+   "总结：安全与清晰。"
+  ],
+  "pitfalls": [
+   "用户输入进 ${}。"
+  ]
  }
 }

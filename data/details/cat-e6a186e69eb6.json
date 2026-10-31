@@ -372,5 +372,43 @@
   "pitfalls": [
    "简单问答也上图。"
   ]
+ },
+ "x-a5": {
+  "principle": [
+   "Advisor 链：在 ChatClient 调用前后拦截增强，类似 Filter/Interceptor——RAG、记忆、日志、安全、重试可插拔组合，顺序有意义。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "chatClient.prompt().advisors(memoryAdvisor, qaAdvisor, logger).user(q).call();"
+  },
+  "asks": [
+   "Advisor 做什么？",
+   "和 AOP？",
+   "顺序？",
+   "自定义？"
+  ],
+  "followups": [
+   {
+    "q": "实现？",
+    "a": "CallAroundAdvisor 等。"
+   },
+   {
+    "q": "参数？",
+    "a": "advisor 上下文传 filter。"
+   },
+   {
+    "q": "过多？",
+    "a": "延迟叠加。"
+   }
+  ],
+  "answer": [
+   "总：可组合的模型调用管道。",
+   "分：RAG/记忆/安全。",
+   "实践：【结合你的项目】。",
+   "总结：横切能力标准化。"
+  ],
+  "pitfalls": [
+   "所有逻辑塞进一个 Prompt。"
+  ]
  }
 }

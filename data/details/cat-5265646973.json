@@ -367,5 +367,43 @@
   "pitfalls": [
    "Pipeline 当事务。"
   ]
+ },
+ "p2-26": {
+  "principle": [
+   "Redisson 看门狗：未指定 leaseTime 时默认锁 30s，后台约每 10s 续期；持有线程存活则一直续，宕机停止续期锁自动过期。指定 leaseTime 则不续期。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "RLock lock=redisson.getLock(\"k\");\nlock.lock(); // 有看门狗\n// lock.lock(10, SECONDS); // 无看门狗"
+  },
+  "asks": [
+   "看门狗？",
+   "默认时间？",
+   "leaseTime？",
+   "可重入？"
+  ],
+  "followups": [
+   {
+    "q": "续期失败？",
+    "a": "解锁异常要处理。"
+   },
+   {
+    "q": "解锁？",
+    "a": "校验持有者。"
+   },
+   {
+    "q": "主从丢锁？",
+    "a": "仍可能，需业务兜底。"
+   }
+  ],
+  "answer": [
+   "总：自动续期防业务超时误释。",
+   "分：不设 lease 才有；宕机靠过期。",
+   "实践：防重复下单。",
+   "总结：与业务超时匹配设计。"
+  ],
+  "pitfalls": [
+   "设了 lease 还以为会续。"
+  ]
  }
 }
