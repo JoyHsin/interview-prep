@@ -210,78 +210,88 @@
  },
  "p-mq1": {
   "principle": [
-   "Kafka：主题分多分区并行；消费组内一分区只能被一个消费者；扩消费者≤分区数。offset 提交决定进度；再均衡时注意重复消费。"
+   "Kafka 中 Topic 是逻辑消息类别，物理上被切成多个 Partition（分区）。每个分区是一个只追加的有序日志，分布在不同 Broker 上，并有多个副本（一个 leader 负责读写，follower 同步）。分区是 Kafka 并行度和扩展的基本单位：吞吐靠多分区并行写入和消费。",
+   "生产者发送时：指定了 key 就按 hash(key) % 分区数选分区，同一 key 永远进同一分区（保证同 key 有序）；没有 key 时使用粘性分区策略批量发送，提高吞吐。",
+   "消费组（Consumer Group）：同一组内的多个消费者共同消费一个 Topic，每个分区在同一时刻只分配给组内一个消费者，所以组内有效并行度 = min(消费者数, 分区数)，消费者多于分区就会闲置。不同消费组相互独立，各自完整消费一份数据（实现发布订阅）。",
+   "Offset：每条消息在分区内有递增的偏移量，消费组把每个分区“消费到哪里”提交到内部主题 __consumer_offsets。自动提交可能在处理完成前提交导致丢消息，或处理后未提交导致重复；可靠场景用手动提交，处理成功后再提交。",
+   "Rebalance（再均衡）：消费者加入、离开、心跳超时或分区数变化时触发，重新分配分区，期间可能短暂停止消费并造成重复消费。处理时间过长超过 max.poll.interval.ms 也会被踢出组。新版本的协作式再均衡（CooperativeStickyAssignor）减少了“全体停顿”。"
   ],
   "example": {
-   "lang": "text",
-   "code": "吞吐≈分区并行度；key 决定分区\n监控：lag、rebalance 次数"
+   "lang": "java",
+   "code": "// 生产者：同一订单号进同一分区\nkafkaTemplate.send(\"order-events\", order.getOrderNo(), JSON.toJSONString(event));\n\n// 消费者：手动提交，分区数 12，组内最多 12 个消费者有效\n@KafkaListener(topics = \"order-events\", groupId = \"points-service\", concurrency = \"6\")\npublic void consume(ConsumerRecord<String, String> rec, Acknowledgment ack) {\n    log.info(\"partition={} offset={} key={}\", rec.partition(), rec.offset(), rec.key());\n    pointsService.handleIdempotent(rec.key(), rec.value());\n    ack.acknowledge();                        // 处理成功才提交 offset\n}\n\n# application.yml\n# spring.kafka.consumer.enable-auto-commit: false\n# spring.kafka.listener.ack-mode: manual\n# spring.kafka.consumer.properties.max.poll.interval.ms: 300000\n# spring.kafka.consumer.properties.partition.assignment.strategy: \\\n#   org.apache.kafka.clients.consumer.CooperativeStickyAssignor\n\n# 查看消费组 lag\n# kafka-consumer-groups.sh --bootstrap-server $BK --describe --group points-service"
   },
   "asks": [
-   "分区与消费组？",
-   "扩容？",
-   "offset？",
-   "再均衡？"
+   "Kafka 的分区和消费组是什么关系？",
+   "消费者数量多于分区数会怎样？",
+   "offset 是怎么管理的？自动提交有什么问题？",
+   "什么是 Rebalance？有什么影响？"
   ],
   "followups": [
    {
-    "q": "消费者多于分区？",
-    "a": "空闲。"
+    "q": "分区数能随便增加吗？",
+    "a": "可以增加但不能减少；增加后 key 到分区的映射会变化，破坏同 key 的顺序，所以要在创建时预估好。"
    },
    {
-    "q": "单分区？",
-    "a": "保序但吞吐低。"
+    "q": "怎么减少 Rebalance？",
+    "a": "保证处理时间小于 max.poll.interval.ms、合理设置心跳超时、使用静态成员（group.instance.id）和协作式再均衡策略。"
    },
    {
-    "q": "提交？",
-    "a": "手动更安全。"
+    "q": "多个服务都要消费同一份消息怎么办？",
+    "a": "每个服务使用不同的消费组，各自独立维护 offset，互不影响。"
    }
   ],
   "answer": [
-   "总：分区是并行单位，组内均分分区。",
-   "分：lag 监控；再均衡。",
-   "实践：【结合你的项目】。",
-   "总结：分区规划要提前。"
+   "总：分区是 Kafka 并行和扩展的单位，消费组决定这些分区怎么被消费。",
+   "分：Topic 切成多个有序分区，按 key 哈希路由保证同 key 有序；组内一个分区同时只给一个消费者，并行度取消费者数和分区数的较小值，不同组各自消费全量；offset 提交到内部主题，可靠场景用手动提交；成员变化会触发 Rebalance，可能造成短暂停顿和重复消费。",
+   "实践：【结合你的项目】我们的订单事件 topic 设了【待填】个分区，按订单号做 key，积分服务用独立消费组、手动提交并幂等处理。",
+   "总结：规划好分区数、用对 key、手动提交加幂等，是用好 Kafka 消费模型的关键。"
   ],
   "pitfalls": [
-   "只加消费者不加分区。"
+   "以为加消费者就一定能提速，忽略分区数上限。",
+   "随意增加分区破坏 key 顺序。",
+   "加分：讲 max.poll.interval.ms 导致的被踢出和协作式再均衡。"
   ]
  },
  "p-mq2": {
   "principle": [
-   "顺序：同业务 key 进同分区 + 分区内单线程消费。牺牲该 key 并行度。全局顺序几乎不用。失败重试与多线程会破坏顺序感知，需幂等。"
+   "消息顺序要分清“全局有序”和“局部有序”。绝大多数业务只需要局部有序：同一个订单的“创建 → 支付 → 发货”必须按顺序处理，不同订单之间无所谓。全局有序（整个 Topic 一个分区、一个消费线程）吞吐极低，几乎不用。",
+   "顺序要在三个环节同时保证：① 发送端：同一业务 key 的消息发到同一个分区/队列。Kafka 用消息 key 做哈希；RocketMQ 用 MessageQueueSelector 按订单号选队列。同时要避免发送重试造成乱序：Kafka 开启幂等生产者（enable.idempotence=true，max.in.flight ≤ 5 时仍能保证分区内有序），或者同步发送。② 存储端：分区/队列内部天然是先进先出的有序日志。③ 消费端：一个分区同一时刻只被组内一个消费者消费；但如果消费者内部又用线程池并发处理，顺序就会被打乱。解决方法是按 key 哈希到固定的单线程队列（同 key 串行、不同 key 并行），或直接用 RocketMQ 的顺序消费模式（MessageListenerOrderly 对队列加锁）。",
+   "代价与异常：顺序消费时某条消息处理失败不能跳过，否则后续就乱序了，只能原地重试，会阻塞该分区（热点 key 也会导致单分区积压）；所以要设置重试上限和告警，并支持人工介入。另一种更鲁棒的思路是让消费端容忍乱序：消息带版本号或状态机，只接受“合法的状态迁移”，旧版本消息直接丢弃。"
   ],
   "example": {
    "lang": "java",
-   "code": "producer.send(new ProducerRecord<>(topic, orderId, body));"
+   "code": "// 发送端：按订单号选择队列（RocketMQ）\nSendResult r = producer.send(msg, (mqs, m, key) -> {\n    int idx = Math.abs(key.hashCode() % mqs.size());\n    return mqs.get(idx);\n}, order.getOrderNo());\n\n// 消费端：顺序消费，队列加锁、同队列串行\nconsumer.registerMessageListener((MessageListenerOrderly) (msgs, ctx) -> {\n    for (MessageExt m : msgs) {\n        try {\n            orderStateMachine.apply(parse(m));          // 状态机校验合法迁移\n        } catch (Exception e) {\n            ctx.setSuspendCurrentQueueTimeMillis(1000);\n            return ConsumeOrderlyStatus.SUSPEND_CURRENT_QUEUE_A_MOMENT;  // 原地重试\n        }\n    }\n    return ConsumeOrderlyStatus.SUCCESS;\n});\n\n// Kafka 消费端若用线程池：按 key 哈希到固定单线程执行器\nExecutorService[] lanes = IntStream.range(0, 8)\n        .mapToObj(i -> Executors.newSingleThreadExecutor()).toArray(ExecutorService[]::new);\nvoid dispatch(ConsumerRecord<String, String> rec) {\n    lanes[Math.floorMod(rec.key().hashCode(), lanes.length)].submit(() -> handle(rec));\n}"
   },
   "asks": [
-   "怎么保序？",
-   "代价？",
-   "全局顺序？",
-   "失败？"
+   "如何保证消息的顺序性？",
+   "全局有序和局部有序有什么区别？",
+   "消费端用了线程池还能保证顺序吗？",
+   "顺序消息消费失败怎么办？"
   ],
   "followups": [
    {
-    "q": "多线程消费分区？",
-    "a": "破序。"
+    "q": "Kafka 发送重试会不会导致乱序？",
+    "a": "开启幂等生产者后，Broker 用序列号保证分区内不乱序不重复；未开启时若 max.in.flight 大于 1，重试可能导致乱序。"
    },
    {
-    "q": "热点 key？",
-    "a": "瓶颈。"
+    "q": "顺序消费失败为什么不能跳过？",
+    "a": "跳过后后续消息会先于失败消息被处理，破坏顺序；只能原地重试，到达上限后告警并人工处理或进入专门的补偿流程。"
    },
    {
-    "q": "RocketMQ？",
-    "a": "顺序消息到同队列。"
+    "q": "有没有不依赖 MQ 顺序的办法？",
+    "a": "让消费端基于版本号或状态机做幂等和校验，过期或非法的状态迁移直接丢弃，这样即使乱序到达也能得到正确结果。"
    }
   ],
   "answer": [
-   "总：同 key 同分区单线程。",
-   "分：部分有序即可。",
-   "实践：订单号分区。",
-   "总结：粒度最小化。"
+   "总：消息顺序一般只需要保证同一业务 key 的局部有序，要在发送、存储、消费三个环节同时保证。",
+   "分：发送端按 key 路由到同一分区并开启幂等生产者防止重试乱序；分区内天然有序；消费端同一分区只给一个消费者，内部若并发就按 key 哈希到单线程通道，或用 RocketMQ 顺序消费；失败只能原地重试，会阻塞分区，需要重试上限和告警。",
+   "实践：【结合你的项目】我们的订单状态消息按订单号做 key，消费端再用状态机校验迁移是否合法，即使偶发乱序也不会把已发货的订单改回已支付。",
+   "总结：顺序是有代价的，能用状态机容忍乱序时就不要强依赖 MQ 的顺序。"
   ],
   "pitfalls": [
-   "多线程还要求全局有序。"
+   "只保证了发送端同分区，消费端却用线程池并发处理。",
+   "追求全局有序导致吞吐骤降。",
+   "加分：讲幂等生产者防重试乱序和状态机兜底。"
   ]
  },
  "p2-29": {

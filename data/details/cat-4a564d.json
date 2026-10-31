@@ -491,40 +491,45 @@
  },
  "p2-14": {
   "principle": [
-   "永久代（PermGen）在堆逻辑一代，易 OOM 且调参难；元空间用本地内存存类元数据，默认较大，可用 MaxMetaspaceSize 限制。泄漏常见于动态代理/热部署重复生成类。"
+   "方法区是 JVM 规范中的逻辑概念，用来存放类的元数据（类结构、方法和字段信息、运行时常量池、方法字节码等）。永久代（PermGen）和元空间（Metaspace）是 HotSpot 对方法区的两种实现。",
+   "JDK 7 及以前用永久代：它位于 JVM 堆内存中（逻辑上与堆相邻，由 GC 管理），大小由 -XX:PermSize/-XX:MaxPermSize 固定。问题是大小难以估计：动态生成类较多的应用（Spring、CGLIB 代理、JSP、Groovy 脚本）经常出现 java.lang.OutOfMemoryError: PermGen space；而且永久代的回收与 Full GC 绑定，调优复杂。JDK 7 已经把字符串常量池和静态变量移到了堆中。",
+   "JDK 8 起使用元空间：类元数据改存放在本地内存（Native Memory），不再占用 Java 堆。默认大小只受系统可用内存限制，可以用 -XX:MaxMetaspaceSize 限制上限；-XX:MetaspaceSize 是初次触发元空间 GC 的阈值（不是初始大小），达到后会触发 Full GC 卸载类并调整阈值。",
+   "元空间 OOM（OutOfMemoryError: Metaspace）的常见原因是类加载器泄漏：大量动态生成的类（CGLIB、字节码增强、脚本引擎反复编译、热部署）没有被卸载。类卸载的条件很苛刻：该类的所有实例都被回收、加载它的 ClassLoader 被回收、Class 对象没有被引用。排查方法：jstat -gcmetacapacity 观察趋势，jcmd <pid> VM.classloader_stats 或 GC.class_stats 看哪个加载器加载了大量类，堆转储里查看 ClassLoader 实例数量。生产环境一定要设置 MaxMetaspaceSize，避免无限增长拖垮整台机器。"
   ],
   "example": {
    "lang": "bash",
-   "code": "jstat -gcmetacapacity <pid>\n# OOM: Metaspace"
+   "code": "# JDK 8+ 推荐参数\njava -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=512m -jar app.jar\n\n# 观察元空间使用（M=元空间使用率，CCS=压缩类空间）\njstat -gcutil <pid> 1000\n\n# 查看各类加载器加载的类数量，定位泄漏的加载器\njcmd <pid> VM.classloader_stats\njcmd <pid> VM.metaspace\n\n# 典型泄漏：每次请求都新建 GroovyClassLoader 编译脚本\n// 错误：每次 new 一个加载器并 parseClass，类越来越多\nClass<?> c = new GroovyClassLoader().parseClass(script);\n// 正确：按脚本内容哈希缓存编译后的 Class，复用加载器"
   },
   "asks": [
-   "元空间 vs 永久代？",
-   "泄漏？",
-   "参数？",
-   "字符串常量池？"
+   "永久代和元空间有什么区别？",
+   "JDK 8 为什么要用元空间替代永久代？",
+   "MetaspaceSize 参数是什么含义？",
+   "元空间 OOM 怎么排查？"
   ],
   "followups": [
    {
-    "q": "池？",
-    "a": "JDK7+ 堆中。"
+    "q": "元空间不设上限会怎样？",
+    "a": "可能无限占用本地内存，最终被操作系统 OOM Killer 杀掉或影响同机其他进程，所以生产要设 MaxMetaspaceSize。"
    },
    {
-    "q": "限制？",
-    "a": "不设可能吃光机器内存。"
+    "q": "类什么情况下会被卸载？",
+    "a": "该类的所有实例已被回收、加载它的 ClassLoader 已被回收、对应的 Class 对象没有任何引用，三个条件同时满足。"
    },
    {
-    "q": "dump？",
-    "a": "看类数量。"
+    "q": "字符串常量池现在在哪里？",
+    "a": "从 JDK 7 开始就移到了 Java 堆中，不在永久代也不在元空间。"
    }
   ],
   "answer": [
-   "总：元空间在本地内存，更灵活。",
-   "分：防类泄漏；设上限。",
-   "实践：注意热部署环境。",
-   "总结：类也是资源。"
+   "总：永久代和元空间都是方法区的实现，最大区别是元空间改用本地内存存放类元数据。",
+   "分：JDK 7 及以前的永久代在堆中、大小固定，动态生成类多时容易 PermGen OOM；JDK 8 的元空间默认只受系统内存限制，MetaspaceSize 是首次触发 GC 的阈值，MaxMetaspaceSize 是上限；元空间 OOM 多因类加载器泄漏，用 jstat、jcmd 和堆转储定位。",
+   "实践：【结合你的项目】【待填：如脚本引擎或动态代理导致元空间增长，通过缓存编译结果解决】，现在生产统一设置了元空间上限和告警。",
+   "总结：元空间解决了永久代难以调优的问题，但仍需设置上限并关注动态类的生命周期。"
   ],
   "pitfalls": [
-   "说元空间在堆。"
+   "说元空间在堆里，或说它永远不会 OOM。",
+   "把 MetaspaceSize 理解成初始大小。",
+   "加分：讲类卸载的三个条件和类加载器泄漏排查。"
   ]
  },
  "p2-48": {

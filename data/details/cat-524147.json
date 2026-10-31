@@ -487,40 +487,45 @@
  },
  "x-a2": {
   "principle": [
-   "父子文档：小块（child）向量检索更准，命中后取父块（parent）大上下文给模型生成，兼顾召回与完整语义。元数据存 parent_id。"
+   "RAG 切块有一个天然矛盾：检索时希望块小，语义集中，向量才能精准匹配问题；生成时希望块大，上下文完整，模型才能答全、答对。块太小，检索到的片段缺少前后文（比如只命中“该参数默认为 30”，却不知道是哪个参数）；块太大，向量被多个主题稀释，召回变差，还浪费 token。",
+   "父子文档索引（Parent-Child / Small-to-Big）把两者解耦：先把文档切成较大的父块（如一个章节或 1000～2000 token），再把每个父块切成小的子块（如 100～300 token）。只对子块做向量化和检索，每个子块记录 parent_id；检索命中子块后，按 parent_id 取回父块交给 LLM 生成。",
+   "关键细节：① 多个子块命中同一父块时要去重，并按最高分或命中次数排序父块；② 父块可能很长，要设置总 token 预算，必要时只取父块中命中子块前后的若干段（句子窗口）；③ 父块存在普通 KV 或数据库中，不需要向量化；④ 子块可以带上标题路径等元数据，提升检索准确度。",
+   "相关变体：句子窗口检索（检索单句，返回前后各 N 句）；多向量检索（为父块生成摘要或假设性问题作为检索向量，命中后返回原文）。LangChain 的 ParentDocumentRetriever、LlamaIndex 的 AutoMergingRetriever 都是这个思路。"
   ],
   "example": {
    "lang": "java",
-   "code": "// 检索 child → 取 metadata.parent_id → 加载 parent 文本注入 Prompt"
+   "code": "// 入库：父块存 KV，子块向量化并带 parent_id\nfor (Document section : splitBySection(doc)) {               // 父块：按章节\n    String parentId = UUID.randomUUID().toString();\n    parentStore.put(parentId, section.getText());\n    List<Document> children = TokenTextSplitter.builder()\n            .withChunkSize(200).build().apply(List.of(section));\n    children.forEach(c -> {\n        c.getMetadata().put(\"parent_id\", parentId);\n        c.getMetadata().put(\"title_path\", section.getMetadata().get(\"title_path\"));\n    });\n    vectorStore.add(children);\n}\n\n// 检索：子块召回 → 按父块去重 → 控制 token 预算\nList<Document> hits = vectorStore.similaritySearch(\n        SearchRequest.builder().query(question).topK(12).similarityThreshold(0.6).build());\nLinkedHashSet<String> parentIds = hits.stream()\n        .map(d -> (String) d.getMetadata().get(\"parent_id\"))\n        .collect(Collectors.toCollection(LinkedHashSet::new));   // 保留得分顺序\nStringBuilder ctx = new StringBuilder();\nfor (String pid : parentIds) {\n    String p = parentStore.get(pid);\n    if (tokens(ctx) + tokens(p) > 6000) break;\n    ctx.append(p).append(\"\\n---\\n\");\n}"
   },
   "asks": [
-   "父子索引？",
-   "好处？",
-   "实现？",
-   "和重叠切分？"
+   "什么是父子文档索引？解决什么问题？",
+   "为什么检索用小块、生成用大块？",
+   "多个子块命中同一父块怎么处理？",
+   "还有哪些类似的“小检索大返回”的方法？"
   ],
   "followups": [
    {
-    "q": "重叠？",
-    "a": "仍可能碎语义；父子更结构化。"
+    "q": "父块太长超出上下文怎么办？",
+    "a": "设置总 token 预算，按父块得分截断；或者只返回父块中命中子块前后的窗口，而不是整个父块。"
    },
    {
-    "q": "多级？",
-    "a": "章节-段落。"
+    "q": "父子索引有什么代价？",
+    "a": "需要额外存储父块并维护映射，入库流程更复杂；返回内容更长，token 成本和延迟会增加。"
    },
    {
-    "q": "存储？",
-    "a": "两套块或只存父+偏移。"
+    "q": "怎么判断它有没有效果？",
+    "a": "用同一评测集对比普通切块和父子索引的召回率、答案正确率和 token 消耗，而不是凭感觉。"
    }
   ],
   "answer": [
-   "总：小块召回，大块生成。",
-   "分：parent_id 关联。",
-   "实践：【结合你的项目】。",
-   "总结：分块策略进阶。"
+   "总：父子文档索引用小块做检索、大块做生成，解决切块粒度在召回精度和上下文完整之间的矛盾。",
+   "分：文档先按章节切父块，再切成小的子块，只对子块向量化并记录 parent_id；检索命中子块后按 parent_id 取回父块，对父块去重排序并控制 token 预算；类似方法还有句子窗口和摘要多向量检索。",
+   "实践：【结合你的项目】我们的知识库在【待填】场景改成父子索引后，答案完整度从【待填】提升到【待填】，token 消耗增加了【待填】。",
+   "总结：它是一种低成本、效果明显的切块优化，但要配合去重和 token 预算一起使用。"
   ],
   "pitfalls": [
-   "检索生成用同一碎块。"
+   "对父块也做向量化检索，失去了小块检索的意义。",
+   "多个子块命中同一父块却没去重，重复塞进上下文。",
+   "加分：讲句子窗口、多向量检索变体和评测对比。"
   ]
  },
  "a-r8": {
