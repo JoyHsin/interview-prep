@@ -346,392 +346,380 @@
  },
  "j-c6": {
   "principle": [
-   "volatile 保证可见性与有序性（禁部分重排），不保证复合操作原子性。适合旗帜位、DCL 中的发布。i++ 仍要 Atomic 或锁。",
-   "与 happens-before、内存屏障关系要能口述。",
-   "进一步说：可见性 + 有序性，无原子性；内存屏障；与 synchronized 对比。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「volatile 语义？」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "volatile 提供两个语义：可见性和有序性。可见性：线程写 volatile 变量时，会把工作内存中的值立即刷新到主内存，其他线程读取时会使自己的缓存失效、从主内存重新读取，因此一个线程的修改对其他线程立即可见。",
+   "有序性：JVM 在 volatile 写之前插入 StoreStore 屏障、之后插入 StoreLoad 屏障，在 volatile 读之后插入 LoadLoad 和 LoadStore 屏障，禁止相关指令重排。根据 happens-before 规则，对 volatile 变量的写 happens-before 之后对它的读，再结合传递性，写 volatile 之前的普通写也对读到该值的线程可见。在 x86 上，volatile 写通常编译为带 lock 前缀的指令。",
+   "volatile 不保证原子性：count++ 包含读、加、写三步，多线程下仍会丢失更新，需要使用 AtomicInteger、LongAdder 或加锁。典型用法：状态标志位（如 running 停止标志）、双重检查锁单例中防止对象未初始化完成就被发布、一写多读的配置引用替换。"
   ],
   "example": {
    "lang": "java",
-   "code": "class Holder { static volatile Holder h; /* DCL */ }\nAtomicInteger c = new AtomicInteger();"
+   "code": "class Worker implements Runnable {\n    private volatile boolean running = true;     // 停止标志：保证可见\n    public void run() { while (running) doWork(); }\n    public void stop() { running = false; }\n}\n\nclass Counter {\n    private volatile int bad = 0;\n    private final AtomicInteger good = new AtomicInteger();\n    void inc() {\n        bad++;                     // 非原子：读-改-写，多线程丢失更新\n        good.incrementAndGet();    // CAS 保证原子\n    }\n}"
   },
   "asks": [
-   "volatile 语义？",
-   "能保原子性吗？",
-   "适用场景？",
-   "和 synchronized？"
+   "volatile 的语义是什么？",
+   "volatile 如何保证可见性和有序性？",
+   "volatile 能保证原子性吗？",
+   "volatile 的典型使用场景有哪些？"
   ],
   "followups": [
    {
-    "q": "volatile long 读写？",
-    "a": "加 volatile 后 long/double 读写具有原子性；复合运算仍要额外同步。"
+    "q": "双重检查锁单例为什么要加 volatile？",
+    "a": "new 对象的初始化和引用赋值可能重排，不加 volatile 时其他线程可能拿到未初始化完成的对象。"
    },
    {
-    "q": "能替代锁吗？",
-    "a": "不能用于互斥更新；只解决可见与有序。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "volatile 和 synchronized 有什么区别？",
+    "a": "volatile 只保证可见性和有序性且不阻塞，synchronized 还保证原子性和互斥，但有加锁开销。"
    },
    {
-    "q": "DCL 为什么要 volatile？",
-    "a": "防止指令重排导致看到未初始化完全的对象。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "为什么 count++ 用 volatile 也不安全？",
+    "a": "它由读取、加一、写回三步组成，两个线程可能读到同一个值各自加一后写回，导致一次更新丢失。"
    }
   ],
   "answer": [
-   "总：volatile 保证可见性与有序性（禁部分重排），不保证复合操作原子性。适合旗帜位、DCL 中的发布。i++ 仍要 Atomic 或锁。",
-   "分：可见性 + 有序性，无原子性；内存屏障；与 synchronized 对比。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：可见性 + 有序性，无原子性、内存屏障。关联知识点：可见性 + 有序性，无原子性、内存屏障。关联知识点：可见性 + 有序性，无原子性、内存屏障。关联知识点：可见性 + 有序性，无原子性、内存屏障。"
+   "总：volatile 保证变量的可见性和禁止指令重排，但不保证复合操作的原子性。",
+   "分：写时刷新主内存、读时重新读取；通过内存屏障禁止重排，并建立 happens-before 关系；count++ 需要原子类或锁；适合状态标志、单例发布和配置引用替换。",
+   "实践：【结合你的项目】说明使用 volatile 停止标志优雅关闭后台线程，或用于热更新配置引用的场景。",
+   "总结：volatile 适合一写多读的状态发布，涉及读改写的复合操作时要换成原子类或锁。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "用 volatile 修饰计数器来实现线程安全的自增。",
+   "双重检查锁单例不加 volatile。",
+   "加分：说明内存屏障的插入位置和 lock 前缀指令。"
   ]
  },
  "j-c7": {
   "principle": [
-   "CountDownLatch 一次性倒数等待；CyclicBarrier 可循环屏障等一组线程互相等待；Semaphore 许可流量控制。选型看是「等任务完成」「互等」还是「限流」。",
-   "进一步说：一次性开门 vs 可复用栅栏；限流许可证；都基于 AQS 共享。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「CountDownLatch / CyclicB」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "CountDownLatch（倒计时门闩）：初始化一个计数，工作线程完成任务后调用 countDown 减一，等待线程调用 await 阻塞，直到计数减到零才继续。它是一次性的，计数不能重置。典型场景是主线程等待多个子任务完成后汇总结果，或者让多个线程等待一个统一的开始信号。",
+   "CyclicBarrier（循环屏障）：让一组固定数量的线程相互等待，全部到达屏障点（调用 await）后才一起继续，可以指定一个 barrierAction 在所有线程到达时执行。它可以重复使用，适合分阶段的并行计算，每一轮所有线程都完成后再进入下一轮。如果有线程中断或超时，屏障会被破坏，其他等待线程会收到 BrokenBarrierException。",
+   "Semaphore（信号量）：维护一组许可，acquire 获取许可，没有则阻塞，release 归还许可，用于限制同时访问某资源的线程数量，例如限制对下游接口的并发调用数、数据库连接数。可以选择公平或非公平模式。三者都基于 AQS 实现：CountDownLatch 和 Semaphore 使用共享模式，CyclicBarrier 基于 ReentrantLock 和 Condition。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// CountDownLatch / CyclicBarrier / Semaphore？\n// keypoints: 一次性开门 vs 可复用栅栏; 限流许可证; 都基于 AQS 共享\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "// CountDownLatch：等待 3 个下游查询完成\nCountDownLatch latch = new CountDownLatch(3);\nfor (Runnable task : List.of(this::loadUser, this::loadOrder, this::loadCoupon))\n    pool.execute(() -> { try { task.run(); } finally { latch.countDown(); } });\nif (!latch.await(800, TimeUnit.MILLISECONDS)) log.warn(\"部分查询超时\");\n\n// Semaphore：最多 10 个并发调用下游\nSemaphore sem = new Semaphore(10);\nif (sem.tryAcquire(100, TimeUnit.MILLISECONDS)) {\n    try { return client.call(); } finally { sem.release(); }\n}\nreturn fallback();"
   },
   "asks": [
-   "CountDownLatch / CyclicBarrier / Semaphore？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "CountDownLatch、CyclicBarrier、Semaphore 分别是什么？",
+   "CountDownLatch 和 CyclicBarrier 有什么区别？",
+   "Semaphore 适合什么场景？",
+   "它们的底层实现是什么？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "countDown 为什么要放在 finally 中？",
+    "a": "如果任务抛出异常而没有执行 countDown，计数永远到不了零，等待线程会一直阻塞。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "CyclicBarrier 被破坏后怎么办？",
+    "a": "其他线程会收到 BrokenBarrierException，需要处理异常，并调用 reset 重置屏障后才能再次使用。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "Semaphore 能用于分布式限流吗？",
+    "a": "不能，它只在单个 JVM 内有效，分布式场景需要使用 Redis 或 Sentinel 等集中式限流方案。"
    }
   ],
   "answer": [
-   "总：CountDownLatch 一次性倒数等待；CyclicBarrier 可循环屏障等一组线程互相等待；Semaphore 许可流量控制。选型看是「等任务完成」「互等」还是「限流」。",
-   "分：一次性开门 vs 可复用栅栏；限流许可证；都基于 AQS 共享。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：一次性开门 vs 可复用栅栏、限流许可证。关联知识点：一次性开门 vs 可复用栅栏、限流许可证。关联知识点：一次性开门 vs 可复用栅栏、限流许可证。"
+   "总：CountDownLatch 让线程等待计数归零，CyclicBarrier 让一组线程相互等待，Semaphore 控制并发访问数量。",
+   "分：CountDownLatch 一次性、用于等待多个任务完成；CyclicBarrier 可重用、用于分阶段协同；Semaphore 用许可控制并发；前两者为 AQS 共享模式，CyclicBarrier 基于锁和 Condition。",
+   "实践：【结合你的项目】说明聚合接口用 CountDownLatch 等待并行查询，或用 Semaphore 限制下游并发的做法。",
+   "总结：根据是等待事件完成、线程互相等待还是限制并发来选择对应的工具。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "countDown 没有放在 finally 中，异常时等待线程永久阻塞。",
+   "await 不设置超时，下游变慢时拖住调用线程。",
+   "加分：说明三者与 AQS 的关系。"
   ]
  },
  "j-c8": {
   "principle": [
-   "死锁排查：jstack / jcmd Thread.print 找 Blocked 与锁图；看是否互相持有。预防：固定加锁顺序、超时锁、减少锁粒度、避免嵌套。",
-   "线上要有线程与锁监控。",
-   "进一步说：jstack 找 BLOCKED；固定加锁顺序；超时锁 / tryLock。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「如何排查死锁？」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "死锁的四个必要条件：互斥（资源一次只能被一个线程占用）、占有且等待（持有资源的同时等待其他资源）、不可剥夺（资源不能被强行抢走）、循环等待（多个线程形成环形等待链）。破坏其中任意一个条件即可避免死锁，最常用的是破坏循环等待。",
+   "排查方法：先用 jps 找到进程，jstack pid 导出线程栈，输出末尾会直接提示 Found one Java-level deadlock，并列出相互等待的线程、各自持有和等待的锁地址以及代码位置；也可以使用 jconsole、VisualVM 的检测死锁功能，或 Arthas 的 thread -b 找出持有锁并阻塞其他线程的线程。代码中可以用 ThreadMXBean.findDeadlockedThreads 定期检测并告警。数据库死锁则查看 SHOW ENGINE INNODB STATUS 中的 LATEST DETECTED DEADLOCK。",
+   "预防措施：所有线程按固定的全局顺序获取多把锁（如按账户 ID 从小到大）；使用 tryLock 加超时，获取失败时释放已持有的锁并重试；缩小锁的范围，避免在持锁时调用外部方法或远程服务；尽量一次只持有一把锁，或使用无锁的并发数据结构。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// 如何排查死锁？\n// keypoints: jstack 找 BLOCKED; 固定加锁顺序; 超时锁 / tryLock\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "// 转账：按 ID 固定顺序加锁，破坏循环等待\nvoid transfer(Account a, Account b, long amt) {\n    Account first = a.id() < b.id() ? a : b;\n    Account second = first == a ? b : a;\n    synchronized (first) {\n        synchronized (second) { a.debit(amt); b.credit(amt); }\n    }\n}\n// 排查：jstack <pid> | grep -A 20 \"Found one Java-level deadlock\"\n// 代码检测：\nlong[] ids = ManagementFactory.getThreadMXBean().findDeadlockedThreads();"
   },
   "asks": [
-   "如何排查死锁？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "死锁产生的条件是什么？",
+   "如何排查 Java 程序中的死锁？",
+   "如何预防死锁？",
+   "数据库死锁怎么排查？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "tryLock 如何避免死锁？",
+    "a": "在超时时间内获取不到第二把锁时释放已经持有的锁，稍后重试，从而破坏占有且等待条件。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "jstack 输出中如何识别死锁？",
+    "a": "末尾会显示 Found one Java-level deadlock，并列出每个线程 waiting to lock 和 locked 的锁地址形成的环。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "死锁发生后线上如何处理？",
+    "a": "先保存 jstack 现场再重启恢复服务，然后根据线程栈分析加锁顺序并修复代码。"
    }
   ],
   "answer": [
-   "总：死锁排查：jstack / jcmd Thread.print 找 Blocked 与锁图；看是否互相持有。预防：固定加锁顺序、超时锁、减少锁粒度、避免嵌套。",
-   "分：jstack 找 BLOCKED；固定加锁顺序；超时锁 / tryLock。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：jstack 找 BLOCKED、固定加锁顺序。关联知识点：jstack 找 BLOCKED、固定加锁顺序。关联知识点：jstack 找 BLOCKED、固定加锁顺序。关联知识点：jstack 找 BLOCKED、固定加锁顺序。"
+   "总：死锁需要互斥、占有且等待、不可剥夺和循环等待四个条件同时成立，破坏任意一个即可避免。",
+   "分：用 jstack、Arthas thread -b 或 ThreadMXBean 检测死锁；预防靠固定加锁顺序、tryLock 超时、缩小锁范围；数据库死锁查看 InnoDB 状态。",
+   "实践：【结合你的项目】讲一次线程死锁或数据库死锁的现象、排查过程和最终修复方案。",
+   "总结：死锁排查要先保留线程栈现场，预防则依赖统一的加锁顺序和超时机制。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "发现死锁后直接重启，没有保存线程栈。",
+   "在持有锁时调用远程服务或外部回调。",
+   "加分：会用 ThreadMXBean 做死锁自动检测告警。"
   ]
  },
  "p-th2": {
   "principle": [
-   "Object.wait/notify 必须在持有同一对象监视器（synchronized）时调用：wait 释放锁并等待，notify/notifyAll 唤醒。Condition 配合 Lock 使用，可创建多个等待队列（例如边界缓冲区的 notFull/notEmpty），信号更精确。两者都可能虚假唤醒，等待条件要用 while 而不是 if。",
-   "notify 只唤醒一个，notifyAll 唤醒全部再竞争；Condition 的 signal/signalAll 同理。能用更高层并发工具（BlockingQueue、Latch）就少手写 wait/notify。"
+   "wait/notify 是 Object 的方法，必须在 synchronized 块中调用（持有该对象的监视器锁），否则抛出 IllegalMonitorStateException。wait 会释放锁并进入该对象的等待集合，被 notify 唤醒后需要重新竞争锁才能继续执行。一个监视器只有一个等待集合，notify 随机唤醒一个线程，notifyAll 唤醒全部。",
+   "Condition 是配合 Lock 使用的条件队列，通过 lock.newCondition() 创建，await 和 signal 必须在持有锁时调用。它的优势是一把锁可以创建多个 Condition，让不同条件的等待线程分别排队，例如阻塞队列中的 notEmpty 和 notFull，生产者只唤醒消费者，避免 notifyAll 唤醒所有线程带来的无效竞争。Condition 还支持可中断、超时等待（awaitNanos、awaitUntil）以及不响应中断的等待。",
+   "共同的注意事项：等待必须放在 while 循环中检查条件，因为可能出现虚假唤醒，或者被唤醒时条件已经被其他线程改变；修改条件和发出通知都要在持锁状态下进行，避免信号丢失。实际开发中优先使用 BlockingQueue、CountDownLatch 等更高层的工具。"
   ],
   "example": {
    "lang": "java",
-   "code": "// wait/notify\nsynchronized (lock) {\n  while (!ready) lock.wait();\n  // 处理\n  lock.notifyAll();\n}\n\n// Condition\nLock l = new ReentrantLock();\nCondition notEmpty = l.newCondition();\nl.lock();\ntry {\n  while (queue.isEmpty()) notEmpty.await();\n  ...\n  notEmpty.signal();\n} finally { l.unlock(); }"
+   "code": "class BoundedBuffer<T> {\n    private final Lock lock = new ReentrantLock();\n    private final Condition notFull = lock.newCondition();\n    private final Condition notEmpty = lock.newCondition();\n    private final Deque<T> q = new ArrayDeque<>(); private final int cap = 100;\n\n    void put(T t) throws InterruptedException {\n        lock.lock();\n        try { while (q.size() == cap) notFull.await();   // while 防虚假唤醒\n              q.add(t); notEmpty.signal(); }               // 只唤醒消费者\n        finally { lock.unlock(); }\n    }\n    T take() throws InterruptedException {\n        lock.lock();\n        try { while (q.isEmpty()) notEmpty.await();\n              T t = q.poll(); notFull.signal(); return t; }\n        finally { lock.unlock(); }\n    }\n}"
   },
   "asks": [
-   "wait/notify 与 Condition 差别？",
-   "为什么用 while 判断？",
-   "必须持锁吗？",
-   "什么时候用 notifyAll？"
+   "wait/notify 和 Condition 有什么区别？",
+   "为什么 wait 必须在 synchronized 中调用？",
+   "多个 Condition 有什么好处？",
+   "为什么等待要放在 while 循环中？"
   ],
   "followups": [
    {
-    "q": "wait 会释放锁吗？",
-    "a": "会释放当前监视器锁并进入等待集；被唤醒后要重新竞争锁。"
+    "q": "wait 和 sleep 有什么区别？",
+    "a": "wait 会释放监视器锁并需要被唤醒，sleep 不释放锁，只是让线程暂停指定时间后自动恢复。"
    },
    {
-    "q": "sleep 和 wait 差别？",
-    "a": "sleep 不释放锁，也不要求在同步块中；wait 必须持锁并释放。"
+    "q": "notify 和 notifyAll 怎么选？",
+    "a": "只有一种等待条件且任意线程都能处理时可以用 notify，否则用 notifyAll 更安全，或改用多个 Condition。"
    },
    {
-    "q": "Condition 能否替代所有 wait/notify？",
-    "a": "在 Lock 体系内可以，且多条件更清晰；synchronized 体系仍用 wait/notify。"
+    "q": "什么是虚假唤醒？",
+    "a": "线程在没有被通知的情况下从等待中返回，这是操作系统层面允许的行为，因此必须循环检查条件。"
    }
   ],
   "answer": [
-   "总：wait/notify 与 Condition 都是条件等待机制，必须持锁，并用 while 防虚假唤醒；Condition 支持多等待队列。",
-   "分：notify 与 signal 语义类似；优先用高层队列；分清 sleep 与 wait。",
-   "实践：【结合你的项目】若手写同步，用【待填】，更常见是 BlockingQueue。",
-   "总结：能讲清锁释放与虚假唤醒，这题就算过关。结合项目说明取舍、验证方式与风险控制。"
+   "总：wait/notify 依赖 synchronized 监视器且只有一个等待集合，Condition 依赖 Lock 并支持多个条件队列。",
+   "分：两者都需持锁调用、等待会释放锁；Condition 可精确唤醒某类线程，支持超时和可中断等待；必须在 while 中检查条件以应对虚假唤醒。",
+   "实践：【结合你的项目】说明是否手写过生产者消费者模型，或者为什么最终选择 BlockingQueue 替代。",
+   "总结：理解两者的等待和唤醒机制，但业务代码优先使用 JUC 提供的高层并发工具。"
   ],
   "pitfalls": [
-   "用 if 等待条件。",
-   "未持锁调用 wait。",
-   "加分：用双 Condition 讲有界缓冲。"
+   "在 if 而不是 while 中调用 wait。",
+   "不持有锁就调用 notify 或 signal。",
+   "加分：用 notEmpty 和 notFull 解释阻塞队列的实现。"
   ]
  },
  "p-th3": {
   "principle": [
-   "ReadWriteLock（ReentrantReadWriteLock）允许多个读线程共享持锁，写线程独占。适合读多写少且临界区不极端短的场景，例如缓存刷新、配置只读访问。写锁与读锁互斥；锁降级（写→读）有支持模式，锁升级（读→写）易死锁，通常要先释放读锁。",
-   "注意：读写锁有开销，临界区极短时可能不如互斥锁；写线程可能饥饿，可视情况用公平锁。Java 还有 StampedLock 提供乐观读。",
-   "进一步说：读多写少；写独占读共享；饥饿与升级注意。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。"
+   "ReentrantReadWriteLock 把锁分为读锁和写锁：读锁是共享的，多个线程可以同时持有；写锁是独占的，写锁被持有时其他线程无法获取读锁和写锁，持有读锁时也无法获取写锁。它基于 AQS 实现，用 state 的高 16 位记录读锁数量、低 16 位记录写锁重入次数。",
+   "适用场景：读多写少、读操作耗时较长的共享数据，例如本地缓存、配置表、路由规则。读操作并行执行，比 synchronized 或普通互斥锁吞吐量更高。如果写操作频繁，或者读操作很短，读写锁维护读计数的开销反而可能使其性能不如普通锁。",
+   "锁降级与升级：支持锁降级，持有写锁时可以再获取读锁，然后释放写锁，保证修改后立即读到一致的数据；不支持锁升级，持有读锁时请求写锁会导致死锁。其他问题：非公平模式下持续的读请求可能导致写线程饥饿；读锁不支持 Condition。读极多的场景可以考虑 StampedLock 的乐观读，或者使用 ConcurrentHashMap、CopyOnWrite 容器替代显式加锁。"
   ],
   "example": {
    "lang": "java",
-   "code": "ReadWriteLock rw = new ReentrantReadWriteLock();\nrw.readLock().lock();\ntry { return cache.get(k); } finally { rw.readLock().unlock(); }\n\nrw.writeLock().lock();\ntry { cache.put(k, v); } finally { rw.writeLock().unlock(); }\n\n// 降级：持写锁中获取读锁，再释放写锁"
+   "code": "class RuleCache {\n    private final ReadWriteLock rw = new ReentrantReadWriteLock();\n    private Map<String, Rule> rules = new HashMap<>();\n\n    Rule get(String key) {\n        rw.readLock().lock();                    // 多个读线程并发\n        try { return rules.get(key); } finally { rw.readLock().unlock(); }\n    }\n    void reload(Map<String, Rule> fresh) {\n        rw.writeLock().lock();                   // 写时独占\n        try { rules = new HashMap<>(fresh); } finally { rw.writeLock().unlock(); }\n    }\n}\n// 不要在持有读锁时调用 writeLock().lock()：锁升级会死锁"
   },
   "asks": [
-   "ReadWriteLock 适用场景？",
-   "能不能锁升级？",
-   "和 synchronized 比？",
-   "写饥饿怎么办？"
+   "读写锁适合什么场景？",
+   "读写锁的实现原理是什么？",
+   "什么是锁降级，为什么不支持锁升级？",
+   "读写锁有什么缺点？"
   ],
   "followups": [
    {
-    "q": "读锁之间互斥吗？",
-    "a": "不互斥，多个读可同时持有；与写互斥。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "为什么不支持锁升级？",
+    "a": "如果两个持有读锁的线程同时请求写锁，各自都要等待对方释放读锁，就会形成死锁。"
    },
    {
-    "q": "缓存一定要用读写锁吗？",
-    "a": "ConcurrentHashMap 等并发结构常常更合适；读写锁适合你自定义的互斥资源。"
+    "q": "写线程饥饿是怎么产生的？",
+    "a": "非公平模式下读线程不断获取读锁，读锁一直不释放干净，写线程长时间无法获取写锁。"
    },
    {
-    "q": "公平模式影响？",
-    "a": "公平可缓解写饥饿，但吞吐可能下降。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "读写锁一定比互斥锁快吗？",
+    "a": "不一定，读操作很短或写操作频繁时，维护读计数的开销会让读写锁的性能不如普通互斥锁。"
    }
   ],
   "answer": [
-   "总：读写锁适合读多写少，读共享写独占，注意降级可以、升级危险。",
-   "分：短临界区未必更快；可选公平；很多场景用并发集合更好。",
-   "实践：【结合你的项目】【待填：配置/缓存】用读写锁或【待填：CHM】。",
-   "总结：先证明读多写少且有共享结构，再上读写锁。结合项目说明取舍、验证方式与风险控制。关联知识点：读多写少、写独占读共享。"
+   "总：读写锁让读读并发、读写和写写互斥，适合读多写少且读操作较重的场景。",
+   "分：基于 AQS，state 高位记录读、低位记录写；支持锁降级不支持升级；可能有写饥饿；读极多时可考虑 StampedLock 或并发容器。",
+   "实践：【结合你的项目】说明本地规则缓存或配置表是否使用读写锁，以及读写比例和压测结果。",
+   "总结：使用读写锁前要确认读多写少且读操作有一定耗时，否则普通锁或并发容器更合适。"
   ],
   "pitfalls": [
-   "在读锁里直接申请写锁导致死锁。",
-   "不分析场景盲目替换 synchronized。",
-   "加分：提 StampedLock 乐观读。"
+   "在持有读锁时尝试获取写锁导致死锁。",
+   "写操作频繁的场景仍然使用读写锁。",
+   "加分：说明 state 高低 16 位的设计。"
   ]
  },
  "p-th4": {
   "principle": [
-   "ForkJoinPool 是面向「分治」的线程池：把大任务拆成子任务并行，用工作窃取（work-stealing）让空闲线程从别人的双端队列偷任务，提高多核利用率。RecursiveTask 有返回值，RecursiveAction 无返回值。Java 并行流默认用公共 ForkJoinPool.commonPool。",
-   "适合 CPU 密集、可拆分、子任务相对均匀的计算；不适合长时间阻塞 IO（会占满公共池影响全局）。自定义池可隔离。阈值（threshold）决定拆到多细。"
+   "ForkJoinPool 是 JDK 7 引入的线程池，专门用于执行可以递归拆分的任务，基于分治思想：大任务 fork 拆分成小任务并行执行，再 join 合并结果。任务通过继承 RecursiveTask（有返回值）或 RecursiveAction（无返回值）实现 compute 方法，当任务足够小时直接计算，否则拆分。",
+   "核心机制是工作窃取（work-stealing）：每个工作线程有自己的双端队列，新任务压入自己队列的头部并从头部取任务执行（后进先出，利于缓存局部性）；当某个线程的队列空了，它会从其他线程队列的尾部窃取任务执行。这样减少了线程间的竞争，并让负载自动均衡。",
+   "应用：parallelStream 和 CompletableFuture 默认使用的 ForkJoinPool.commonPool，并行度默认为 CPU 核数减一。注意事项：ForkJoinPool 适合 CPU 密集型、可拆分的计算任务，不适合阻塞 IO，在公共池中执行阻塞操作会让所有并行流和异步任务都受影响；拆分粒度要合适，太细会导致任务调度开销超过计算本身。需要阻塞时可以使用 ManagedBlocker，或者为 IO 任务使用独立的线程池。"
   ],
   "example": {
    "lang": "java",
-   "code": "class Sum extends RecursiveTask<Long> {\n  int[] a; int l,r;\n  protected Long compute() {\n    if (r-l <= 10000) { long s=0; for(int i=l;i<r;i++) s+=a[i]; return s; }\n    int m=(l+r)/2;\n    Sum left=new Sum(a,l,m), right=new Sum(a,m,r);\n    left.fork();\n    long rsum=right.compute();\n    return left.join()+rsum;\n  }\n}\nlong s = new ForkJoinPool().invoke(new Sum(arr,0,arr.length));\n// Arrays.parallelSort / parallelStream 也用 commonPool"
+   "code": "class SumTask extends RecursiveTask<Long> {\n    private final long[] arr; private final int lo, hi;\n    SumTask(long[] a, int lo, int hi) { this.arr = a; this.lo = lo; this.hi = hi; }\n    protected Long compute() {\n        if (hi - lo <= 10_000) {                  // 足够小直接计算\n            long s = 0; for (int i = lo; i < hi; i++) s += arr[i]; return s;\n        }\n        int mid = (lo + hi) >>> 1;\n        SumTask left = new SumTask(arr, lo, mid);\n        left.fork();                              // 异步执行左半部分\n        long right = new SumTask(arr, mid, hi).compute();\n        return left.join() + right;\n    }\n}\nlong total = new ForkJoinPool(8).invoke(new SumTask(data, 0, data.length));"
   },
   "asks": [
    "ForkJoinPool 是什么？",
-   "什么是工作窃取？",
-   "和普通线程池差别？",
-   "并行流要注意什么？"
+   "工作窃取算法是怎样的？",
+   "ForkJoinPool 和普通线程池有什么区别？",
+   "使用 ForkJoinPool 要注意什么？"
   ],
   "followups": [
    {
-    "q": "阻塞 IO 放并行流里会怎样？",
-    "a": "占用 commonPool 线程，可能拖慢其他并行计算，应换专用池或避免。"
+    "q": "为什么自己从头部取、窃取从尾部取？",
+    "a": "减少所有者线程和窃取线程之间的竞争，并且尾部通常是较早拆分出的大任务，窃取后可以继续拆分。"
    },
    {
-    "q": "fork 很多很小任务好吗？",
-    "a": "过细会增加调度开销，要用合适阈值。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "parallelStream 中执行 IO 有什么问题？",
+    "a": "会阻塞公共池中有限的线程，导致整个 JVM 中所有使用公共池的并行流和异步任务变慢。"
    },
    {
-    "q": "异常如何处理？",
-    "a": "在 compute 里捕获或通过 Future/任务结果上抛，需显式处理。"
+    "q": "拆分阈值怎么确定？",
+    "a": "通过压测确定，使每个子任务的计算量明显大于调度开销，常见做法是让任务数为并行度的若干倍。"
    }
   ],
   "answer": [
-   "总：ForkJoinPool 用分治+工作窃取跑可拆分计算，并行流默认也用它。",
-   "分：适合 CPU 分治；避免阻塞 IO 占公共池；控制任务粒度。",
-   "实践：【结合你的项目】【待填：计算】用【待填：并行流/自建池】。",
-   "总结：抓住工作窃取与 commonPool 风险就能答出区分度。"
+   "总：ForkJoinPool 基于分治和工作窃取，适合可递归拆分的 CPU 密集型任务。",
+   "分：RecursiveTask 和 RecursiveAction 拆分任务；每个线程有双端队列，自己从头部取，空闲时从他人尾部窃取；commonPool 被并行流和 CompletableFuture 共享；不适合阻塞 IO，拆分粒度要合适。",
+   "实践：【结合你的项目】说明是否在批量计算中使用过并行流或 ForkJoinPool，以及如何避免公共池被阻塞。",
+   "总结：ForkJoinPool 是并行计算的利器，但 IO 型任务要使用独立的普通线程池。"
   ],
   "pitfalls": [
-   "把 ForkJoin 说成普通固定线程池。",
-   "在 commonPool 里大做阻塞 IO。",
-   "加分：讲阈值与偷任务队列。"
+   "在 parallelStream 中调用远程接口或数据库。",
+   "拆分粒度过细，调度开销超过计算本身。",
+   "加分：解释工作窃取对缓存局部性的好处。"
   ]
  },
  "p-th5": {
   "principle": [
-   "Future 代表异步结果：submit 后可 get 阻塞取回，可 cancel。CompletableFuture 是增强版：支持 thenApply/thenCompose/thenCombine 等函数式编排，能组合多个异步，处理 exceptionally/handle，并可指定执行器。",
-   "注意 get 超时、异常封装为 CompletionException、避免在 commonPool 跑阻塞任务、循环里创建海量 CF。编排复杂时要想清线程落在哪个池。"
+   "Future 是 JDK 5 提供的异步结果句柄，通过 ExecutorService.submit 获得。它只能通过 get 阻塞等待结果（可以设置超时）、isDone 轮询状态、cancel 取消任务。缺点很明显：无法在结果完成时自动触发后续逻辑，多个 Future 之间无法组合，异常处理也只能在 get 时捕获 ExecutionException。",
+   "CompletableFuture（JDK 8）同时实现了 Future 和 CompletionStage，支持函数式的异步编排：thenApply 转换结果、thenAccept 消费结果、thenCompose 串联另一个异步任务、thenCombine 合并两个任务的结果、allOf 和 anyOf 等待多个任务；exceptionally、handle、whenComplete 处理异常；可以手动 complete 完成，JDK 9 增加了 orTimeout 和 completeOnTimeout 超时控制。",
+   "使用要点：supplyAsync 不指定线程池时使用 ForkJoinPool.commonPool，IO 任务必须传入自定义线程池；不带 Async 后缀的回调可能在完成任务的线程或调用线程上执行，带 Async 后缀的会提交到线程池；异常会被包装为 CompletionException；一定要设置超时，并在链路末端处理异常，否则错误会被静默吞掉。"
   ],
   "example": {
    "lang": "java",
-   "code": "ExecutorService es = Executors.newFixedThreadPool(4);\nFuture<Integer> f = es.submit(() -> calc());\nInteger v = f.get(1, TimeUnit.SECONDS);\n\nCompletableFuture<String> cf = CompletableFuture\n  .supplyAsync(() -> load(), es)\n  .thenApplyAsync(this::parse, es)\n  .exceptionally(ex -> \"fallback\");\nString s = cf.join();\n\nCompletableFuture.allOf(cf1, cf2).join();"
+   "code": "// Future：只能阻塞获取\nFuture<User> f = pool.submit(() -> userClient.get(uid));\nUser u = f.get(500, TimeUnit.MILLISECONDS);\n\n// CompletableFuture：编排 + 超时 + 降级\nCompletableFuture<User> uf = CompletableFuture.supplyAsync(() -> userClient.get(uid), ioPool);\nCompletableFuture<List<Order>> of = CompletableFuture.supplyAsync(() -> orderClient.list(uid), ioPool);\nUserView view = uf.thenCombine(of, UserView::new)\n    .orTimeout(800, TimeUnit.MILLISECONDS)\n    .exceptionally(ex -> UserView.degraded(uid))\n    .join();"
   },
   "asks": [
-   "Future 与 CompletableFuture 差别？",
-   "如何组合多个异步？",
-   "异常怎么处理？",
-   "踩过哪些坑？"
+   "Future 和 CompletableFuture 有什么区别？",
+   "Future 有哪些局限？",
+   "CompletableFuture 常用的编排方法有哪些？",
+   "使用 CompletableFuture 要注意什么？"
   ],
   "followups": [
    {
-    "q": "join 和 get 差别？",
-    "a": "join 不声明受检异常，失败时抛 CompletionException；get 抛 ExecutionException。"
+    "q": "thenApply 和 thenApplyAsync 有什么区别？",
+    "a": "thenApply 可能在完成前一阶段的线程或调用线程中执行，thenApplyAsync 会把回调提交到线程池执行。"
    },
    {
-    "q": "thenApply 和 thenApplyAsync ？",
-    "a": "前者默认在上一阶段线程继续；Async 会提交到池，避免阻塞传播。"
+    "q": "如何等待多个异步任务全部完成？",
+    "a": "使用 CompletableFuture.allOf 组合后 join，再分别获取各个任务的结果，并单独处理每个任务的异常。"
    },
    {
-    "q": "能不能在 CF 里再 get 另一个 Future？",
-    "a": "小心死锁与线程占满；应用 thenCompose 串联。"
+    "q": "Future.cancel 能中断正在执行的任务吗？",
+    "a": "传入 true 时会尝试中断执行线程，但任务代码需要响应中断才能真正停止，否则仍会继续执行。"
    }
   ],
   "answer": [
-   "总：Future 是异步结果句柄，CompletableFuture 可函数式编排组合与异常恢复。",
-   "分：指定执行器；用 allOf/anyOf；注意超时与 commonPool；用 thenCompose 扁平化依赖。",
-   "实践：【结合你的项目】并行调【待填】个下游，用 CF 组合，超时【待填】。",
-   "总结：异步编排要清楚任务跑在哪个线程池。结合项目说明取舍、验证方式与风险控制。"
+   "总：Future 只能阻塞获取结果，CompletableFuture 支持回调、组合、异常处理和超时等完整的异步编排能力。",
+   "分：Future 无法组合和自动回调；CompletableFuture 用 thenApply、thenCompose、thenCombine、allOf 编排；exceptionally 和 handle 处理异常；需要自定义线程池和超时。",
+   "实践：【结合你的项目】说明聚合接口如何用 CompletableFuture 并行调用多个下游，以及超时和降级策略。",
+   "总结：新代码优先使用 CompletableFuture，并始终明确线程池、超时和异常处理。"
   ],
   "pitfalls": [
-   "到处 get 导致阻塞。",
-   "不设超时。",
-   "加分：讲 thenCompose 与异常恢复。"
+   "IO 任务使用默认的公共线程池。",
+   "不设置超时导致调用线程无限等待。",
+   "加分：说明回调在哪个线程执行。"
   ]
  },
  "p-th7": {
   "principle": [
-   "线程池的工作队列缓冲任务：有界队列提供背压并触发扩到 max 与拒绝策略；无界队列可能堆积 OOM 且 max 失效。队列类型决定调度行为（公平、优先级、直接交接）。",
-   "进一步说：缓冲任务；队列类型影响拒绝时机；有界防 OOM。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「BlockingQueue 在线程池中的作用？」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "BlockingQueue 是线程池中暂存任务的工作队列。ThreadPoolExecutor 提交任务的流程：线程数小于核心线程数时创建新线程执行；否则尝试把任务放入队列；队列满了且线程数小于最大线程数时创建非核心线程；都满了就执行拒绝策略。工作线程通过队列的 take 或带超时的 poll 获取任务，非核心线程在 keepAliveTime 内取不到任务就退出。",
+   "常见队列：ArrayBlockingQueue 有界数组队列，容量固定，单锁；LinkedBlockingQueue 链表队列，不指定容量时默认为 Integer.MAX_VALUE（近似无界），读写使用两把锁；SynchronousQueue 不存储元素，每次插入必须等待一个取出，使任务直接交给线程，配合较大的最大线程数（如 CachedThreadPool）；PriorityBlockingQueue 按优先级排序；DelayQueue 用于延时任务（ScheduledThreadPoolExecutor 使用类似的延迟队列）。",
+   "选择队列直接影响线程池行为：无界队列会使最大线程数失效，任务无限堆积可能导致 OOM，这也是 Executors.newFixedThreadPool 不推荐使用的原因；队列太小会频繁触发扩容和拒绝。生产中应使用有界队列，根据任务耗时和可接受的排队延迟确定容量，并监控队列长度。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// BlockingQueue 在线程池中的作用？\n// keypoints: 缓冲任务; 队列类型影响拒绝时机; 有界防 OOM\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "ThreadPoolExecutor pool = new ThreadPoolExecutor(\n    8, 32, 60, TimeUnit.SECONDS,\n    new ArrayBlockingQueue<>(1000),                 // 有界队列\n    new ThreadFactoryBuilder().setNameFormat(\"order-%d\").build(),\n    new ThreadPoolExecutor.CallerRunsPolicy());     // 满了由调用方执行，形成背压\n\n// 监控\nlog.info(\"active={} queue={} completed={}\",\n    pool.getActiveCount(), pool.getQueue().size(), pool.getCompletedTaskCount());"
   },
   "asks": [
-   "BlockingQueue 在线程池中的作用？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "BlockingQueue 在线程池中起什么作用？",
+   "线程池提交任务的流程是怎样的？",
+   "常见的阻塞队列有哪些？",
+   "为什么不推荐使用无界队列？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "为什么队列满了才创建非核心线程？",
+    "a": "线程池设计优先用队列缓冲任务、复用核心线程，只有在队列也装不下时才扩充线程应对突发流量。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "SynchronousQueue 适合什么场景？",
+    "a": "适合任务需要立即被执行、不希望排队的场景，通常配合较大的最大线程数，但要防止线程数暴涨。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "队列容量怎么设置？",
+    "a": "根据可接受的最大排队等待时间乘以处理速率估算，并结合压测和队列长度监控进行调整。"
    }
   ],
   "answer": [
-   "总：线程池的工作队列缓冲任务：有界队列提供背压并触发扩到 max 与拒绝策略；无界队列可能堆积 OOM 且 max 失效。队列类型决定调度行为（公平、优先级、直接交接）。",
-   "分：缓冲任务；队列类型影响拒绝时机；有界防 OOM。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：缓冲任务、队列类型影响拒绝时机。关联知识点：缓冲任务、队列类型影响拒绝时机。关联知识点：缓冲任务、队列类型影响拒绝时机。关联知识点：缓冲任务、队列类型影响拒绝时机。关联知识点：缓冲任务、队列类型影响拒绝时机。"
+   "总：BlockingQueue 是线程池的任务缓冲区，队列类型和容量决定了线程池的扩容和拒绝行为。",
+   "分：提交顺序为核心线程、队列、非核心线程、拒绝策略；常见队列有 ArrayBlockingQueue、LinkedBlockingQueue、SynchronousQueue、优先级和延迟队列；无界队列使最大线程数失效并有 OOM 风险。",
+   "实践：【结合你的项目】说明核心线程池的队列类型、容量和拒绝策略，以及队列积压的监控告警。",
+   "总结：生产环境使用有界队列加明确的拒绝策略，并持续监控队列长度。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "使用 Executors.newFixedThreadPool 的默认无界队列。",
+   "以为线程数先扩到最大值再放入队列。",
+   "加分：说明 CallerRunsPolicy 的背压作用。"
   ]
  },
  "p2-8": {
   "principle": [
-   "shutdown 停止接收新任务，已提交继续；shutdownNow 尝试中断执行中任务并返回未执行列表。要理解中断响应与 awaitTermination。",
-   "进一步说：shutdown 不接新任务；shutdownNow 尝试中断；在途任务处理差异。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「线程池 shutdown 与 shutdownN」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "shutdown()：线程池进入 SHUTDOWN 状态，不再接受新任务（新提交会触发拒绝策略），但会继续执行已经在运行的任务以及队列中等待的任务，全部执行完后线程池终止。它不会阻塞调用线程。",
+   "shutdownNow()：线程池进入 STOP 状态，不再接受新任务，尝试中断所有正在执行任务的线程，并清空队列，返回尚未执行的任务列表。中断只是发出信号，如果任务代码不响应中断（不检查中断标志、捕获 InterruptedException 后吞掉），任务仍会继续运行到结束。",
+   "优雅关闭的标准做法：先调用 shutdown，再调用 awaitTermination 等待一段时间；超时后调用 shutdownNow 强制中断，并再等待一次；如果当前线程被中断，也要调用 shutdownNow 并恢复中断状态。Spring 管理的 ThreadPoolTaskExecutor 可以配置 waitForTasksToCompleteOnShutdown 和 awaitTerminationSeconds。对于队列中未执行的重要任务，应持久化或依赖 MQ 重新投递，避免停机丢失。线程池状态依次为 RUNNING、SHUTDOWN、STOP、TIDYING、TERMINATED。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// 线程池 shutdown 与 shutdownNow？\n// keypoints: shutdown 不接新任务; shutdownNow 尝试中断; 在途任务处理差异\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "void gracefulShutdown(ExecutorService pool) {\n    pool.shutdown();                                       // 不再接收新任务\n    try {\n        if (!pool.awaitTermination(30, TimeUnit.SECONDS)) {\n            List<Runnable> dropped = pool.shutdownNow();   // 强制中断\n            log.warn(\"dropped {} tasks\", dropped.size());\n            pool.awaitTermination(10, TimeUnit.SECONDS);\n        }\n    } catch (InterruptedException e) {\n        pool.shutdownNow();\n        Thread.currentThread().interrupt();                // 恢复中断状态\n    }\n}"
   },
   "asks": [
-   "线程池 shutdown 与 shutdownNow？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "shutdown 和 shutdownNow 有什么区别？",
+   "如何优雅地关闭线程池？",
+   "shutdownNow 一定能立即停止任务吗？",
+   "线程池有哪些状态？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "调用 shutdown 后提交任务会怎样？",
+    "a": "线程池已不在运行状态，新提交的任务会交给拒绝策略处理，默认抛出 RejectedExecutionException。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "为什么捕获 InterruptedException 后要恢复中断状态？",
+    "a": "捕获异常会清除中断标志，恢复后上层代码才能感知到中断请求并做出正确处理。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "服务停机时队列中的任务如何不丢失？",
+    "a": "重要任务应先持久化到数据库或 MQ，停机时未执行的任务可以通过重新投递或启动时补偿来恢复。"
    }
   ],
   "answer": [
-   "总：shutdown 停止接收新任务，已提交继续；shutdownNow 尝试中断执行中任务并返回未执行列表。要理解中断响应与 awaitTermination。",
-   "分：shutdown 不接新任务；shutdownNow 尝试中断；在途任务处理差异。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：shutdown 不接新任务、shutdownNow 尝试中断。关联知识点：shutdown 不接新任务、shutdownNow 尝试中断。关联知识点：shutdown 不接新任务、shutdownNow 尝试中断。"
+   "总：shutdown 停止接收新任务但执行完已有任务，shutdownNow 中断运行中的任务并返回未执行的任务。",
+   "分：shutdown 后提交会被拒绝；shutdownNow 依赖任务响应中断；优雅关闭用 shutdown 加 awaitTermination，超时再 shutdownNow；重要任务要持久化防丢失。",
+   "实践：【结合你的项目】说明服务发布停机时线程池和 MQ 消费者的优雅关闭顺序。",
+   "总结：优雅关闭要兼顾等待任务完成和设定超时上限，并保证关键任务可恢复。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "只调用 shutdownNow 却不处理返回的未执行任务。",
+   "任务代码吞掉 InterruptedException 导致无法停止。",
+   "加分：说明线程池五种状态的转换。"
   ]
  },
  "p2-9": {
@@ -779,46 +767,44 @@
  },
  "p2-49": {
   "principle": [
-   "ThreadLocal 子线程默认不继承；InheritableThreadLocal 可传但线程池场景会脏数据，应用 TransmittableThreadLocal 或显式传参。",
-   "用完 remove 防泄漏。",
-   "进一步说：InheritableThreadLocal；线程池用 TTL；阿里 TransmittableThreadLocal。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「ThreadLocal 子线程传值？」答成清单罗列。"
+   "ThreadLocal 的值存放在当前线程的 ThreadLocalMap 中，子线程无法直接读取父线程的 ThreadLocal。InheritableThreadLocal 解决了这个问题：创建子线程时，Thread 的构造方法会把父线程 inheritableThreadLocals 中的值复制一份到子线程，因此新建线程能拿到父线程的上下文，如 traceId、用户信息。",
+   "但它在线程池中会失效：线程池中的线程是预先创建或复用的，值只在线程创建时复制一次，之后提交的任务拿到的是线程创建时的旧值，甚至是其他请求遗留的值，导致上下文错乱。另外复制是浅拷贝，父子线程共享同一个可变对象时修改会互相影响。",
+   "解决方案：阿里开源的 TransmittableThreadLocal（TTL），在任务提交时捕获当前上下文，执行前设置到工作线程，执行后恢复原值，需要用 TtlRunnable 包装任务或用 TtlExecutors 包装线程池，也可以使用 Java Agent 自动增强；Spring 的 TaskDecorator 可以在提交时复制 MDC 和安全上下文；OpenTelemetry 用 Context.wrap 传递追踪上下文。Java 21 的 ScopedValue（预览）提供了不可变、有作用域的替代方案，配合结构化并发使用。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// ThreadLocal 子线程传值？\n// keypoints: InheritableThreadLocal; 线程池用 TTL; 阿里 TransmittableThreadLocal\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "// TTL：线程池场景下正确传递上下文\nstatic final TransmittableThreadLocal<String> TRACE = new TransmittableThreadLocal<>();\nExecutorService pool = TtlExecutors.getTtlExecutorService(Executors.newFixedThreadPool(8));\nTRACE.set(\"trace-123\");\npool.submit(() -> log.info(\"trace={}\", TRACE.get()));   // 输出 trace-123\n\n// Spring：TaskDecorator 复制 MDC\nexecutor.setTaskDecorator(r -> {\n    Map<String, String> ctx = MDC.getCopyOfContextMap();\n    return () -> { try { if (ctx != null) MDC.setContextMap(ctx); r.run(); } finally { MDC.clear(); } };\n});"
   },
   "asks": [
-   "ThreadLocal 子线程传值？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "子线程如何获取父线程的 ThreadLocal 值？",
+   "InheritableThreadLocal 的原理是什么？",
+   "为什么 InheritableThreadLocal 在线程池中失效？",
+   "线程池场景下如何传递上下文？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "TTL 是怎么解决线程池问题的？",
+    "a": "在提交任务时捕获父线程的上下文快照，任务执行前设置到工作线程，执行完毕后恢复工作线程原有的值。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "为什么任务执行后要清理或恢复上下文？",
+    "a": "线程会被复用，不清理的话下一个任务可能读到上一个请求遗留的用户或 traceId，造成数据错乱。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "ScopedValue 和 ThreadLocal 有什么区别？",
+    "a": "ScopedValue 不可变且只在绑定的作用域内有效，自动随作用域结束失效，更适合虚拟线程和结构化并发。"
    }
   ],
   "answer": [
-   "总：ThreadLocal 子线程默认不继承；InheritableThreadLocal 可传但线程池场景会脏数据，应用 TransmittableThreadLocal 或显式传参。",
-   "分：InheritableThreadLocal；线程池用 TTL；阿里 TransmittableThreadLocal。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：InheritableThreadLocal、线程池用 TTL。关联知识点：InheritableThreadLocal、线程池用 TTL。关联知识点：InheritableThreadLocal、线程池用 TTL。"
+   "总：InheritableThreadLocal 在创建子线程时复制父线程的值，但线程池复用线程时会失效。",
+   "分：复制只在线程创建时发生且为浅拷贝；线程池中会读到旧值或错乱值；使用 TTL、TaskDecorator 或 Context.wrap 在提交时捕获、执行时设置、结束后恢复；Java 21 有 ScopedValue。",
+   "实践：【结合你的项目】说明异步任务中 traceId 或登录用户信息是如何传递的，以及是否遇到过上下文串号。",
+   "总结：线程池中传递上下文必须在任务提交时捕获，执行完毕后清理，不能依赖线程创建时的继承。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "在线程池中使用 InheritableThreadLocal 传递请求上下文。",
+   "任务结束后不清理上下文导致串号。",
+   "加分：说明 TTL 的捕获、重放、恢复过程。"
   ]
  },
  "j-c9": {
