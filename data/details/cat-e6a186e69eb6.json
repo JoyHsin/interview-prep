@@ -257,46 +257,44 @@
  },
  "a-f7": {
   "principle": [
-   "Dify/DeerFlow 与 Java 集成常见路径：Java 提供工具/HTTP/MCP 供编排调用；或 Java 调其 API 发起会话。关键是鉴权、超时、幂等、审计放在 Java 服务，平台只做编排。",
-   "结合你接 DeerFlow/Dify 的经验讲边界。",
-   "进一步说：HTTP/SSE API 网关；鉴权与租户头；异步任务回调。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「框架」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「Dify / DeerFlow 如何与 Java」答成清单罗列。"
+   "Dify 是低代码的大模型应用开发平台，提供可视化的工作流编排、知识库、Agent 和提示词管理；DeerFlow 是字节开源的多 Agent 深度研究框架，基于 LangGraph，擅长搜索、分析并生成研究报告。它们通常用于快速构建 AI 能力，而 Java 后端负责核心业务系统、用户权限和数据，两者需要集成。",
+   "集成方式一是 Java 后端调用 AI 平台：Dify 的应用发布后提供 REST API（如 chat-messages、workflows/run），支持阻塞和流式（SSE）两种模式，Java 端通过 WebClient 调用并把流式结果透传给前端；DeerFlow 可以作为独立的 Python 服务部署，通过其 HTTP 接口提交研究任务，由于耗时较长应采用异步任务加回调或轮询。Java 后端负责鉴权、限流、计量和审计，前端不直接接触 AI 平台的 API Key。",
+   "集成方式二是 AI 平台调用 Java 后端：把业务能力（查询订单、库存、客户信息）封装为 HTTP 接口，在 Dify 中注册为自定义工具（通过 OpenAPI schema）或 HTTP 节点，也可以实现为 MCP 服务供 Agent 调用；这些接口要做身份认证和权限校验，确保 AI 只能以当前用户的权限访问数据，并对写操作进行确认和幂等处理。此外还要考虑：用户身份如何在 Java 与 AI 平台之间传递（通过 inputs 或 user 字段），会话 ID 的映射，超时与降级（AI 平台不可用时的兜底方案），以及数据合规（敏感数据是否允许发送给平台所使用的模型）。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// Dify / DeerFlow 如何与 Java 后端集成？\n// keypoints: HTTP/SSE API 网关; 鉴权与租户头; 异步任务回调\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "// Java 调用 Dify 应用（流式），透传给前端\npublic Flux<String> chat(String userId, String convId, String query) {\n    return webClient.post().uri(\"/v1/chat-messages\")\n        .header(\"Authorization\", \"Bearer \" + difyAppKey)          // Key 只在后端\n        .bodyValue(Map.of(\"inputs\", Map.of(\"dept\", userService.dept(userId)),\n                          \"query\", query, \"user\", userId,\n                          \"conversation_id\", convId, \"response_mode\", \"streaming\"))\n        .retrieve().bodyToFlux(String.class)\n        .timeout(Duration.ofSeconds(60))\n        .onErrorResume(e -> Flux.just(\"{\\\"event\\\":\\\"error\\\",\\\"answer\\\":\\\"服务繁忙，请稍后再试\\\"}\"));\n}\n// 反向：订单查询接口以 OpenAPI 注册为 Dify 自定义工具，按调用用户鉴权"
   },
   "asks": [
-   "Dify/DeerFlow 怎么和 Java 集成？",
-   "鉴权放哪？",
-   "你怎么落地的？",
-   "平台与自研边界？"
+   "Dify 和 DeerFlow 如何与 Java 后端集成？",
+   "Java 如何调用 Dify 的应用？",
+   "如何让 Dify 的工作流调用 Java 业务接口？",
+   "集成时需要注意哪些安全问题？"
   ],
   "followups": [
    {
-    "q": "只在平台里写业务规则行吗？",
-    "a": "核心鉴权、事务与审计应留在 Java，平台适合编排与快速迭代。"
+    "q": "为什么不让前端直接调用 Dify？",
+    "a": "直接调用会暴露 API Key，并且无法在服务端统一做鉴权、限流、计量和审计，应通过 Java 后端代理。"
    },
    {
-    "q": "MCP 还是 HTTP？",
-    "a": "看生态与标准化需求；都要统一鉴权与超时。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "DeerFlow 的长任务如何集成？",
+    "a": "提交任务后立即返回任务 ID，后台异步执行，通过回调、轮询或 WebSocket 推送进度和最终报告。"
    },
    {
-    "q": "如何谈你的项目？",
-    "a": "讲清你接了哪些节点、超时重试与权限怎么做，而不是只报产品名。"
+    "q": "Java 接口暴露给 AI 平台调用时如何保证安全？",
+    "a": "使用独立的服务凭证加用户身份传递，按用户权限校验数据访问，写操作需要确认并做幂等处理。"
    }
   ],
   "answer": [
-   "总：Dify/DeerFlow 与 Java 集成常见路径：Java 提供工具/HTTP/MCP 供编排调用；或 Java 调其 API 发起会话。关键是鉴权、超时、幂等、审计放在 J。",
-   "分：HTTP/SSE API 网关；鉴权与租户头；异步任务回调。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：HTTP/SSE API 网关、鉴权与租户头。关联知识点：HTTP/SSE API 网关、鉴权与租户头。关联知识点：HTTP/SSE API 网关、鉴权与租户头。"
+   "总：Java 后端与 Dify、DeerFlow 的集成是双向的：Java 调用平台的 AI 能力，平台调用 Java 的业务能力。",
+   "分：Java 通过 REST 和 SSE 调用 Dify 应用，DeerFlow 长任务异步化；业务接口以 OpenAPI 工具、HTTP 节点或 MCP 服务暴露给平台；Java 统一负责鉴权、限流、计量和审计；传递用户身份、映射会话、设置超时降级并注意数据合规。",
+   "实践：【结合你的项目】说明你们如何把 Dify 工作流接入业务系统，用户身份如何传递，以及平台故障时的降级方案。",
+   "总结：AI 平台负责快速编排智能能力，Java 后端守住权限、数据和稳定性的边界。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "在前端代码中直接暴露 AI 平台的 API Key。",
+   "业务接口供 AI 调用时使用高权限账号而不校验用户权限。",
+   "加分：说明会话 ID 和用户身份在两个系统之间的映射。"
   ]
  },
  "a-f8": {
@@ -384,48 +382,44 @@
  },
  "x-a5": {
   "principle": [
-   "Spring AI Advisor 链像拦截器：在模型调用前后插入逻辑，如检索增强、日志、敏感词、记忆。顺序可组合，保持单一职责。",
-   "进一步说：请求管道拦截；RAG/记忆/安全；类似拦截器。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「框架」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「Spring AI Advisor 链做什么？」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "Spring AI 的 Advisor 是围绕 ChatClient 调用的拦截器链，类似于 Spring MVC 的拦截器或 Servlet 过滤器。每个 Advisor 可以在请求发送给模型之前修改请求（添加系统提示、注入上下文、改写用户问题），在收到响应之后处理结果（记录日志、校验输出、后处理），也可以直接短路返回而不调用模型。Advisor 同时支持同步调用（CallAdvisor）和流式调用（StreamAdvisor），通过 getOrder 决定执行顺序。",
+   "内置的常用 Advisor：MessageChatMemoryAdvisor 和 PromptChatMemoryAdvisor 负责从 ChatMemory 中读取会话历史并加入请求，响应后再写回记忆，实现多轮对话；QuestionAnswerAdvisor 和 RetrievalAugmentationAdvisor 负责 RAG，根据用户问题检索向量库，把相关文档注入提示中，并支持元数据过滤；SafeGuardAdvisor 根据敏感词拦截请求；SimpleLoggerAdvisor 记录请求和响应便于调试。",
+   "自定义 Advisor 可以实现横切关注点：内容安全审核、敏感信息脱敏、语义缓存（命中缓存时直接返回）、token 计量和配额检查、按租户注入上下文、输出格式校验和重试等。把这些逻辑放在 Advisor 中，业务代码只需要调用 chatClient.prompt().user(q).call()，保持简洁，各项能力可以按需组合和复用。需要注意 Advisor 的顺序：例如安全审核应该在最外层，记忆应该在 RAG 之前或之后要根据需求设计；通过 advisors 参数可以在单次调用时传入会话 ID、过滤条件等参数。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// Spring AI Advisor 链做什么？\n// keypoints: 请求管道拦截; RAG/记忆/安全; 类似拦截器\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "public class PiiMaskAdvisor implements CallAdvisor {\n    public ChatClientResponse adviseCall(ChatClientRequest req, CallAdvisorChain chain) {\n        ChatClientRequest masked = req.mutate()\n            .prompt(req.prompt().augmentUserMessage(u -> u.mutate().text(PiiMasker.mask(u.getText())).build()))\n            .build();                                         // 调用模型前脱敏\n        return chain.nextCall(masked);\n    }\n    public String getName() { return \"pii-mask\"; }\n    public int getOrder() { return Ordered.HIGHEST_PRECEDENCE; }   // 最先执行\n}\nChatClient client = ChatClient.builder(model).defaultAdvisors(\n    new PiiMaskAdvisor(),\n    MessageChatMemoryAdvisor.builder(memory).build(),\n    QuestionAnswerAdvisor.builder(vectorStore).build(),\n    new SimpleLoggerAdvisor()).build();"
   },
   "asks": [
-   "Spring AI Advisor 链做什么？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "Spring AI 的 Advisor 链有什么作用？",
+   "有哪些内置的 Advisor？",
+   "如何自定义一个 Advisor？",
+   "Advisor 的执行顺序如何确定？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "Advisor 和直接在业务代码中写逻辑有什么区别？",
+    "a": "Advisor 把记忆、检索、审核等横切逻辑从业务代码中分离出来，可以复用和组合，业务调用保持简洁。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "如何在单次调用中传递会话 ID？",
+    "a": "调用时通过 advisors 方法设置参数，例如传入会话 ID 常量和值，记忆 Advisor 会读取该参数加载对应的历史。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "Advisor 能否不调用模型直接返回？",
+    "a": "可以，例如语义缓存或安全拦截的 Advisor 可以不调用下一个链节点，直接构造并返回响应。"
    }
   ],
   "answer": [
-   "总：Spring AI Advisor 链像拦截器：在模型调用前后插入逻辑，如检索增强、日志、敏感词、记忆。顺序可组合，保持单一职责。",
-   "分：请求管道拦截；RAG/记忆/安全；类似拦截器。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：请求管道拦截、RAG/记忆/安全。关联知识点：请求管道拦截、RAG/记忆/安全。关联知识点：请求管道拦截、RAG/记忆/安全。关联知识点：请求管道拦截、RAG/记忆/安全。关联知识点：请求管道拦截、RAG/记忆/安全。"
+   "总：Advisor 是 ChatClient 调用的拦截器链，用于在调用模型前后统一处理记忆、检索、安全和日志等横切逻辑。",
+   "分：支持同步和流式，按 order 排序；内置记忆、RAG、安全和日志 Advisor；可自定义脱敏、缓存、计量、格式校验等；可短路返回；单次调用通过参数传递会话 ID 和过滤条件；需要合理设计顺序。",
+   "实践：【结合你的项目】说明你们的 ChatClient 配置了哪些 Advisor、执行顺序如何安排，以及自定义 Advisor 实现了什么功能。",
+   "总结：Advisor 让 AI 调用的增强逻辑像 Web 拦截器一样可插拔、可组合、可复用。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "不考虑顺序，导致审核在脱敏之前记录了原始敏感信息。",
+   "把所有增强逻辑写在业务方法中，难以复用和测试。",
+   "加分：说明 Advisor 短路返回在缓存和安全中的应用。"
   ]
  },
  "a-f9": {
