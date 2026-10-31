@@ -312,78 +312,86 @@
  },
  "j-t5": {
   "principle": [
-   "工具：jmap/jcmd heap_dump、MAT/JVisualVM、async-profiler。嫌疑：无界缓存、监听未注销、ThreadLocal 未 remove、类加载泄漏。"
+   "内存泄漏指对象已经不再使用却仍被引用，GC 无法回收，表现为老年代使用率在每次 Full GC 后仍持续上升，最终 OOM。排查第一步是在 JVM 参数中加 -XX:+HeapDumpOnOutOfMemoryError 和 -XX:HeapDumpPath，保证 OOM 时自动保留现场。",
+   "常用工具：jstat -gcutil 观察各代使用率和 GC 次数，确认是否泄漏；jmap -histo:live 查看对象数量和大小排名，快速发现异常增长的类；jmap -dump 或 jcmd GC.heap_dump 生成堆快照（会触发停顿，线上要摘流量）；用 MAT（Eclipse Memory Analyzer）打开 dump，查看 Dominator Tree 找到占用最大的对象，通过 Path to GC Roots 找出是谁持有引用，Leak Suspects 报告给出泄漏嫌疑；也可以用 JProfiler、VisualVM、Arthas 的 heapdump 命令。",
+   "常见泄漏来源：无上限的本地缓存或静态集合、ThreadLocal 在线程池中未 remove、注册的监听器或回调未注销、未关闭的连接和流、类加载器泄漏（热部署时）以及大对象被长生命周期对象引用。"
   ],
   "example": {
    "lang": "bash",
-   "code": "jcmd <pid> GC.heap_dump /tmp/h.hprof"
+   "code": "jstat -gcutil <pid> 1000 10              # 老年代 O 列 Full GC 后仍上涨 -> 疑似泄漏\njmap -histo:live <pid> | head -20        # 对象数量/大小排名\njcmd <pid> GC.heap_dump /tmp/heap.hprof  # 生成 dump（先摘流量）\n# JVM 参数\n-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/dump/\n# MAT：Dominator Tree -> Path to GC Roots(exclude weak refs) -> Leak Suspects"
   },
   "asks": [
-   "内存泄漏工具？",
-   "嫌疑点？",
-   "MAT？",
-   "堆外？"
+   "内存泄漏用什么工具排查？",
+   "如何确认是内存泄漏而不是内存不够？",
+   "MAT 怎么分析堆 dump？",
+   "常见的内存泄漏原因有哪些？"
   ],
   "followups": [
    {
-    "q": "支配树？",
-    "a": "谁留住大对象。"
+    "q": "线上生成堆 dump 要注意什么？",
+    "a": "dump 会造成长时间停顿并占用大量磁盘，应先把实例从负载均衡摘除，并确认磁盘空间充足。"
    },
    {
-    "q": "对比 dump？",
-    "a": "前后对比。"
+    "q": "Dominator Tree 有什么用？",
+    "a": "它显示每个对象被回收后能释放的内存总量，能快速找到真正占用大量内存的对象。"
    },
    {
-    "q": "生产？",
-    "a": "无损或摘流。"
+    "q": "ThreadLocal 为什么会泄漏？",
+    "a": "线程池线程长期存活，值被线程的 ThreadLocalMap 强引用，不调用 remove 就一直无法回收。"
    }
   ],
   "answer": [
-   "总：dump+分析器。",
-   "分：常见泄漏源。",
-   "实践：【结合你的项目】。",
-   "总结：工具链要熟。"
+   "总：排查内存泄漏的核心是保留堆 dump，再用 MAT 找到大对象及其 GC Roots 引用链。",
+   "分：jstat 判断老年代是否持续增长；jmap histo 看对象排名；jcmd 或 jmap 生成 dump；MAT 用 Dominator Tree、引用链和泄漏报告定位；常见原因是缓存、ThreadLocal、监听器和未关闭资源。",
+   "实践：【结合你的项目】讲一次通过 MAT 定位到无上限缓存或 ThreadLocal 泄漏的经历。",
+   "总结：先确认泄漏、再保留现场、最后找引用链，按这个顺序排查效率最高。"
   ],
   "pitfalls": [
-   "只会 top。"
+   "没有开启 HeapDumpOnOutOfMemoryError，OOM 后失去现场。",
+   "在承接流量的实例上直接执行 dump。",
+   "加分：会用 Path to GC Roots 排除弱引用。"
   ]
  },
  "p-t2": {
   "principle": [
-   "CPU+Load 高：先分 user/sys/io wait；user 高看线程热点与 GC；io wait 看盘；load 高但 CPU 低可能大量 runnable 等内核或僵尸线程。工具：top、pidstat、jstack、perf。"
+   "Load（系统负载）表示处于运行和不可中断等待状态的平均进程数，它不仅反映 CPU，也包含等待磁盘 IO 的进程。所以排查前先用 top 区分：如果 us（用户态 CPU）高，说明是应用计算或 GC 消耗；如果 wa（IO 等待）高而 CPU 使用率不高，Load 高是由 IO 引起的；sy 高可能是线程过多导致上下文切换或系统调用频繁。",
+   "CPU 高时优先看线程栈热点：top -Hp pid 找到 CPU 最高的线程，把线程 ID 转换为十六进制，在 jstack 输出中找到对应 nid 的线程栈；连续多次 jstack 对比，或使用 Arthas thread -n 和火焰图，能定位到死循环、正则回溯、大量序列化、加解密等热点代码。",
+   "同时检查 GC：jstat -gcutil 如果显示 Full GC 频繁，CPU 主要被 GC 线程占用，根因是内存问题，要转向内存排查。IO 高则用 iostat、pidstat -d 找到读写最多的进程，可能是日志打印过多、磁盘满、swap 等。最后结合发布记录和流量变化判断是代码变更还是流量突增。"
   ],
   "example": {
    "lang": "bash",
-   "code": "top -Hp <pid>; vmstat 1; iostat -x 1"
+   "code": "top                                  # 看 us / sy / wa\ntop -Hp <pid>                        # CPU 最高的线程，如 12345\nprintf '%x\\n' 12345                  # -> 3039\njstack <pid> | grep -A 30 'nid=0x3039'\njstat -gcutil <pid> 1000 5           # FGC 是否频繁\nvmstat 1 ; iostat -x 1               # 上下文切换、IO 等待"
   },
   "asks": [
-   "CPU Load 都高看什么？",
-   "区分？",
-   "GC？",
-   "IO？"
+   "CPU 和 Load 都高时先看什么？",
+   "Load 高一定是 CPU 问题吗？",
+   "如何定位占用 CPU 最高的代码？",
+   "GC 导致的 CPU 高如何判断？"
   ],
   "followups": [
    {
-    "q": "Load？",
-    "a": "可运行队列长度。"
+    "q": "为什么要多次 jstack？",
+    "a": "单次快照可能刚好抓到偶然状态，连续多次都出现在同一段代码的线程栈才是真正的热点。"
    },
    {
-    "q": "Steal？",
-    "a": "虚拟化抢占。"
+    "q": "sy 很高说明什么？",
+    "a": "通常说明线程过多导致频繁上下文切换，或者有大量系统调用，如频繁的小 IO 和锁竞争。"
    },
    {
-    "q": "火焰图？",
-    "a": "最直观。"
+    "q": "Load 高但 CPU 不高怎么查？",
+    "a": "重点看 IO 等待，用 iostat 和 pidstat 找出读写磁盘多的进程，检查日志量、磁盘空间和 swap。"
    }
   ],
   "answer": [
-   "总：先分类再工具下钻。",
-   "分：热点栈与 IO。",
-   "实践：排障清单。",
-   "总结：指标交叉验证。"
+   "总：CPU 和 Load 都高时先用 top 区分用户态、内核态和 IO 等待，再分别定位线程热点、GC 或 IO。",
+   "分：us 高看线程栈和火焰图；Full GC 频繁则转内存排查；wa 高看磁盘 IO；sy 高看线程数和上下文切换；结合发布和流量变化判断根因。",
+   "实践：【结合你的项目】讲一次通过 top -Hp 和 jstack 定位到死循环或正则回溯的故障。",
+   "总结：先分类再深入，避免一上来就盲目 dump 和重启而丢掉现场。"
   ],
   "pitfalls": [
-   "只看 Load 重启。"
+   "把 Load 高直接等同于 CPU 不够用。",
+   "只抓一次 jstack 就下结论。",
+   "加分：会用火焰图定位热点方法。"
   ]
  }
 }

@@ -470,154 +470,170 @@
  },
  "r-j2": {
   "principle": [
-   "Java 21：Record Patterns 在 switch/instanceof 解构 record；Sequenced Collections 统一 List/Deque/LinkedHashSet 等有序集合的 getFirst/getLast/reversed。"
+   "Record Patterns（Java 21 正式）：可以在 instanceof 和 switch 中直接解构 record 的组件。例如 if (obj instanceof Point(int x, int y)) 直接得到 x 和 y，还支持嵌套解构。配合 sealed 接口和 switch 模式匹配，编译器能检查是否覆盖了所有子类型，减少遗漏分支；还可以使用 when 子句添加条件。这让用代数数据类型建模业务（如支付结果、事件类型）变得简洁安全。",
+   "Sequenced Collections（Java 21）：新增 SequencedCollection、SequencedSet、SequencedMap 接口，为有明确顺序的集合统一提供 getFirst()、getLast()、addFirst()、addLast()、removeFirst()、removeLast() 和 reversed()。以前获取 List 最后一个元素要写 list.get(list.size() - 1)，获取 LinkedHashSet 的最后一个元素甚至要遍历；现在 List、Deque、LinkedHashSet、LinkedHashMap 等都有统一的 API，reversed() 返回的是视图而不是拷贝。",
+   "意义：这两个特性都是让代码更简洁、更不易出错。Record Patterns 是 Java 走向数据导向编程的一步；Sequenced Collections 补齐了集合框架长期缺失的统一顺序抽象。注意不可变集合调用 addFirst 等修改方法会抛出 UnsupportedOperationException。"
   ],
   "example": {
    "lang": "java",
-   "code": "record Point(int x,int y){}\nswitch(obj){ case Point(int x,int y) -> x+y; default -> 0; }\nlist.getFirst(); list.reversed();"
+   "code": "sealed interface PayResult permits Success, Failed, Pending {}\nrecord Success(String txId, long amount) {}\nrecord Failed(String code, String msg) {}\nrecord Pending(String txId) {}\n\nString describe(PayResult r) {\n    return switch (r) {                       // 穷尽检查，无需 default\n        case Success(var tx, var amt) when amt > 10_000 -> \"大额成功 \" + tx;\n        case Success(var tx, var amt) -> \"成功 \" + tx;\n        case Failed(var code, var msg) -> \"失败 \" + code;\n        case Pending(var tx) -> \"处理中 \" + tx;\n    };\n}\nList<Integer> list = List.of(1, 2, 3);\nlist.getLast();          // 3\nlist.reversed();         // [3, 2, 1] 视图"
   },
   "asks": [
-   "Record Patterns？",
-   "Sequenced？",
-   "好处？",
-   "版本？"
+   "Record Patterns 有什么用？",
+   "Sequenced Collections 解决了什么问题？",
+   "sealed 接口和模式匹配如何配合？",
+   "这些新特性对业务代码有什么好处？"
   ],
   "followups": [
    {
-    "q": "21？",
-    "a": "LTS。"
+    "q": "穷尽检查有什么好处？",
+    "a": "新增 sealed 子类型后，所有没有处理该类型的 switch 都会编译失败，避免运行时遗漏分支。"
    },
    {
-    "q": "逆向视图？",
-    "a": "reversed。"
+    "q": "reversed() 返回的是拷贝吗？",
+    "a": "不是，返回的是原集合的反向视图，对原集合的修改会反映在视图上，可修改集合通过视图修改也会影响原集合。"
    },
    {
-    "q": "模式匹配？",
-    "a": "更简洁。"
+    "q": "LinkedHashMap 新增了哪些方法？",
+    "a": "作为 SequencedMap 新增了 firstEntry、lastEntry、pollFirstEntry、putFirst、putLast 和 reversed 等方法。"
    }
   ],
   "answer": [
-   "总：21 语法增强可读性。",
-   "分：解构与有序集合 API。",
-   "实践：升级 21 可用。",
-   "总结：了解新 API。"
+   "总：Record Patterns 让 record 能在模式匹配中直接解构，Sequenced Collections 为有序集合提供统一的首尾和反转 API。",
+   "分：配合 sealed 接口实现穷尽检查和 when 条件；List、Deque、LinkedHashSet、LinkedHashMap 统一 getFirst、getLast、reversed；reversed 是视图；不可变集合修改会抛异常。",
+   "实践：【结合你的项目】说明升级 Java 21 后是否用 sealed 加 record 重构过结果类型或事件处理。",
+   "总结：两个特性都在减少样板代码，并把一部分运行时错误提前到编译期发现。"
   ],
   "pitfalls": [
-   "背特性无例子。"
+   "以为 reversed 返回的是独立拷贝。",
+   "使用 sealed 后仍然写 default 分支，失去穷尽检查。",
+   "加分：结合虚拟线程等 Java 21 其他特性说明升级收益。"
   ]
  },
  "p-c4": {
   "principle": [
-   "WeakHashMap：键弱引用，键无强引用时条目可被回收，适合暂时缓存；值仍强引用可能需处理。非线程安全。"
+   "WeakHashMap 的键通过弱引用（WeakReference）持有。当某个键对象在外部没有任何强引用时，下一次 GC 就会回收它，回收后该键被放入一个 ReferenceQueue；WeakHashMap 在 get、put、size 等操作时调用 expungeStaleEntries 清理队列中对应的 entry，从而自动删除失效映射。",
+   "适用场景：为对象附加元数据且不希望延长对象生命周期，例如以 ClassLoader、Class、Thread 或某个会话对象为键的缓存，当键对象不再使用时映射自动消失，避免内存泄漏。ThreadLocalMap 也采用了类似的思想，其 Entry 的键是对 ThreadLocal 的弱引用。",
+   "注意事项：只有键是弱引用，值仍是强引用，如果值直接或间接引用了键，键就永远不会被回收；字符串字面量和小整数等被常量池或缓存持有的对象作为键时不会被回收；它不是线程安全的，需要用 Collections.synchronizedMap 包装；回收时机取决于 GC，不适合需要精确容量或过期控制的缓存，那类场景应使用 Caffeine 等缓存库（其 weakKeys、softValues 也可选）。"
   ],
   "example": {
    "lang": "java",
-   "code": "Map<Key,Meta> m=new WeakHashMap<>();"
+   "code": "Map<Object, String> meta = new WeakHashMap<>();\nObject key = new Object();\nmeta.put(key, \"metadata\");\nSystem.out.println(meta.size());   // 1\nkey = null;                        // 去掉唯一的强引用\nSystem.gc();\nThread.sleep(100);\nSystem.out.println(meta.size());   // 通常为 0，entry 已被清理\n\n// 反例：值引用了键，键永远不会被回收\nmeta.put(k2, \"x\" + k2.toString()); // 安全；但 meta.put(k3, new Holder(k3)) 会泄漏"
   },
   "asks": [
-   "WeakHashMap？",
-   "用途？",
-   "值？",
-   "并发？"
+   "WeakHashMap 的原理是什么？",
+   "WeakHashMap 适合什么场景？",
+   "使用 WeakHashMap 要注意什么？",
+   "它和普通缓存有什么区别？"
   ],
   "followups": [
    {
-    "q": "值泄漏？",
-    "a": "值引用键则回收不了。"
+    "q": "值引用了键会怎样？",
+    "a": "值是强引用，会通过值间接强引用键，使键永远无法被回收，WeakHashMap 失去自动清理的作用。"
    },
    {
-    "q": "缓存？",
-    "a": "更推荐专业缓存。"
+    "q": "用字符串字面量做键会被回收吗？",
+    "a": "不会，字面量由字符串常量池持有强引用，即使外部没有引用也不会被 GC 回收。"
    },
    {
-    "q": "谁清？",
-    "a": "GC+过道清理。"
+    "q": "WeakHashMap 线程安全吗？",
+    "a": "不安全，多线程访问需要用 Collections.synchronizedMap 包装，或者选择支持弱键的并发缓存库。"
    }
   ],
   "answer": [
-   "总：弱键地图。",
-   "分：缓存场景有限。",
-   "实践：了解即可。",
-   "总结：慎用。"
+   "总：WeakHashMap 的键是弱引用，键对象没有外部强引用时会被 GC 回收，对应 entry 被自动清理。",
+   "分：通过 ReferenceQueue 和 expungeStaleEntries 清理；适合为对象附加元数据；值引用键会导致泄漏；常量键不会回收；非线程安全；回收时机不可控。",
+   "实践：【结合你的项目】说明是否有以 Class 或 ClassLoader 为键的缓存，以及如何避免内存泄漏。",
+   "总结：WeakHashMap 适合跟随键生命周期的映射，不适合当通用缓存。"
   ],
   "pitfalls": [
-   "当通用缓存。"
+   "值对象强引用了键导致无法回收。",
+   "把 WeakHashMap 当作有过期策略的通用缓存。",
+   "加分：联系 ThreadLocalMap 的弱引用键设计。"
   ]
  },
  "p2-6": {
   "principle": [
-   "COWArrayList：写复制整数组，读无锁；适合读远多于写；迭代弱一致快照；写多性能差。"
+   "CopyOnWriteArrayList 采用写时复制：所有修改操作（add、set、remove）先加锁，把底层数组复制一份，在新数组上修改，然后用 volatile 引用切换到新数组；读操作完全不加锁，直接读当前数组，因此读的性能非常高，读写之间不会互相阻塞。",
+   "迭代器基于创建时的数组快照，遍历期间其他线程的修改不会影响迭代，也不会抛出 ConcurrentModificationException，但看不到最新的修改，属于弱一致性；迭代器也不支持 remove 操作。",
+   "适用于读多写少且集合规模不大的场景，例如监听器列表、黑白名单、路由规则、配置项列表。不适合写频繁或元素很多的场景：每次写都复制整个数组，会带来大量内存分配和 GC 压力，大数组还可能直接进入老年代；批量添加应使用 addAll 一次复制，而不是循环 add。对实时一致性要求高的场景也不适合。"
   ],
   "example": {
    "lang": "java",
-   "code": "CopyOnWriteArrayList<Listener> ls=new CopyOnWriteArrayList<>();"
+   "code": "private final List<OrderListener> listeners = new CopyOnWriteArrayList<>();\n\npublic void register(OrderListener l) { listeners.add(l); }   // 偶尔写：复制数组\n\npublic void publish(OrderEvent e) {                           // 频繁读：无锁\n    for (OrderListener l : listeners) {                       // 快照迭代，不抛 CME\n        l.onEvent(e);\n    }\n}\n// 反例：循环 add 一万次 -> 复制一万次数组；应使用 addAll(batch)"
   },
   "asks": [
-   "适用？",
-   "原理？",
-   "缺点？",
-   "Set？"
+   "CopyOnWriteArrayList 的原理是什么？",
+   "它适合什么场景？",
+   "迭代器为什么不会抛出并发修改异常？",
+   "它有什么缺点？"
   ],
   "followups": [
    {
-    "q": "Set？",
-    "a": "CopyOnWriteArraySet。"
+    "q": "为什么读操作不需要加锁？",
+    "a": "写操作在新数组上完成后才通过 volatile 引用替换，读线程看到的总是一个完整不变的数组。"
    },
    {
-    "q": "大数组？",
-    "a": "写成本高。"
+    "q": "写操作为什么还要加锁？",
+    "a": "防止多个线程同时复制并替换数组，导致其中一些修改被覆盖丢失。"
    },
    {
-    "q": "替代？",
-    "a": "并发队列等。"
+    "q": "和 Collections.synchronizedList 怎么选？",
+    "a": "读多写少用写时复制，读写都频繁或数据量大时用同步列表，读操作也加锁但没有复制开销。"
    }
   ],
   "answer": [
-   "总：读多写少。",
-   "分：写贵。",
-   "实践：监听器。",
-   "总结：同 j-col5。"
+   "总：CopyOnWriteArrayList 写时复制数组、读操作无锁，迭代基于快照，适合读多写少的小集合。",
+   "分：写操作加锁复制后切换 volatile 引用；迭代器弱一致、不抛 CME 也不支持 remove；写频繁或数组大时内存和 GC 压力大；批量写用 addAll。",
+   "实践：【结合你的项目】说明监听器列表或规则列表是否使用了写时复制容器以及写入频率。",
+   "总结：写时复制是用写入成本和一致性换取极高的读性能，只适合特定场景。"
   ],
   "pitfalls": [
-   "写频繁用 COW。"
+   "在写多读少的场景使用 CopyOnWriteArrayList。",
+   "循环调用 add 批量写入大量元素。",
+   "加分：说明快照迭代的弱一致性语义。"
   ]
  },
  "p2-50": {
   "principle": [
-   "IdentityHashMap：用 == 比键引用而非 equals；允许“相等但不同引用”作不同键；特殊场景（序列化图、调试），日常少用。"
+   "IdentityHashMap 使用 == 比较键的引用是否相同，用 System.identityHashCode 计算哈希值，而不是调用键的 equals 和 hashCode。因此两个内容相等但不是同一对象的键（如两个 new String(\"a\")）会被当作不同的键分别存储。",
+   "实现上它使用线性探测的开放寻址法，键和值交替存放在同一个数组中，没有链表或红黑树节点，内存占用较小。它故意违反了 Map 接口要求使用 equals 比较的通用约定，所以只应用在明确需要引用相等语义的场景。",
+   "典型场景：序列化和深拷贝时记录已经处理过的对象，用于检测循环引用（同一对象只处理一次，内容相同的不同对象分别处理）；对象图遍历、代理和框架内部维护对象到元数据的映射；键对象的 equals 被重写得不合理或可变时，按身份跟踪对象。日常业务代码几乎不需要使用它。它同样不是线程安全的。"
   ],
   "example": {
    "lang": "java",
-   "code": "Map<Object,String> m=new IdentityHashMap<>();"
+   "code": "Map<String, Integer> hm = new HashMap<>();\nMap<String, Integer> im = new IdentityHashMap<>();\nString a = new String(\"k\"), b = new String(\"k\");\nhm.put(a, 1); hm.put(b, 2);      // equals 相等 -> size = 1\nim.put(a, 1); im.put(b, 2);      // 引用不同   -> size = 2\n\n// 深拷贝时检测循环引用\nMap<Object, Object> visited = new IdentityHashMap<>();\nObject copy(Object src) {\n    if (visited.containsKey(src)) return visited.get(src);\n    Object dst = shallowClone(src); visited.put(src, dst);\n    /* 递归复制字段 */ return dst;\n}"
   },
   "asks": [
-   "特点？",
-   "和 HashMap？",
-   "场景？",
-   "hash？"
+   "IdentityHashMap 有什么特点？",
+   "它和 HashMap 有什么区别？",
+   "它适合什么场景？",
+   "它的底层结构是什么？"
   ],
   "followups": [
    {
-    "q": "equals？",
-    "a": "不用。"
+    "q": "为什么深拷贝要用 IdentityHashMap 记录访问过的对象？",
+    "a": "需要按对象身份判断是否已经复制过，用 equals 会把内容相同的不同对象误认为同一个，破坏对象图结构。"
    },
    {
-    "q": "系统身份哈希？",
-    "a": "是。"
+    "q": "IdentityHashMap 违反了什么约定？",
+    "a": "Map 接口约定使用 equals 比较键，它改用引用相等，因此与其他 Map 实现比较或互换时行为可能不一致。"
    },
    {
-    "q": "通用？",
-    "a": "否。"
+    "q": "identityHashCode 与 hashCode 有什么区别？",
+    "a": "identityHashCode 总是返回基于对象身份的默认哈希值，即使类重写了 hashCode 也不受影响。"
    }
   ],
   "answer": [
-   "总：引用相等地图。",
-   "分：特殊用途。",
-   "实践：了解。",
-   "总结：别当普通 Map。"
+   "总：IdentityHashMap 用引用相等和 identityHashCode 比较键，内容相同的不同对象被视为不同的键。",
+   "分：底层是线性探测的开放寻址数组；故意违反 Map 的 equals 约定；适合序列化、深拷贝、对象图遍历中按身份跟踪对象；非线程安全。",
+   "实践：【结合你的项目】说明在对象拷贝或序列化工具中是否遇到循环引用，以及如何检测。",
+   "总结：IdentityHashMap 是框架和工具类中的专用容器，业务代码中很少直接使用。"
   ],
   "pitfalls": [
-   "误当 HashMap。"
+   "在业务代码中误用导致相同内容的键重复存储。",
+   "不知道它违反了 Map 的通用约定。",
+   "加分：说明开放寻址的存储方式。"
   ]
  }
 }

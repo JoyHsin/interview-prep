@@ -430,78 +430,86 @@
  },
  "a-f9": {
   "principle": [
-   "LangChain4j AiServices：定义接口，框架生成代理，声明式挂 memory/tools/retriever，返回类型自动解析。适合快速组装。"
+   "AiServices 是 LangChain4j 的高层声明式 API：开发者只需要定义一个 Java 接口，用注解描述提示词，AiServices.builder 就会通过动态代理生成实现。调用接口方法时，框架自动把参数填充到提示词模板中、调用大模型、并把结果解析成方法的返回类型（String、枚举、POJO、List 等结构化输出）。",
+   "常用注解：@SystemMessage 定义系统提示，@UserMessage 定义用户消息模板，@V 绑定模板变量，@MemoryId 区分不同用户的会话记忆。builder 中可以挂载 chatMemoryProvider（多轮记忆）、tools（带 @Tool 注解的方法，模型可调用）、contentRetriever 或 retrievalAugmentor（RAG 检索）、以及输入输出护栏和审核。",
+   "好处是业务代码与模型调用细节解耦，接口易于 mock 测试，风格类似 Spring Data 的 Repository。在 Spring Boot 中可以使用 langchain4j-spring-boot-starter 的 @AiService 自动装配。复杂的多步编排（多个 Agent、条件分支）需要配合工作流或自行编排。"
   ],
   "example": {
    "lang": "java",
-   "code": "Assistant a=AiServices.builder(Assistant.class).chatModel(m).tools(t).chatMemory(mem).build();"
+   "code": "interface SupportAgent {\n    @SystemMessage(\"你是电商客服，只回答订单、物流和售后问题，不确定时说明不知道。\")\n    String chat(@MemoryId String userId, @UserMessage String question);\n\n    @UserMessage(\"从下面文本中提取订单号和诉求：{{text}}\")\n    Ticket extract(@V(\"text\") String text);       // 自动解析为 POJO\n}\nSupportAgent agent = AiServices.builder(SupportAgent.class)\n    .chatLanguageModel(model)\n    .chatMemoryProvider(id -> MessageWindowChatMemory.withMaxMessages(20))\n    .tools(new OrderTools())\n    .contentRetriever(EmbeddingStoreContentRetriever.from(store))\n    .build();"
   },
   "asks": [
-   "AiServices？",
-   "和 Spring AI？",
-   "优点？",
-   "限制？"
+   "LangChain4j 的 AiServices 是什么？",
+   "常用注解有哪些？",
+   "AiServices 可以挂载哪些能力？",
+   "它和直接调用模型 API 相比有什么好处？"
   ],
   "followups": [
    {
-    "q": "原理？",
-    "a": "动态代理。"
+    "q": "多用户会话如何隔离？",
+    "a": "方法参数使用 @MemoryId 标记用户或会话 ID，并配置 chatMemoryProvider 为每个 ID 创建独立的记忆。"
    },
    {
-    "q": "调试？",
-    "a": "看生成消息。"
+    "q": "结构化输出是怎么实现的？",
+    "a": "框架根据返回类型生成格式说明附加到提示中，或使用模型的 JSON 模式，再把响应反序列化为对象。"
    },
    {
-    "q": "复杂图？",
-    "a": "可能不够，转 Graph。"
+    "q": "工具调用是如何接入的？",
+    "a": "在类的方法上加 @Tool 注解描述用途，注册到 builder 的 tools 中，模型决定调用时框架执行方法并回传结果。"
    }
   ],
   "answer": [
-   "总：声明式 AI 服务。",
-   "分：接口即实现。",
-   "实践：【结合你的项目】。",
-   "总结：快但要懂底层。"
+   "总：AiServices 用接口加注解声明式地定义 AI 能力，框架通过动态代理完成提示填充、模型调用和结果解析。",
+   "分：@SystemMessage、@UserMessage、@V、@MemoryId 定义提示和会话；builder 挂载记忆、工具、RAG 检索和护栏；支持结构化返回；易于测试和与 Spring 集成。",
+   "实践：【结合你的项目】说明用 AiServices 定义的客服或抽取接口，以及会话记忆的存储方式。",
+   "总结：AiServices 让 Java 开发者像写 Repository 一样声明式地开发 AI 功能。"
   ],
   "pitfalls": [
-   "当黑盒不会排错。"
+   "多用户共用一个记忆，导致会话串话。",
+   "期望 AiServices 自动完成复杂的多 Agent 编排。",
+   "加分：对比 Spring AI ChatClient 的使用方式。"
   ]
  },
  "r-f2": {
   "principle": [
-   "Ollama 本地跑模型；Spring AI Ollama starter 配 base-url 与 model。适合开发、私有化、离线演示；性能与效果逊于云大模型。"
+   "Ollama 是本地运行开源大模型的工具，通过 ollama pull 下载模型（如 qwen2.5、llama3、deepseek-r1 的蒸馏版本、bge 嵌入模型），启动后在本机 11434 端口提供 HTTP API，并兼容 OpenAI 风格接口。",
+   "Java 接入方式：Spring AI 引入 spring-ai-starter-model-ollama，配置 spring.ai.ollama.base-url 和 chat.options.model，即可通过 ChatClient 统一调用，切换到云端模型只需要换 starter 和配置，业务代码不变；Ollama 也提供 Embedding 模型，可以用于本地 RAG。LangChain4j 也有 OllamaChatModel。",
+   "适用场景：本地开发和调试无需 API Key、零调用成本；私有化部署、数据不能出域的内网场景；离线演示。限制：本地模型参数规模小，效果通常弱于顶级云端模型，尤其在复杂推理和工具调用方面；性能受 GPU 显存限制，并发能力有限；生产级高并发部署更适合 vLLM 等推理框架。建议用接口抽象模型调用，按环境切换。"
   ],
   "example": {
    "lang": "yaml",
-   "code": "spring.ai.ollama.base-url: http://localhost:11434\nspring.ai.ollama.chat.options.model: qwen2.5"
+   "code": "# 本地：ollama pull qwen2.5:7b && ollama pull bge-m3\nspring:\n  ai:\n    ollama:\n      base-url: http://localhost:11434\n      chat:\n        options: { model: qwen2.5:7b, temperature: 0.3 }\n      embedding:\n        options: { model: bge-m3 }\n# 代码不变：chatClient.prompt().user(q).call().content()"
   },
   "asks": [
-   "怎么接 Ollama？",
-   "场景？",
-   "限制？",
-   "嵌入？"
+   "Java 项目如何接入 Ollama？",
+   "Ollama 适合什么场景？",
+   "本地模型有哪些限制？",
+   "如何做到本地和云端模型无缝切换？"
   ],
   "followups": [
    {
-    "q": "拉模型？",
-    "a": "ollama pull。"
+    "q": "Ollama 能用于生产高并发服务吗？",
+    "a": "不太适合，它更偏向单机便捷运行，高并发生产推理更推荐 vLLM、SGLang 等支持批处理调度的框架。"
    },
    {
-    "q": "GPU？",
-    "a": "本地驱动。"
+    "q": "本地模型工具调用效果差怎么办？",
+    "a": "选择支持函数调用的较大模型，简化工具描述和参数，并增加结果校验和失败兜底逻辑。"
    },
    {
-    "q": "生产？",
-    "a": "看 SLA 与硬件。"
+    "q": "如何选择本地模型的大小？",
+    "a": "根据显存容量和效果需求选择，7B 量化模型几 GB 显存即可运行，更大模型效果更好但需要更多资源。"
    }
   ],
   "answer": [
-   "总：本地 starter 指向 Ollama。",
-   "分：开发私有化友好。",
-   "实践：笔记本演示。",
-   "总结：换 endpoint 即可。"
+   "总：Java 通过 Spring AI 或 LangChain4j 的 Ollama 集成，配置地址和模型即可调用本地模型。",
+   "分：适合本地开发、私有化和离线场景，零调用成本、数据不出域；效果和并发受模型规模与显存限制；用统一抽象按环境切换云端和本地。",
+   "实践：【结合你的项目】说明开发环境是否使用 Ollama 以及与线上模型效果差异的处理方式。",
+   "总结：Ollama 降低了本地开发和私有化试点的门槛，但不能替代生产推理框架。"
   ],
   "pitfalls": [
-   "当生产唯一依赖不评估。"
+   "用本地小模型的效果评估代替线上模型的效果。",
+   "直接用 Ollama 承接生产高并发流量。",
+   "加分：说明 Spring AI 抽象如何实现模型切换。"
   ]
  }
 }

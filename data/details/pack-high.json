@@ -3598,30 +3598,44 @@
  },
  "j-col5": {
   "principle": [
-   "fail-fast 是尽力检测迭代期间不符合约定的结构变化，不提供线程安全保证；不能依赖一定抛异常来实现正确性。",
-   "CopyOnWriteArrayList 的迭代器读取创建时的数组快照，后续修改不会反映到该迭代器；写入需要复制数组，适合读多写少。",
-   "ConcurrentHashMap 等并发集合可提供弱一致迭代，并不都是复制整个容器后遍历。选择时应看具体实现的约定。"
+   "fail-fast（快速失败）：ArrayList、HashMap 等非线程安全集合内部维护 modCount，每次结构性修改（增删元素）时加一。创建迭代器时记录 expectedModCount，每次 next() 都检查两者是否相等，不相等就抛出 ConcurrentModificationException。它的目的是尽早暴露错误的并发修改，而不是保证线程安全，是尽力而为的检测，不能依赖它来保证正确性。",
+   "常见触发场景是在 for-each 循环中直接调用 list.remove。正确做法：使用迭代器的 remove()（会同步 expectedModCount）、使用 removeIf，或者遍历时收集要删除的元素后统一删除；多线程场景要用并发集合。",
+   "fail-safe（安全失败）的代表是 CopyOnWriteArrayList 和 ConcurrentHashMap。CopyOnWrite 的迭代器基于创建时的数组快照，遍历期间的修改发生在新数组上，不会抛异常，但看不到最新数据；代价是每次写入都复制整个数组，适合读多写少。ConcurrentHashMap 的迭代器是弱一致性的，可能反映也可能不反映遍历期间的修改，但不会抛出异常也不复制数据。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "创建 CopyOnWriteArrayList 迭代器 → 修改列表 → 旧迭代器仍读取旧快照。"
+   "lang": "java",
+   "code": "List<String> list = new ArrayList<>(List.of(\"a\", \"b\", \"c\"));\n// for (String s : list) if (s.equals(\"b\")) list.remove(s);   // 抛 CME\nlist.removeIf(s -> s.equals(\"b\"));                             // 正确\n\nIterator<String> it = list.iterator();\nwhile (it.hasNext()) if (it.next().equals(\"a\")) it.remove();  // 正确：同步 expectedModCount\n\nList<String> cow = new CopyOnWriteArrayList<>(List.of(\"x\", \"y\"));\nfor (String s : cow) cow.add(\"z\");   // 不抛异常，迭代的是快照，只遍历 x、y"
   },
   "asks": [
-   "fail-fast 与 CopyOnWrite？",
-   "并发集合都是快照迭代吗？"
+   "fail-fast 机制是什么？",
+   "如何在遍历时安全地删除元素？",
+   "fail-safe 集合有哪些？",
+   "CopyOnWrite 的代价是什么？"
   ],
   "followups": [
    {
+    "q": "单线程也会触发 ConcurrentModificationException 吗？",
+    "a": "会，在 for-each 中直接调用集合的 remove 或 add 就会使 modCount 变化，下一次 next 时触发异常。"
+   },
+   {
     "q": "fail-fast 能保证线程安全吗？",
-    "a": "不能，它是尽力检测错误的机制，正确性需要同步或合适的并发集合。"
+    "a": "不能，它只是尽力检测并发修改，并不保证一定抛出，多线程场景必须使用并发集合或加锁。"
+   },
+   {
+    "q": "ConcurrentHashMap 的迭代器有什么特点？",
+    "a": "它是弱一致性的，不抛出并发修改异常，可能看到部分遍历期间的修改，也不需要复制数据。"
    }
   ],
   "answer": [
-   "先区分错误检测与并发保证，再说明快照和弱一致迭代的差异，最后结合读写比例选择实现。"
+   "总：fail-fast 通过 modCount 检测迭代期间的结构修改并抛异常，CopyOnWrite 通过快照迭代避免异常。",
+   "分：for-each 中直接删除会触发 CME，应使用迭代器 remove 或 removeIf；fail-fast 只是错误检测；CopyOnWrite 写时复制适合读多写少；ConcurrentHashMap 迭代弱一致。",
+   "实践：【结合你的项目】讲一次遍历集合时删除元素触发 ConcurrentModificationException 的问题和修复方式。",
+   "总结：遍历中修改集合要么使用迭代器提供的方法，要么选择合适的并发集合。"
   ],
   "pitfalls": [
-   "不能将所有并发集合都说成复制后遍历。",
-   "并发集合的迭代语义可能是快照或弱一致；不能将所有并发集合都说成复制后遍历。"
+   "在 for-each 中直接调用 list.remove。",
+   "依赖 fail-fast 机制保证多线程正确性。",
+   "加分：对比 CopyOnWrite 快照与 ConcurrentHashMap 弱一致迭代。"
   ]
  },
  "pack-h85": {
@@ -4341,32 +4355,44 @@
  },
  "p-mb2": {
   "principle": [
-   "一级缓存通常属于SqlSession范围，重复查询能否复用还受语句、参数、更新操作和配置影响；不同会话不应假定共享一级缓存。",
-   "二级缓存按Mapper命名空间等配置组织，需要明确启用、事务提交及失效规则。跨命名空间或外部直接修改数据可能使缓存与实际数据不同步。",
-   "MyBatis-Spring通常由事务管理会话生命周期，跨请求不要依赖一级缓存复用；关联数据复杂或一致性要求高时，应谨慎采用二级缓存并验证失效路径。"
+   "MyBatis 一级缓存是 SqlSession 级别的，默认开启：在同一个 SqlSession 中执行相同的查询（相同的 statement、参数、分页和环境），第二次直接从本地缓存返回结果。执行任何增删改、提交或回滚、手动 clearCache 或关闭会话时缓存被清空。与 Spring 集成时，如果没有事务，每次 Mapper 调用都使用新的 SqlSession，一级缓存基本不起作用；在同一事务内才会生效。",
+   "二级缓存是 Mapper 命名空间级别的，跨 SqlSession 共享，需要在 Mapper 中配置 <cache/> 或 @CacheNamespace 才开启，且结果对象要可序列化。查询结果在会话提交或关闭后才写入二级缓存；同一命名空间执行更新操作会清空该命名空间的缓存。查询顺序是先二级缓存，再一级缓存，最后查数据库。",
+   "分布式和多表场景要慎用二级缓存：默认实现是本地内存，多个服务实例之间不一致；一个命名空间的缓存无法感知其他命名空间对关联表的更新，容易读到脏数据。实践中通常关闭二级缓存，在业务层使用 Redis 等缓存并明确失效策略；一级缓存则要注意同一会话中读取不到其他会话的最新修改。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "同一会话查询 → 可能命中一级缓存；更新后再查 → 按失效规则重新读取。跨会话共享需单独配置二级缓存。"
+   "lang": "xml",
+   "code": "<!-- 开启当前 namespace 的二级缓存 -->\n<mapper namespace=\"com.demo.mapper.UserMapper\">\n  <cache eviction=\"LRU\" flushInterval=\"60000\" size=\"512\" readOnly=\"true\"/>\n  <select id=\"findById\" resultType=\"User\" useCache=\"true\">\n    select * from user where id = #{id}\n  </select>\n  <update id=\"update\" flushCache=\"true\">update user set name=#{name} where id=#{id}</update>\n</mapper>\n<!-- 全局关闭一级缓存的影响：localCacheScope=STATEMENT -->"
   },
   "asks": [
-   "一级/二级缓存？",
-   "其他服务直接更新数据库会自动清空MyBatis二级缓存吗？"
+   "MyBatis 一级缓存和二级缓存有什么区别？",
+   "一级缓存在 Spring 中为什么经常不生效？",
+   "二级缓存什么时候会失效？",
+   "分布式环境下为什么要慎用二级缓存？"
   ],
   "followups": [
    {
-    "q": "其他服务直接更新数据库会自动清空MyBatis二级缓存吗？",
-    "a": "通常不会自动感知所有外部写入，必须明确失效与一致性方案。"
+    "q": "一级缓存可能导致什么问题？",
+    "a": "同一会话内重复查询返回缓存结果，看不到其他会话已提交的修改，可以把 localCacheScope 设置为 STATEMENT。"
+   },
+   {
+    "q": "二级缓存为什么会读到脏数据？",
+    "a": "缓存按命名空间隔离，其他命名空间更新了关联表不会清空本命名空间缓存，多实例之间也互不感知。"
+   },
+   {
+    "q": "二级缓存可以接入 Redis 吗？",
+    "a": "可以实现 Cache 接口接入 Redis 解决多实例共享，但跨命名空间失效的问题依然存在，需要谨慎设计。"
    }
   ],
   "answer": [
-   "一级缓存通常属于SqlSession范围，重复查询能否复用还受语句、参数、更新操作和配置影响；不同会话不应假定共享一级缓存。",
-   "二级缓存按Mapper命名空间等配置组织，需要明确启用、事务提交及失效规则。跨命名空间或外部直接修改数据可能使缓存与实际数据不同步。",
-   "MyBatis-Spring通常由事务管理会话生命周期，跨请求不要依赖一级缓存复用；关联数据复杂或一致性要求高时，应谨慎采用二级缓存并验证失效路径。"
+   "总：一级缓存是 SqlSession 级别默认开启，二级缓存是 Mapper 命名空间级别需要手动开启。",
+   "分：一级缓存在增删改、提交和关闭时清空，Spring 中无事务时基本不生效；二级缓存跨会话共享，提交后写入、更新时清空；多实例和多表关联场景易出现脏数据。",
+   "实践：【结合你的项目】说明项目中是否关闭了二级缓存，以及业务层缓存的失效策略。",
+   "总结：生产中通常只保留一级缓存，跨请求的缓存交给业务层的 Redis 统一管理。"
   ],
   "pitfalls": [
-   "一级缓存不是跨请求共享缓存。",
-   "二级缓存不等于数据库强一致副本。"
+   "在多实例部署中开启默认的二级缓存。",
+   "以为 Spring 中每次 Mapper 调用都能命中一级缓存。",
+   "加分：说明 localCacheScope 参数的作用。"
   ]
  }
 }
