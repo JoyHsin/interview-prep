@@ -45,116 +45,169 @@
  },
  "p-j81": {
   "principle": [
-   "中间操作惰性：map/filter/flatMap/distinct/sorted/peek；终端触发：collect/forEach/reduce/count/anyMatch。流只能消费一次；优先 collect 到集合。"
+   "Stream 是 Java 8 引入的对集合数据进行声明式处理的 API，由三部分组成：数据源（集合、数组、Stream.of、文件行等）、零个或多个中间操作、一个终端操作。",
+   "中间操作返回新的 Stream，并且是惰性的：只是记录操作，不会立即执行。分为无状态操作（filter 过滤、map 映射、flatMap 把每个元素映射成流再扁平化、peek 调试）和有状态操作（distinct 去重、sorted 排序、limit/skip 截取），有状态操作需要看到之前的元素甚至全部元素。",
+   "终端操作触发真正的计算并产生结果或副作用：forEach、collect（配合 Collectors.toList、toMap、groupingBy、partitioningBy、joining、counting、summingInt 等）、reduce（归约）、count、min/max、anyMatch/allMatch/noneMatch、findFirst/findAny。Stream 只能被消费一次，执行终端操作后再次使用会抛 IllegalStateException。",
+   "惰性求值与短路：多个操作会被组合成一条流水线，每个元素依次通过所有操作（而不是先对所有元素 filter、再对所有元素 map），配合 limit、findFirst、anyMatch 这类短路操作时，满足条件就停止，不会处理剩下的元素，甚至可以处理无限流。",
+   "常见坑：toMap 遇到重复 key 会抛 IllegalStateException，要传入合并函数；toMap 的 value 为 null 会抛 NPE；在 lambda 中修改外部集合会带来副作用和并行问题；对基本类型用 mapToInt 等原始类型流避免装箱开销；复杂逻辑写成长链会降低可读性，必要时拆分。"
   ],
   "example": {
    "lang": "java",
-   "code": "List<String> r = list.stream().filter(s->!s.isBlank()).map(String::trim).distinct().toList();"
+   "code": "record Order(Long userId, String status, BigDecimal amount, List<String> skus) {}\n\n// 已支付订单按用户分组求和\nMap<Long, BigDecimal> totalByUser = orders.stream()\n        .filter(o -> \"PAID\".equals(o.status()))\n        .collect(Collectors.groupingBy(Order::userId,\n                Collectors.reducing(BigDecimal.ZERO, Order::amount, BigDecimal::add)));\n\n// flatMap：所有订单涉及的不重复 SKU\nList<String> skus = orders.stream()\n        .flatMap(o -> o.skus().stream())\n        .distinct().sorted().toList();          // toList() 为 JDK 16+\n\n// toMap 重复 key 要给合并函数，否则抛 IllegalStateException\nMap<Long, Order> latest = orders.stream()\n        .collect(Collectors.toMap(Order::userId, Function.identity(), (a, b) -> b));\n\n// 惰性 + 短路：只会处理到第一个满足条件的元素\nOptional<Order> firstBig = orders.stream()\n        .peek(o -> log.debug(\"visit {}\", o))\n        .filter(o -> o.amount().compareTo(new BigDecimal(\"1000\")) > 0)\n        .findFirst();\n\nint total = items.stream().mapToInt(Item::qty).sum();   // 原始类型流避免装箱"
   },
   "asks": [
-   "中间和终端？",
-   "惰性？",
-   "flatMap？",
-   "复用？"
+   "Stream 常用的中间操作和终端操作有哪些？",
+   "什么是惰性求值？",
+   "map 和 flatMap 有什么区别？",
+   "Collectors.toMap 有什么坑？"
   ],
   "followups": [
    {
-    "q": "惰性？",
-    "a": "终端才计算。"
+    "q": "Stream 可以重复使用吗？",
+    "a": "不可以，一个 Stream 执行终端操作后就关闭了，再用会抛 IllegalStateException，需要重新从数据源创建。"
    },
    {
-    "q": "并行？",
-    "a": "parallel() 另论。"
+    "q": "没有终端操作时 peek 会执行吗？",
+    "a": "不会，中间操作是惰性的，没有终端操作就不会触发任何计算。"
    },
    {
-    "q": "null？",
-    "a": "小心 NPE。"
+    "q": "Stream 一定比 for 循环慢吗？",
+    "a": "简单场景下有少量额外开销，通常可以忽略；数据量很大且计算密集时可以考虑并行流，关键路径上应以基准测试为准。"
    }
   ],
   "answer": [
-   "总：惰性链 + 终端触发。",
-   "分：常用 map/filter/collect。",
-   "实践：替代手写循环。",
-   "总结：清晰但注意可读性。"
+   "总：Stream 由数据源、惰性的中间操作和触发计算的终端操作组成，用声明式的方式处理集合。",
+   "分：中间操作分为 filter、map、flatMap 等无状态操作和 distinct、sorted、limit 等有状态操作；终端操作有 collect、reduce、count、匹配和查找等；元素按流水线逐个通过所有操作，配合短路操作可以提前结束；要注意 Stream 只能消费一次、toMap 的重复 key 和 null 值、lambda 中避免副作用。",
+   "实践：【结合你的项目】我们在【待填：报表统计】中用 groupingBy 加 reducing 替代了手写的多层循环，代码更清晰；也踩过 toMap 重复 key 的坑。",
+   "总结：Stream 让集合处理更简洁，但要理解惰性求值和常见坑，复杂逻辑不要硬写成一条长链。"
   ],
   "pitfalls": [
-   "流用完再操作。"
+   "toMap 不给合并函数导致线上异常。",
+   "以为中间操作会立即执行。",
+   "加分：讲流水线逐元素执行、短路和原始类型流。"
   ]
  },
  "p-j82": {
   "principle": [
-   "并行流用公共 ForkJoinPool；任务需无状态线程安全；拆分有开销，小列表可能更慢；阻塞 IO/锁竞争不适合；可自定义池（JDK18+ parallel 有限手段，或自己 submit）。"
+   "parallelStream() 或 stream().parallel() 会把数据源拆分成多个子任务，交给 ForkJoinPool 并行处理，最后合并结果。背后是 Spliterator 负责拆分数据，ForkJoin 负责工作窃取调度。",
+   "要注意的问题：① 共用公共线程池：所有并行流默认使用 ForkJoinPool.commonPool()，线程数默认是 CPU 核数减 1。整个 JVM 中所有的并行流（以及未指定线程池的 CompletableFuture）都共享它。如果某个并行流中执行了阻塞 IO（查数据库、调接口），会占满公共池线程，导致其他所有并行流都变慢甚至卡住。② 线程安全：在 forEach 中向普通 ArrayList 添加元素、修改共享变量会出现数据丢失或异常，应该使用 collect 等归约操作产生结果。③ 拆分和合并成本：数据量小、单个元素处理很轻时，拆分、线程调度和合并的开销比并行收益还大，反而更慢。ArrayList、数组拆分效率高；LinkedList、Stream.iterate、IO 流拆分效率很差。④ 顺序：forEach 不保证顺序，需要顺序用 forEachOrdered（会降低并行收益）；findFirst、limit、sorted 等有序操作在并行下代价更高，可以用 findAny 或 unordered()。⑤ ThreadLocal、事务上下文、MDC 日志上下文不会传递到 ForkJoin 线程。",
+   "适用场景：数据量大（几万以上）、CPU 密集、元素之间无依赖、数据源容易拆分。IO 密集型任务应该使用自定义线程池配合 CompletableFuture。如果一定要隔离，可以把并行流放在自定义的 ForkJoinPool 中 submit 执行（这是依赖实现细节的技巧，使用时要谨慎）。"
   ],
   "example": {
    "lang": "java",
-   "code": "long c = list.parallelStream().filter(...).count(); // 占用公共池"
+   "code": "// 错误：并行流中做阻塞 IO，占满 commonPool；且向 ArrayList 并发添加不安全\nList<User> result = new ArrayList<>();\nids.parallelStream().forEach(id -> result.add(userClient.get(id)));   // 丢数据 + 阻塞公共池\n\n// 正确：IO 密集用自定义线程池 + CompletableFuture\nExecutorService ioPool = Executors.newFixedThreadPool(32);\nList<CompletableFuture<User>> fs = ids.stream()\n        .map(id -> CompletableFuture.supplyAsync(() -> userClient.get(id), ioPool))\n        .toList();\nList<User> users = fs.stream().map(CompletableFuture::join).toList();\n\n// CPU 密集 + 大数据量 + 可拆分的数据源：适合并行流，用 collect 归约\nlong primes = LongStream.rangeClosed(2, 10_000_000).parallel()\n        .filter(MathUtil::isPrime).count();\n\n// 隔离：在自定义 ForkJoinPool 中执行（依赖实现细节，谨慎使用）\nForkJoinPool pool = new ForkJoinPool(4);\nlong n = pool.submit(() -> bigList.parallelStream().filter(this::heavy).count()).get();"
   },
   "asks": [
-   "并行流注意？",
-   "何时用？",
-   "公共池？",
-   "线程安全？"
+   "并行流有什么需要注意的？",
+   "并行流用的是哪个线程池？会有什么问题？",
+   "什么场景适合使用并行流？",
+   "并行流中能用 forEach 往 ArrayList 里加数据吗？"
   ],
   "followups": [
    {
-    "q": "IO？",
-    "a": "别用并行流。"
+    "q": "commonPool 的线程数是多少？",
+    "a": "默认是 CPU 核数减 1，可以通过 java.util.concurrent.ForkJoinPool.common.parallelism 系统属性调整，但会影响整个 JVM。"
    },
    {
-    "q": "顺序？",
-    "a": "forEachOrdered 有代价。"
+    "q": "为什么 LinkedList 不适合并行流？",
+    "a": "它的 Spliterator 无法高效地从中间拆分，必须遍历，拆分成本高，并行收益很低。"
    },
    {
-    "q": "替代？",
-    "a": "自己线程池。"
+    "q": "并行流里日志 traceId 丢了怎么办？",
+    "a": "MDC 基于 ThreadLocal 不会传到 ForkJoin 线程，需要手动传递上下文，或改用支持上下文传递的线程池方案。"
    }
   ],
   "answer": [
-   "总：CPU 密集大数据才考虑。",
-   "分：安全、开销、公共池。",
-   "实践：默认串行够用。",
-   "总结：测量后再并行。"
+   "总：并行流用 ForkJoin 公共线程池拆分任务并行执行，适合大数据量、CPU 密集、易拆分的场景，用错了反而更慢甚至拖垮系统。",
+   "分：所有并行流共享 commonPool，在里面做阻塞 IO 会影响全局；forEach 修改共享集合不安全，要用 collect 归约；数据量小或数据源难以拆分时开销大于收益；有序操作代价更高；ThreadLocal 和 MDC 上下文不会传递。",
+   "实践：【结合你的项目】【待填：曾有人在并行流中批量调用远程接口导致其他功能变慢，改为自定义线程池加 CompletableFuture 解决】。",
+   "总结：IO 用自定义线程池，CPU 密集的大批量计算才考虑并行流，并且要通过压测确认收益。"
   ],
   "pitfalls": [
-   "到处 parallel。"
+   "在并行流中调用数据库或 HTTP 接口。",
+   "并行 forEach 写入非线程安全集合。",
+   "加分：讲 Spliterator 拆分效率和 commonPool 的全局共享影响。"
   ]
  },
  "p-j83": {
   "principle": [
-   "Optional 表达可能为空的返回值；忌 get() 无判断；用 orElseGet（懒）、orElseThrow、map/flatMap/ifPresent；不要作字段/参数到处传；不要 Optional.of(null)。"
+   "Optional 是 Java 8 引入的容器，用来显式表示“结果可能不存在”，主要设计用途是方法返回值，让调用方必须思考空值情况，减少 NullPointerException。",
+   "正确用法：① 创建：Optional.of(value)（value 为 null 会立即抛 NPE）、Optional.ofNullable(value)、Optional.empty()。② 取值不要直接调用 get()：如果为空会抛 NoSuchElementException，和直接用 null 一样危险。应该使用 orElse(默认值)、orElseGet(Supplier)、orElseThrow(异常 Supplier)。③ 转换和链式处理：map、flatMap（当函数本身返回 Optional 时使用）、filter、ifPresent、ifPresentOrElse（JDK 9）、or（JDK 9）、stream（JDK 9）。",
+   "orElse 和 orElseGet 的区别：orElse 的参数总是会被计算，即使 Optional 有值；orElseGet 只有为空时才调用 Supplier。如果默认值需要查询数据库或创建复杂对象，必须用 orElseGet，否则会产生不必要的开销甚至副作用。",
+   "不推荐的用法：作为类的字段（Optional 没有实现 Serializable，也增加内存开销）；作为方法参数（调用方需要包装，不如方法重载或允许 null 并在文档中说明）；放进集合（用空集合表示没有数据即可）；用 isPresent() + get() 的写法，本质上和 if (x != null) 一样；返回 Optional 的方法本身返回 null。集合类型的返回值应该返回空集合而不是 Optional<List>。"
   ],
   "example": {
    "lang": "java",
-   "code": "return Optional.ofNullable(user).map(User::getName).orElse(\"anonymous\");"
+   "code": "// 返回值使用 Optional\npublic Optional<User> findByEmail(String email) {\n    return Optional.ofNullable(userMapper.selectByEmail(email));\n}\n\n// 链式取嵌套属性，避免层层判空\nString city = userRepo.findById(id)\n        .map(User::getAddress)\n        .map(Address::getCity)\n        .orElse(\"未知\");\n\n// orElse vs orElseGet：orElse 参数总会执行\nUser u1 = findByEmail(email).orElse(createGuest());       // 即使找到用户也会 createGuest()\nUser u2 = findByEmail(email).orElseGet(this::createGuest); // 只有为空才执行\n\n// 不存在就抛业务异常\nUser u = findByEmail(email).orElseThrow(() -> new BizException(\"用户不存在\"));\n\n// 反例\nif (opt.isPresent()) { use(opt.get()); }   // 与判空无异，改用 opt.ifPresent(this::use)\nclass Order { private Optional<String> remark; }   // 不要作为字段"
   },
   "asks": [
-   "Optional 最佳实践？",
-   "orElse vs orElseGet？",
-   "作字段？",
-   "of vs ofNullable？"
+   "Optional 的最佳实践有哪些？",
+   "orElse 和 orElseGet 有什么区别？",
+   "Optional 适合作为字段或参数吗？",
+   "map 和 flatMap 在 Optional 中有什么区别？"
   ],
   "followups": [
    {
-    "q": "orElse？",
-    "a": "参数总计算；Get 懒。"
+    "q": "Optional.of 和 ofNullable 怎么选？",
+    "a": "确定值不为 null 时用 of，它会在 null 时立刻抛 NPE 暴露问题；值可能为 null 时用 ofNullable。"
    },
    {
-    "q": "字段？",
-    "a": "增加包装噪音。"
+    "q": "返回 List 时要用 Optional 吗？",
+    "a": "不需要，直接返回空集合即可，调用方可以统一遍历，Optional<List> 只会增加一层包装。"
    },
    {
-    "q": "序列化？",
-    "a": "需注意。"
+    "q": "Optional 会带来性能问题吗？",
+    "a": "每次会多创建一个对象，在极高频的热点路径上有少量开销，一般业务可以忽略，但不要大量用在字段和集合中。"
    }
   ],
   "answer": [
-   "总：返回值防 NPE，别滥用。",
-   "分：函数式链；忌裸 get。",
-   "实践：API 返回用。",
-   "总结：清晰表达缺值。"
+   "总：Optional 是用来明确表达返回值可能为空的工具，核心价值在于让调用方显式处理空值。",
+   "分：创建用 of、ofNullable、empty；取值用 orElse、orElseGet、orElseThrow，而不是裸用 get；用 map、flatMap、filter 链式处理嵌套属性；默认值计算有成本时必须用 orElseGet；不要把它用作字段、参数或集合元素，集合返回空集合即可。",
+   "实践：【结合你的项目】我们的查询方法统一返回 Optional，业务层用 orElseThrow 抛出明确的业务异常，替代了以前到处出现的 NPE。",
+   "总结：Optional 用在返回值上能显著改善代码的可读性和健壮性，滥用则会适得其反。"
   ],
   "pitfalls": [
-   "Optional.get 到处用。"
+   "orElse 里调用查询数据库的方法，导致每次都执行。",
+   "用 isPresent 加 get，和判空没有区别。",
+   "加分：讲 JDK 9 新增的 or、ifPresentOrElse、stream 方法。"
+  ]
+ },
+ "p-j84": {
+  "principle": [
+   "CF 坑：默认 ForkJoin 公共池易被堵；异常包装成 CompletionException；忘超时；链式中忘记返回；在公共池做阻塞 IO。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "supplyAsync(this::io, myPool).orTimeout(3,SECONDS).exceptionally(e->\"x\");"
+  },
+  "asks": [
+   "CF 坑？",
+   "公共池？",
+   "异常？",
+   "超时？"
+  ],
+  "followups": [
+   {
+    "q": "包装？",
+    "a": "get 时解开 cause。"
+   },
+   {
+    "q": "thenCompose？",
+    "a": "扁平化 Future。"
+   },
+   {
+    "q": "allOf？",
+    "a": "异常要自己处理。"
+   }
+  ],
+  "answer": [
+   "总：自备池、超时、正确处理异常。",
+   "分：忌阻塞公共池。",
+   "实践：并行下游调用。",
+   "总结：编排要稳健。"
+  ],
+  "pitfalls": [
+   "无超时无池。"
   ]
  }
 }

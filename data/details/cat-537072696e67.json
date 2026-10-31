@@ -448,5 +448,157 @@
   "pitfalls": [
    "还说 spring.factories 注册自动配置（Boot3 否）。"
   ]
+ },
+ "j-s6": {
+  "principle": [
+   "链路：请求→Filter→DispatcherServlet→HandlerMapping 找 Handler→Interceptor.pre→HandlerAdapter 调 Controller→返回值处理器（视图/消息转换）→Interceptor.post/after→响应。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "DispatcherServlet 是前端控制器核心"
+  },
+  "asks": [
+   "MVC 链路？",
+   "DispatcherServlet？",
+   "拦截器位置？",
+   "消息转换？"
+  ],
+  "followups": [
+   {
+    "q": "Adapter？",
+    "a": "适配不同类型 Handler。"
+   },
+   {
+    "q": "@ResponseBody？",
+    "a": "HttpMessageConverter。"
+   },
+   {
+    "q": "异常？",
+    "a": "HandlerExceptionResolver。"
+   }
+  ],
+  "answer": [
+   "总：前端控制器调度整链。",
+   "分：映射-拦截-适配-返回。",
+   "实践：排 404/拦截器问题。",
+   "总结：懂链路会查中间件。"
+  ],
+  "pitfalls": [
+   "说不清顺序。"
+  ]
+ },
+ "r-j3": {
+  "principle": [
+   "AOT/Native Image：构建期闭环，启动快、内存小；反射/动态代理/资源需 hints；构建慢、调试难、部分库不兼容。适合 Serverless/CLI；传统长驻服务权衡收益。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "spring-boot:build-image / native-maven-plugin\n反射 → reflect-config.json hints"
+  },
+  "asks": [
+   "Native Image？",
+   "代价？",
+   "适用？",
+   "hints？"
+  ],
+  "followups": [
+   {
+    "q": "启动？",
+    "a": "毫秒～秒级。"
+   },
+   {
+    "q": "峰值？",
+    "a": "吞吐未必胜经典 JIT。"
+   },
+   {
+    "q": "Spring？",
+    "a": "AOT 处理部分。"
+   }
+  ],
+  "answer": [
+   "总：快启小内存换构建与兼容成本。",
+   "分：hints；场景选型。",
+   "实践：了解边界。",
+   "总结：不是银弹。"
+  ],
+  "pitfalls": [
+   "一律原生。"
+  ]
+ },
+ "p-s3": {
+  "principle": [
+   "FactoryBean：自己的 getObject 创建复杂对象；容器中 &beanName 才是 FactoryBean 本身。区别于 BeanFactory（容器）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class MyFB implements FactoryBean<Client> {\n  public Client getObject(){ return build(); }\n  public Class<?> getObjectType(){ return Client.class; }\n}"
+  },
+  "asks": [
+   "FactoryBean？",
+   "和 BeanFactory？",
+   "&？",
+   "场景？"
+  ],
+  "followups": [
+   {
+    "q": "&？",
+    "a": "取工厂。"
+   },
+   {
+    "q": "MyBatis？",
+    "a": "MapperFactoryBean。"
+   },
+   {
+    "q": "是否单例？",
+    "a": "isSingleton。"
+   }
+  ],
+  "answer": [
+   "总：用工厂方法暴露产品 Bean。",
+   "分：别和容器接口混。",
+   "实践：集成中间件。",
+   "总结：框架常见扩展点。"
+  ],
+  "pitfalls": [
+   "名字混淆。"
+  ]
+ },
+ "p2-20": {
+  "principle": [
+   "DispatcherServlet 初始化：加载 WebApplicationContext、HandlerMapping、Adapter、ExceptionResolver、ViewResolver 等；Boot 自动配置注册。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "onRefresh → initStrategies"
+  },
+  "asks": [
+   "初始化做什么？",
+   "Boot？",
+   "策略？",
+   "上下文？"
+  ],
+  "followups": [
+   {
+    "q": "父子容器？",
+    "a": "根与 Web。"
+   },
+   {
+    "q": "映射？",
+    "a": "RequestMappingHandlerMapping。"
+   },
+   {
+    "q": "启动慢？",
+    "a": "查初始化 Bean。"
+   }
+  ],
+  "answer": [
+   "总：装配九大组件。",
+   "分：Boot 自动化。",
+   "实践：排启动。",
+   "总结：前端控制器就绪过程。"
+  ],
+  "pitfalls": [
+   "说不清职责。"
+  ]
  }
 }

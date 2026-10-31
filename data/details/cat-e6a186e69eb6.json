@@ -410,5 +410,81 @@
   "pitfalls": [
    "所有逻辑塞进一个 Prompt。"
   ]
+ },
+ "a-f9": {
+  "principle": [
+   "LangChain4j AiServices：定义接口，框架生成代理，声明式挂 memory/tools/retriever，返回类型自动解析。适合快速组装。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Assistant a=AiServices.builder(Assistant.class).chatModel(m).tools(t).chatMemory(mem).build();"
+  },
+  "asks": [
+   "AiServices？",
+   "和 Spring AI？",
+   "优点？",
+   "限制？"
+  ],
+  "followups": [
+   {
+    "q": "原理？",
+    "a": "动态代理。"
+   },
+   {
+    "q": "调试？",
+    "a": "看生成消息。"
+   },
+   {
+    "q": "复杂图？",
+    "a": "可能不够，转 Graph。"
+   }
+  ],
+  "answer": [
+   "总：声明式 AI 服务。",
+   "分：接口即实现。",
+   "实践：【结合你的项目】。",
+   "总结：快但要懂底层。"
+  ],
+  "pitfalls": [
+   "当黑盒不会排错。"
+  ]
+ },
+ "r-f2": {
+  "principle": [
+   "Ollama 本地跑模型；Spring AI Ollama starter 配 base-url 与 model。适合开发、私有化、离线演示；性能与效果逊于云大模型。"
+  ],
+  "example": {
+   "lang": "yaml",
+   "code": "spring.ai.ollama.base-url: http://localhost:11434\nspring.ai.ollama.chat.options.model: qwen2.5"
+  },
+  "asks": [
+   "怎么接 Ollama？",
+   "场景？",
+   "限制？",
+   "嵌入？"
+  ],
+  "followups": [
+   {
+    "q": "拉模型？",
+    "a": "ollama pull。"
+   },
+   {
+    "q": "GPU？",
+    "a": "本地驱动。"
+   },
+   {
+    "q": "生产？",
+    "a": "看 SLA 与硬件。"
+   }
+  ],
+  "answer": [
+   "总：本地 starter 指向 Ollama。",
+   "分：开发私有化友好。",
+   "实践：笔记本演示。",
+   "总结：换 endpoint 即可。"
+  ],
+  "pitfalls": [
+   "当生产唯一依赖不评估。"
+  ]
  }
 }

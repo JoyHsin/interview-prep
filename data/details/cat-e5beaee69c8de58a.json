@@ -1,78 +1,126 @@
 {
  "p2-41": {
   "principle": [
-   "注册发现：服务动态上下线，客户端或网关拿实例列表负载均衡；健康检查摘除故障。解决写死 IP 与弹性扩缩。"
+   "微服务实例会频繁扩缩容、重启、漂移，IP 和端口不固定，写死地址既无法扩容也无法自动摘除故障节点。服务注册与发现就是用一个“注册中心”维护“服务名 → 健康实例列表”的映射。",
+   "流程：① 注册：服务启动后把自己的服务名、IP、端口、元数据（版本、机房、权重）注册到注册中心（Nacos、Eureka、Consul、ZooKeeper、K8s Service）；② 续约/健康检查：实例定期发心跳（客户端上报），或注册中心主动探测（服务端探活），超时未响应就剔除；③ 发现：消费者按服务名拉取或订阅实例列表，并在本地缓存，变更时推送或定时刷新；④ 负载均衡：从列表中按轮询、随机、权重、最少连接等策略选一个实例调用。",
+   "两种负载均衡位置：客户端负载均衡（Spring Cloud LoadBalancer、Dubbo，消费者自己选实例，少一跳）和服务端负载均衡（请求先到网关/Nginx/K8s Service 再转发，消费者无感）。",
+   "可用性取舍：注册中心短暂不一致可以通过客户端重试容忍，但注册中心不可用会导致全站调用失败，所以 Eureka、Nacos 临时实例偏 AP；客户端本地缓存实例列表，注册中心挂了还能继续调用已知实例。优雅下线时要先注销再停服务，避免流量打到正在关闭的实例。"
   ],
   "example": {
-   "lang": "text",
-   "code": "服务启动 → 注册中心；消费者订阅/轮询；心跳；LB"
+   "lang": "yaml",
+   "code": "# Spring Cloud + Nacos：服务提供者\nspring:\n  application:\n    name: order-service\n  cloud:\n    nacos:\n      discovery:\n        server-addr: nacos.internal:8848\n        metadata:\n          version: v2          # 可用于灰度路由\n\n# 消费者：按服务名调用，客户端负载均衡\n@Bean @LoadBalanced\nRestClient.Builder lbClient() { return RestClient.builder(); }\n\nString r = lbClient.build().get()\n        .uri(\"http://order-service/orders/{id}\", id)   // 服务名而非 IP\n        .retrieve().body(String.class);"
   },
   "asks": [
-   "解决什么？",
-   "客户端 vs 服务端 LB？",
-   "健康检查？",
-   "CAP？"
+   "服务注册与发现解决什么问题？",
+   "注册中心挂了服务还能调用吗？",
+   "客户端负载均衡和服务端负载均衡有什么区别？",
+   "Nacos 和 Eureka 有什么区别？"
   ],
   "followups": [
    {
-    "q": "AP？",
-    "a": "Eureka 类；Nacos 可选。"
+    "q": "注册中心挂了怎么办？",
+    "a": "消费者本地缓存了实例列表，短时间内仍能调用已知实例；但新上线或下线的实例感知不到，所以注册中心本身要集群部署。"
    },
    {
-    "q": "网关？",
-    "a": "服务端发现。"
+    "q": "实例宕机多久能被摘除？",
+    "a": "取决于心跳间隔和超时配置，通常十几秒到几十秒；在此期间要靠调用方的超时、重试和熔断兜底。"
    },
    {
-    "q": "缓存？",
-    "a": "客户端本地缓存列表。"
+    "q": "优雅下线怎么做？",
+    "a": "先从注册中心注销并等待消费者刷新列表，再停止接收新请求、处理完在途请求后关闭进程。"
    }
   ],
   "answer": [
-   "总：动态地址与健康感知。",
-   "分：LB 位置；检查。",
-   "实践：Spring Cloud。",
-   "总结：微服务基石。"
+   "总：注册发现解决的是微服务地址动态变化的问题，让调用方按服务名找到健康实例。",
+   "分：服务启动注册，心跳续约或服务端探活，失联剔除；消费者订阅并本地缓存实例列表，再用负载均衡策略选实例；负载均衡可在客户端，也可在网关或 K8s Service；注册中心通常偏 AP，宁可短暂不一致也要可用。",
+   "实践：【结合你的项目】我们用【待填：Nacos/K8s】，发布时先注销再停机，配合调用方超时重试，发版期间没有出现大量报错。",
+   "总结：注册发现加上健康检查和本地缓存，是微服务弹性扩缩和故障自愈的基础。"
   ],
   "pitfalls": [
-   "写死 IP。"
+   "只说“记录服务地址”，不讲健康检查、本地缓存和优雅下线。",
+   "以为注册中心必须强一致；服务发现一般更看重可用性。",
+   "加分：讲清客户端/服务端负载均衡的取舍和元数据灰度路由。"
   ]
  },
  "p2-42": {
   "principle": [
-   "网关：统一入口——鉴权、路由、限流熔断、灰度、日志、协议转换、SSL 终结。不应塞太多业务。"
+   "API 网关是所有外部流量进入后端微服务的统一入口，把各服务都需要的“横切能力”集中实现，后端服务专注业务。常见职责：",
+   "① 路由与负载均衡：按路径、域名、Header 把请求转发到对应服务，结合注册中心做服务发现；支持按版本、用户、比例做灰度和金丝雀发布。② 认证鉴权：校验 Token/JWT/签名，解析用户身份后通过 Header 透传给下游，拒绝未登录或无权限请求。③ 流量治理：限流（按 IP、用户、API）、熔断、超时、重试，防刷和黑名单。④ 协议转换与聚合：HTTP 转 gRPC/Dubbo，WebSocket/SSE 透传，必要时聚合多个后端接口（BFF）。⑤ 安全：TLS 终结、WAF、CORS、请求大小限制。⑥ 可观测：生成 traceId、访问日志、指标统计。",
+   "边界：网关应该“薄”，不要写具体业务逻辑，否则会成为发布瓶颈和单点；网关本身要无状态、多实例、高可用，配置动态下发。",
+   "常见实现：Spring Cloud Gateway（基于 WebFlux 非阻塞）、Nginx/OpenResty、Kong、APISIX、云厂商 API Gateway；在 K8s 中常见 Ingress/Gateway API。对 AI 场景，网关还常承担 SSE 透传（关闭缓冲）和按 token 限流。"
   ],
   "example": {
-   "lang": "text",
-   "code": "Client → Gateway → Services\nSpring Cloud Gateway / Nginx / APISIX"
+   "lang": "yaml",
+   "code": "# Spring Cloud Gateway：路由 + 限流 + 灰度\nspring:\n  cloud:\n    gateway:\n      routes:\n        - id: order-v2-gray\n          uri: lb://order-service-v2\n          predicates:\n            - Path=/api/orders/**\n            - Header=X-Gray, true            # 灰度用户走 v2\n        - id: order\n          uri: lb://order-service\n          predicates:\n            - Path=/api/orders/**\n          filters:\n            - StripPrefix=1\n            - name: RequestRateLimiter       # Redis 令牌桶\n              args:\n                redis-rate-limiter.replenishRate: 50\n                redis-rate-limiter.burstCapacity: 100\n                key-resolver: \"#{@userKeyResolver}\"\n\n// 全局鉴权过滤器：校验 JWT，透传用户 ID\n@Component\nclass AuthFilter implements GlobalFilter, Ordered {\n    public Mono<Void> filter(ServerWebExchange ex, GatewayFilterChain chain) {\n        String token = ex.getRequest().getHeaders().getFirst(\"Authorization\");\n        Claims c = jwt.verify(token);                       // 失败抛异常 → 401\n        return chain.filter(ex.mutate().request(r -> r.header(\"X-User-Id\", c.getSubject())).build());\n    }\n    public int getOrder() { return -100; }\n}"
   },
   "asks": [
-   "网关职责？",
-   "不该做什么？",
-   "限流？",
-   "灰度？"
+   "API 网关有哪些职责？",
+   "网关里可以写业务逻辑吗？",
+   "网关怎么做灰度发布？",
+   "Spring Cloud Gateway 和 Nginx 怎么选？"
   ],
   "followups": [
    {
-    "q": "业务？",
-    "a": "放下游。"
+    "q": "网关成为瓶颈怎么办？",
+    "a": "网关保持无状态并水平扩容，过滤器避免阻塞调用，鉴权尽量本地验签不每次远程调用。"
    },
    {
-    "q": "性能？",
-    "a": "少逻辑少阻塞。"
+    "q": "鉴权放网关还是服务里？",
+    "a": "网关做身份认证和粗粒度权限，服务内部做细粒度数据权限（比如只能看自己的订单），两层都需要。"
    },
    {
-    "q": "安全？",
-    "a": "WAF/鉴权。"
+    "q": "Gateway 和 Nginx 怎么选？",
+    "a": "Nginx 性能高、适合流量入口和静态资源；Spring Cloud Gateway 与 Java 生态、注册中心、自定义过滤器集成方便，常见做法是 Nginx 在前、业务网关在后。"
    }
   ],
   "answer": [
-   "总：横切能力集中。",
-   "分：鉴权路由限流；业务下沉。",
-   "实践：【结合你的项目】。",
-   "总结：网关要瘦。"
+   "总：网关是微服务的统一入口，集中处理路由、鉴权、流量治理、协议转换和可观测这些横切能力。",
+   "分：它按规则把请求路由到服务并支持灰度；校验身份后把用户信息透传下游；做限流熔断和防刷；处理 TLS、跨域、协议转换和 SSE 透传；生成 traceId 和访问日志。网关要保持薄、无状态、高可用，不写业务逻辑。",
+   "实践：【结合你的项目】我们用【待填：Spring Cloud Gateway/Nginx】，按用户限流、Header 灰度，AI 接口额外关闭缓冲支持流式输出。",
+   "总结：网关把通用能力收口，让业务服务更简单，但它自身必须足够轻和可靠。"
   ],
   "pitfalls": [
-   "网关里写复杂业务。"
+   "把业务逻辑塞进网关。",
+   "以为网关鉴权后服务内就不需要数据权限校验。",
+   "加分：讲灰度路由、SSE 透传和网关自身的高可用。"
+  ]
+ },
+ "p2-43": {
+  "principle": [
+   "配置中心：动态刷新、环境隔离、审计权限、灰度；免发版改开关。Nacos/Apollo 等。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "@RefreshScope / @ConfigurationProperties 刷新"
+  },
+  "asks": [
+   "好处？",
+   "刷新？",
+   "风险？",
+   "与本地？"
+  ],
+  "followups": [
+   {
+    "q": "错误配置？",
+    "a": "可回滚。"
+   },
+   {
+    "q": "敏感？",
+    "a": "加密。"
+   },
+   {
+    "q": "强依赖？",
+    "a": "本地兜底。"
+   }
+  ],
+  "answer": [
+   "总：动态、隔离、审计。",
+   "分：刷新机制。",
+   "实践：开关灰度。",
+   "总结：运维效率。"
+  ],
+  "pitfalls": [
+   "改配置就发版。"
   ]
  }
 }

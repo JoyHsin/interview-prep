@@ -39,40 +39,85 @@
  },
  "p2-39": {
   "principle": [
-   "动态 SQL：where/trim/set 去多余 AND；foreach 注意空；${} 仅白名单；过大 if-else 难维护可拆语句或用脚本谨慎。"
+   "MyBatis 的动态 SQL 用 <if>、<choose>、<where>、<set>、<trim>、<foreach> 等标签，根据参数在运行时拼出最终 SQL。常见注意点有：",
+   "① 语法拼接问题：手写 WHERE 1=1 再拼 AND 不优雅，用 <where> 标签，它会在有条件时自动加 WHERE 并去掉开头多余的 AND/OR；UPDATE 用 <set> 自动去掉末尾逗号；更复杂的用 <trim prefix suffixOverrides>。",
+   "② SQL 注入：#{} 会被编译成 PreparedStatement 的 ? 占位符，参数由驱动安全绑定；${} 是字符串直接替换，用户输入会成为 SQL 的一部分，可以被注入。只有表名、列名、排序字段这类无法用占位符的地方才用 ${}，并且必须做白名单校验。LIKE 模糊查询应该写成 LIKE CONCAT('%', #{kw}, '%')，而不是 '%${kw}%'。",
+   "③ 空条件的风险：所有 <if> 都不成立时，查询会变成全表扫描，UPDATE/DELETE 会变成全表更新删除。批量更新删除要校验至少有一个条件，或者在 SQL 中保留必需条件。<foreach> 遍历空集合会生成 IN ()，导致语法错误，调用前要判空。",
+   "④ <if test> 的坑：OGNL 表达式中，数字 0 与空字符串比较 status != '' 会被判断为相等（0 被当作空），导致 status=0 的条件被丢掉；字符串比较单字符要注意 'Y' 会被当成 char。",
+   "⑤ 可维护性与性能：一个 SQL 塞几十个 if 难以阅读和优化，执行计划也难以预测；IN 列表过长要分批；复杂条件考虑拆成多个明确的方法，或用 MyBatis-Plus 的条件构造器。"
   ],
   "example": {
    "lang": "xml",
-   "code": "<where><if test=\"name!=null\">AND name=#{name}</if></where>"
+   "code": "<select id=\"search\" resultType=\"Order\">\n  SELECT id, order_no, status, amount, create_time FROM t_order\n  <where>\n    <if test=\"userId != null\"> AND user_id = #{userId} </if>\n    <!-- 不要写 status != ''，否则 status=0 会被当成空而丢掉条件 -->\n    <if test=\"status != null\"> AND status = #{status} </if>\n    <if test=\"kw != null and kw != ''\">\n      AND order_no LIKE CONCAT('%', #{kw}, '%')\n    </if>\n    <if test=\"ids != null and ids.size() > 0\">\n      AND id IN\n      <foreach collection=\"ids\" item=\"id\" open=\"(\" separator=\",\" close=\")\">#{id}</foreach>\n    </if>\n  </where>\n  <!-- 排序字段只能用 ${}，Java 侧做白名单校验 -->\n  ORDER BY ${sortColumn} ${sortDir}\n</select>\n\n<update id=\"updateSelective\">\n  UPDATE t_order\n  <set>\n    <if test=\"status != null\"> status = #{status}, </if>\n    <if test=\"amount != null\"> amount = #{amount}, </if>\n  </set>\n  WHERE id = #{id}          <!-- 必需条件写死，避免全表更新 -->\n</update>"
   },
   "asks": [
-   "动态 SQL 注意？",
-   "注入？",
-   "维护？",
-   "与注解？"
+   "MyBatis 动态 SQL 有哪些常用标签？",
+   "#{} 和 ${} 有什么区别？",
+   "动态 SQL 有哪些坑？",
+   "动态排序字段怎么防止注入？"
   ],
   "followups": [
    {
-    "q": "空集合？",
-    "a": "foreach 防语法错。"
+    "q": "什么时候必须用 ${}？",
+    "a": "表名、列名、ORDER BY 字段等不能用占位符的位置，此时要在 Java 侧用白名单或枚举把用户输入映射为合法列名。"
    },
    {
-    "q": "复杂？",
-    "a": "可 XML 分离。"
+    "q": "status != '' 为什么会出问题？",
+    "a": "OGNL 比较时会把数字 0 和空字符串视为相等，条件被判定为假，导致 status=0 的过滤条件被丢掉。"
    },
    {
-    "q": "调试？",
-    "a": "打日志看最终 SQL。"
+    "q": "foreach 传空集合会怎样？",
+    "a": "会生成 IN ()，导致 SQL 语法错误；在 Java 侧提前判空直接返回，或在 test 中判断集合非空。"
    }
   ],
   "answer": [
-   "总：标签处理拼接，防 ${} 注入。",
-   "分：可维护性。",
-   "实践：搜索条件动态。",
-   "总结：安全与清晰。"
+   "总：动态 SQL 让条件组合更灵活，但要注意语法拼接、SQL 注入、空条件和可维护性四类问题。",
+   "分：用 where、set、trim 标签处理多余的 AND 和逗号；参数一律用 #{} 预编译，${} 只用于列名和排序字段且必须白名单；所有条件为空时要防止全表查询和全表更新，foreach 空集合要判空；注意 OGNL 中 0 等于空字符串的坑；条件太多时拆分方法或用条件构造器。",
+   "实践：【结合你的项目】我们在代码审查中规定禁止对用户输入使用 ${}，排序字段走枚举映射，批量更新必须带主键或明确条件。",
+   "总结：动态 SQL 的原则是参数必须预编译、条件必须可控、SQL 必须可读。"
   ],
   "pitfalls": [
-   "用户输入进 ${}。"
+   "LIKE 写成 '%${kw}%' 造成注入。",
+   "UPDATE 条件全部写在 if 中，参数为空时全表更新。",
+   "加分：讲 OGNL 数字 0 与空串比较的坑。"
+  ]
+ },
+ "p-mb2": {
+  "principle": [
+   "一级缓存 SqlSession 级默认开；二级 Mapper 命名空间可跨会话，分布式易脏，生产常关或极慎用。本地缓存更新策略复杂。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "mybatis.configuration.cache-enabled=false  # 二缓\n# 分布式用 Redis 业务缓存更清晰"
+  },
+  "asks": [
+   "一二缓？",
+   "分布式？",
+   "何时开？",
+   "和 Redis？"
+  ],
+  "followups": [
+   {
+    "q": "脏读？",
+    "a": "多实例二缓。"
+   },
+   {
+    "q": "会话？",
+    "a": "一缓同会话重复查。"
+   },
+   {
+    "q": "注解？",
+    "a": "@CacheNamespace。"
+   }
+  ],
+  "answer": [
+   "总：一缓会话，二缓慎用。",
+   "分：分布式用外置缓存。",
+   "实践：默认关二缓。",
+   "总结：缓存层次清晰。"
+  ],
+  "pitfalls": [
+   "多节点开二缓不失效。"
   ]
  }
 }

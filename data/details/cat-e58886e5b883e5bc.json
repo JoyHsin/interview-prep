@@ -214,78 +214,90 @@
  },
  "p-d1": {
   "principle": [
-   "一致性哈希：节点映射到环，数据落到顺时针第一节点；增删节点只影响邻居，迁移少。虚拟节点让负载更均匀。用于缓存集群、部分分布式存储。"
+   "问题背景：缓存集群用 hash(key) % N 决定数据放哪台机器，节点数 N 一变（扩容或宕机），几乎所有 key 的映射都会改变，缓存大面积失效，流量直接打到数据库。",
+   "一致性哈希：把哈希值空间组织成一个环（如 0 到 2^32-1），每个节点按 hash(节点标识) 放到环上；数据按 hash(key) 落到环上后，顺时针找到的第一个节点就是它的归属。新增节点时，只有新节点到它逆时针前一个节点之间的数据需要迁移；删除节点时，只有该节点的数据转移给顺时针下一个节点。迁移量约为 1/N，而不是几乎全部。",
+   "数据倾斜问题：节点少时在环上分布不均，某些节点负责的区间很大。解决办法是虚拟节点：每个物理节点映射成几十到几百个虚拟节点（如 nodeA#1、nodeA#2）分散在环上，查找到虚拟节点再映射回物理节点，负载更均匀；机器性能不同还可以按权重分配虚拟节点数。",
+   "应用：Memcached/Redis 客户端分片（如 Jedis ShardedJedis）、Nginx upstream 的 hash consistent、负载均衡的会话亲和、分布式存储。注意 Redis Cluster 并不用一致性哈希，而是固定 16384 个哈希槽（CRC16(key) % 16384），槽可以在节点间迁移，思路相似但更可控。"
   ],
   "example": {
-   "lang": "text",
-   "code": "环上：nodeA,v1,v2... 数据 hash 顺时针找\n对比取模：扩容迁移大"
+   "lang": "java",
+   "code": "import java.util.*;\n\npublic class ConsistentHash<T> {\n    private final TreeMap<Long, T> ring = new TreeMap<>();\n    private final int virtualNodes;\n\n    public ConsistentHash(Collection<T> nodes, int virtualNodes) {\n        this.virtualNodes = virtualNodes;\n        nodes.forEach(this::add);\n    }\n    public void add(T node) {\n        for (int i = 0; i < virtualNodes; i++) ring.put(hash(node + \"#\" + i), node);\n    }\n    public void remove(T node) {\n        for (int i = 0; i < virtualNodes; i++) ring.remove(hash(node + \"#\" + i));\n    }\n    public T get(String key) {\n        Map.Entry<Long, T> e = ring.ceilingEntry(hash(key));   // 顺时针第一个\n        return (e != null ? e : ring.firstEntry()).getValue();  // 越过末尾回到环首\n    }\n    private long hash(String s) {                               // FNV-1a，分布较均匀\n        long h = 0xcbf29ce484222325L;\n        for (byte b : s.getBytes()) { h ^= b; h *= 0x100000001b3L; }\n        return h & 0xffffffffL;\n    }\n}\n// new ConsistentHash<>(List.of(\"cache-1\",\"cache-2\",\"cache-3\"), 160).get(\"user:42\")"
   },
   "asks": [
-   "一致性哈希？",
-   "虚拟节点？",
-   "解决什么？",
-   "和取模？"
+   "一致性哈希解决什么问题？",
+   "一致性哈希的原理？",
+   "什么是虚拟节点？为什么需要？",
+   "Redis Cluster 用的是一致性哈希吗？"
   ],
   "followups": [
    {
-    "q": "倾斜？",
-    "a": "虚拟节点增多。"
+    "q": "新增节点迁移多少数据？",
+    "a": "大约只有总数据量的 1/N（N 为新节点数后的节点总数），且只影响新节点在环上相邻的那一段。"
    },
    {
-    "q": "失败？",
-    "a": "备用副本策略另议。"
+    "q": "虚拟节点设多少合适？",
+    "a": "常见每个物理节点 100～200 个，越多越均匀但环越大、查找和维护开销略增，可以按负载均衡度测试选择。"
    },
    {
-    "q": "应用？",
-    "a": "Redis 集群客户端、CDN。"
+    "q": "Redis Cluster 为什么用哈希槽？",
+    "a": "16384 个固定槽便于精确迁移和管理，扩缩容时按槽搬迁，客户端通过 MOVED/ASK 重定向，比一致性哈希更易运维。"
    }
   ],
   "answer": [
-   "总：少迁移的弹性映射。",
-   "分：虚拟节点均衡。",
-   "实践：缓存扩容场景。",
-   "总结：弹性比简单取模友好。"
+   "总：一致性哈希解决的是节点增减时取模分片导致大量数据重新映射的问题。",
+   "分：节点和 key 都映射到哈希环上，key 顺时针归属第一个节点，增删节点只影响相邻区间，迁移量约 1/N；节点少时会倾斜，用虚拟节点打散并可按权重分配；它常用于客户端缓存分片和负载均衡亲和，而 Redis Cluster 用的是 16384 个哈希槽。",
+   "实践：【结合你的项目】【待填：如本地多级缓存或网关会话亲和中使用一致性哈希，扩容时缓存命中率影响多大】。",
+   "总结：一致性哈希用环加虚拟节点，让分布式系统在弹性伸缩时只付出最小的迁移代价。"
   ],
   "pitfalls": [
-   "说完全无迁移。"
+   "说一致性哈希扩容完全不需要迁移数据。",
+   "把 Redis Cluster 说成一致性哈希。",
+   "加分：讲虚拟节点权重和槽位方案的对比。"
   ]
  },
  "p-d2": {
   "principle": [
-   "固定窗口简单有突刺；滑动窗口更平滑；漏桶恒定流出；令牌桶允许突发（生产常用）。网关+业务双层；分布式用 Redis+Lua 或 Sentinel。"
+   "限流的目标是保护系统在超出容量时仍能服务一部分请求，而不是被打垮。常见算法：",
+   "① 固定窗口计数：每个时间窗口（如 1 秒）计数，超过阈值拒绝。实现最简单，但窗口边界会出现突刺：上一秒最后 100ms 和下一秒最前 100ms 各来满额请求，短时间内实际通过 2 倍流量。",
+   "② 滑动窗口：把窗口切成多个小格（如 10 个 100ms），统计最近 N 个小格之和，或记录每个请求时间戳（滑动日志）。更平滑，Sentinel 就基于滑动窗口统计。",
+   "③ 漏桶：请求进入桶中，以恒定速率流出处理，桶满则丢弃。输出绝对平滑，适合保护处理能力固定的下游，但无法应对合理的突发。",
+   "④ 令牌桶：以固定速率往桶里放令牌，桶有容量上限，请求拿到令牌才放行。桶里积攒的令牌允许一定突发，长期平均速率受控，是 API 限流最常用的模型（Guava RateLimiter、Nginx 的 limit_req 带 burst 类似）。",
+   "落地分层：网关层按 IP、用户、API 做粗粒度限流，挡住恶意和超量流量；业务层按接口、热点参数（如商品 ID）、下游依赖做细粒度限流。多实例时单机限流的总量会随实例数变化，需要全局限流可用 Redis + Lua 原子计数，或 Sentinel 集群流控。被限流的请求要返回明确的 429 和重试提示。"
   ],
   "example": {
    "lang": "java",
-   "code": "// 令牌桶：每秒放 r 个令牌，桶容 b，请求取令牌"
+   "code": "// Redis + Lua 实现分布式固定窗口（简单）/ 令牌桶（示意）\nprivate static final String TOKEN_BUCKET = \"\"\"\n    local key = KEYS[1]\n    local rate = tonumber(ARGV[1])      -- 每秒生成令牌数\n    local cap  = tonumber(ARGV[2])      -- 桶容量\n    local now  = tonumber(ARGV[3])      -- 当前毫秒\n    local data = redis.call('HMGET', key, 'tokens', 'ts')\n    local tokens = tonumber(data[1]) or cap\n    local ts = tonumber(data[2]) or now\n    tokens = math.min(cap, tokens + (now - ts) * rate / 1000)\n    local allowed = 0\n    if tokens >= 1 then tokens = tokens - 1; allowed = 1 end\n    redis.call('HMSET', key, 'tokens', tokens, 'ts', now)\n    redis.call('PEXPIRE', key, 60000)\n    return allowed\n    \"\"\";\n\nboolean allow(String userId) {\n    Long r = redis.execute(new DefaultRedisScript<>(TOKEN_BUCKET, Long.class),\n            List.of(\"rl:\" + userId), \"10\", \"20\", String.valueOf(System.currentTimeMillis()));\n    return r != null && r == 1;      // 不通过返回 HTTP 429\n}"
   },
   "asks": [
-   "限流算法？",
-   "令牌桶漏桶？",
-   "分布式？",
-   "双层？"
+   "常见的限流算法有哪些？",
+   "令牌桶和漏桶有什么区别？",
+   "固定窗口有什么问题？",
+   "分布式环境下怎么做全局限流？"
   ],
   "followups": [
    {
-    "q": "突发？",
-    "a": "令牌桶。"
+    "q": "令牌桶和漏桶核心区别？",
+    "a": "令牌桶控制的是平均流入速率并允许积攒令牌应对突发；漏桶控制的是流出速率，输出恒定，不允许突发。"
    },
    {
-    "q": "平滑？",
-    "a": "漏桶。"
+    "q": "限流阈值怎么定？",
+    "a": "根据压测得到的系统容量和下游容量，留出安全余量，再结合历史峰值；上线后根据监控动态调整。"
    },
    {
-    "q": "热点参数？",
-    "a": "Sentinel 支持。"
+    "q": "单机限流和集群限流怎么选？",
+    "a": "单机限流无网络开销、实现简单，适合保护本实例资源；需要严格的全局总量（如第三方 API 配额）时用 Redis 或 Sentinel 集群流控。"
    }
   ],
   "answer": [
-   "总：按场景选窗口/桶算法。",
-   "分：网关与业务；分布式原子。",
-   "实践：【结合你的项目】。",
-   "总结：限流是保护不是惩罚。"
+   "总：限流是用算法控制单位时间的请求量，保护系统在超量时不被打垮。",
+   "分：固定窗口简单但有边界突刺，滑动窗口更平滑；漏桶输出恒定不允许突发，令牌桶允许适度突发又控制平均速率，是最常用的；落地上网关做粗粒度、业务层做接口和热点参数级限流，全局总量用 Redis Lua 或 Sentinel 集群模式。",
+   "实践：【结合你的项目】我们在网关按用户做令牌桶限流，调用大模型接口按租户限并发和 token，被限流返回 429 并提示稍后重试。",
+   "总结：选算法看是否允许突发，选位置看保护对象，阈值一定来自压测数据。"
   ],
   "pitfalls": [
-   "只前端防抖。"
+   "只会说“用 Sentinel”，讲不出算法差异。",
+   "忽略多实例下单机限流总量会随实例数放大。",
+   "加分：讲热点参数限流和被限流请求的友好降级。"
   ]
  },
  "p-d3": {
@@ -328,40 +340,159 @@
  },
  "p2-31": {
   "principle": [
-   "AT：自动 undo_log+全局锁，侵入小，适合一般一致性。TCC：Try/Confirm/Cancel，性能与跨资源强，侵入大，处理空回滚悬挂。高并发核心链路常 TCC 或消息最终一致。"
+   "Seata 是阿里开源的分布式事务框架，由 TC（事务协调者，独立部署的 Seata Server）、TM（事务管理器，发起全局事务）、RM（资源管理器，管理分支事务）组成。AT 和 TCC 是最常用的两种模式。",
+   "AT 模式（自动补偿，两阶段）：一阶段，RM 通过代理数据源拦截业务 SQL，先查询修改前的数据（before image），执行 SQL，再查询修改后的数据（after image），把前后镜像写入 undo_log 表，与业务数据在同一个本地事务中提交，并向 TC 注册分支、申请全局锁。本地锁在一阶段就释放了。二阶段提交：异步删除 undo_log 即可；二阶段回滚：根据 undo_log 生成反向 SQL 恢复数据，回滚前先校验当前数据是否等于 after image，不等说明被其他事务修改过（脏写），需要人工处理。全局锁用来防止其他 Seata 全局事务写同一行，但不受 Seata 管理的写入无法被拦截。优点是对业务代码几乎无侵入（加 @GlobalTransactional 即可），缺点是全局锁导致热点行并发差，依赖关系型数据库并且 SQL 解析有限制。",
+   "TCC 模式：业务自己实现 Try（检查并预留资源，比如冻结库存或冻结金额）、Confirm（使用预留资源完成业务）、Cancel（释放预留资源）三个方法。不依赖数据库锁，可以操作 Redis、第三方接口等任意资源，并发性能好。代价是业务侵入大、开发量大，并且必须处理三个经典问题：幂等（Confirm/Cancel 可能被重复调用）、空回滚（Try 没执行就收到 Cancel，要识别并直接返回成功）、悬挂（Cancel 先于 Try 到达，之后 Try 不能再执行），通常靠事务控制表记录分支状态解决。",
+   "选型：后台管理类、并发不高、希望少改代码用 AT；资金、库存等高并发核心链路用 TCC；能接受最终一致的长链路更推荐可靠消息或 Saga。"
   ],
   "example": {
-   "lang": "text",
-   "code": "下单：本地消息表/事务消息 → 库存服务消费幂等\n资金：TCC 冻结→确认"
+   "lang": "java",
+   "code": "// AT：发起方加注解，各服务使用 Seata 代理数据源 + undo_log 表\n@GlobalTransactional(name = \"create-order\", rollbackFor = Exception.class)\npublic void createOrder(OrderDTO dto) {\n    orderMapper.insert(dto.toOrder());\n    stockClient.deduct(dto.getSkuId(), dto.getCount());    // 远程分支，XID 自动透传\n    accountClient.debit(dto.getUserId(), dto.getAmount());\n}\n\n// TCC：库存服务实现三个阶段\n@LocalTCC\npublic interface StockTccAction {\n    @TwoPhaseBusinessAction(name = \"deductStock\", commitMethod = \"confirm\",\n                            rollbackMethod = \"cancel\", useTCCFence = true) // 防幂等/空回滚/悬挂\n    boolean tryDeduct(@BusinessActionContextParameter(paramName = \"skuId\") Long skuId,\n                      @BusinessActionContextParameter(paramName = \"count\") Integer count);\n    boolean confirm(BusinessActionContext ctx);   // 冻结库存 → 实际扣减\n    boolean cancel(BusinessActionContext ctx);    // 释放冻结库存\n}\n// tryDeduct: UPDATE stock SET available = available - #{count}, frozen = frozen + #{count}\n//            WHERE sku_id = #{skuId} AND available >= #{count}"
   },
   "asks": [
-   "AT vs TCC？",
-   "空回滚？",
-   "选型？",
-   "对账？"
+   "Seata AT 模式的原理是什么？",
+   "AT 和 TCC 有什么区别？",
+   "TCC 的空回滚、幂等、悬挂是什么？",
+   "高并发场景下分布式事务怎么选？"
   ],
   "followups": [
    {
-    "q": "悬挂？",
-    "a": "控制表防 Cancel 先于 Try。"
+    "q": "AT 模式的全局锁有什么问题？",
+    "a": "同一行在全局事务结束前不能被其他全局事务修改，热点数据会严重排队；而且非 Seata 管理的写入不受全局锁约束，可能导致回滚失败。"
    },
    {
-    "q": "AT 锁？",
-    "a": "全局锁可能热点。"
+    "q": "什么是悬挂？怎么防？",
+    "a": "Cancel 因网络原因先于 Try 执行，之后迟到的 Try 预留了资源却再也不会被确认或取消；在事务控制表中记录已回滚，Try 执行前检查到就拒绝。"
    },
    {
-    "q": "消息？",
-    "a": "最终一致更常见。"
+    "q": "为什么高并发更推荐 TCC 或消息？",
+    "a": "TCC 一阶段就提交并只冻结资源，不持有全局锁；可靠消息完全异步，吞吐最高，只要业务能接受最终一致。"
    }
   ],
   "answer": [
-   "总：侵入 vs 性能的选型。",
-   "分：配套幂等对账。",
-   "实践：【结合你的项目】。",
-   "总结：尽量避免分布式事务。"
+   "总：AT 通过 undo_log 自动补偿实现无侵入，TCC 由业务实现资源预留和确认取消，性能更好但侵入更大。",
+   "分：AT 一阶段代理 SQL 记录前后镜像并提交本地事务、持有全局锁，二阶段提交删 undo_log，回滚用镜像生成反向 SQL；TCC 由 Try 冻结资源，Confirm 和 Cancel 完成或释放，不依赖数据库锁，但要处理幂等、空回滚和悬挂；并发不高、少改代码选 AT，核心高并发选 TCC，长链路最终一致选消息或 Saga。",
+   "实践：【结合你的项目】【待填：如下单扣库存用 TCC 冻结库存，用 TCC Fence 处理幂等和悬挂；或者说明项目用的是可靠消息】。",
+   "总结：分布式事务没有银弹，要在一致性、性能和开发成本之间按场景选择。"
   ],
   "pitfalls": [
-   "只会说用 Seata。"
+   "说 AT 的二阶段回滚一定成功，不知道脏写校验。",
+   "讲 TCC 时漏掉空回滚和悬挂。",
+   "加分：对比可靠消息和 Saga，说明何时不需要强一致。"
+  ]
+ },
+ "j-d5": {
+  "principle": [
+   "分布式 ID：UUID 无序占空间；号段 DB 段缓存；雪花趋势递增、依赖时钟（回拨要处理）；Redis INCR。索引友好选趋势递增。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "long id = snowflake.nextId(); // 时间+机器+序列"
+  },
+  "asks": [
+   "分布式 ID？",
+   "雪花回拨？",
+   "号段？",
+   "为何递增？"
+  ],
+  "followups": [
+   {
+    "q": "回拨？",
+    "a": "等待/扩展位/报错。"
+   },
+   {
+    "q": "机器号？",
+    "a": "协调分配。"
+   },
+   {
+    "q": "美团 leaf？",
+    "a": "号段+雪花。"
+   }
+  ],
+  "answer": [
+   "总：号段与雪花主流。",
+   "分：时钟与索引。",
+   "实践：订单号。",
+   "总结：别用随机打散主键。"
+  ],
+  "pitfalls": [
+   "UUID 当聚簇主键。"
+  ]
+ },
+ "p-d4": {
+  "principle": [
+   "雪崩：依赖失败→线程打满→整站挂。防：超时、熔断、限流、舱壁隔离线程池、缓存降级、快速失败。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@CircuitBreaker(name=\"dep\", fallbackMethod=\"fb\")"
+  },
+  "asks": [
+   "雪崩？",
+   "怎么防？",
+   "舱壁？",
+   "超时？"
+  ],
+  "followups": [
+   {
+    "q": "舱壁？",
+    "a": "池隔离依赖。"
+   },
+   {
+    "q": "重试？",
+    "a": "放大灾难，要谨慎。"
+   },
+   {
+    "q": "演练？",
+    "a": "故障注入。"
+   }
+  ],
+  "answer": [
+   "总：超时熔断隔离降级。",
+   "分：别无限重试。",
+   "实践：Resilience4j/Sentinel。",
+   "总结：失败要可控。"
+  ],
+  "pitfalls": [
+   "依赖挂了还狂重试。"
+  ]
+ },
+ "p2-32": {
+  "principle": [
+   "链路追踪：traceId 全链路，spanId 每跨度；采样率控量；注入日志 MDC 关联。SkyWalking/Zipkin/OTel。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "MDC.put(\"traceId\", id); // 网关生成下传"
+  },
+  "asks": [
+   "追踪字段？",
+   "采样？",
+   "和日志？",
+   "AI？"
+  ],
+  "followups": [
+   {
+    "q": "透传？",
+    "a": "HTTP header。"
+   },
+   {
+    "q": "存储？",
+    "a": "后端集中。"
+   },
+   {
+    "q": "性能？",
+    "a": "采样。"
+   }
+  ],
+  "answer": [
+   "总：trace/span+日志关联。",
+   "分：采样；标准头。",
+   "实践：排障神器。",
+   "总结：微服务必备。"
+  ],
+  "pitfalls": [
+   "无 ID 无法串。"
   ]
  }
 }

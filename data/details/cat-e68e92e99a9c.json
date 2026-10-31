@@ -252,40 +252,123 @@
  },
  "p2-36": {
   "principle": [
-   "发现：慢日志/APM → 定位 SQL → EXPLAIN/ANALYZE → 改索引或改写 → 验证 → 监控。分页、*、函数、隐式转换是常客。"
+   "慢 SQL 优化是一个闭环流程：发现 → 定位 → 分析 → 优化 → 验证 → 防复发。",
+   "① 发现：开启慢查询日志（slow_query_log、long_query_time，如 1 秒），用 pt-query-digest 或云数据库的慢日志分析按总耗时、执行次数排序；APM/链路追踪里找耗时最长的 SQL span。优先优化“总耗时 = 单次耗时 × 次数”最大的，而不只是单次最慢的。",
+   "② 分析执行计划：EXPLAIN 看 type（是否 ALL 全表）、key（用了哪个索引）、rows（估算扫描行数）、Extra（Using filesort、Using temporary、Using index）；MySQL 8.0 用 EXPLAIN ANALYZE 看真实执行耗时和行数，判断估算是否失真。",
+   "③ 优化手段按成本排序：改写 SQL（去掉索引列上的函数和隐式转换、避免 SELECT *、OR 改 UNION、子查询改 JOIN）；加或调整索引（联合索引顺序、覆盖索引）；分页优化（游标分页、延迟关联）；减少数据量（归档冷数据、汇总表）；架构手段（缓存、读写分离、ES 承担复杂检索）。",
+   "④ 验证：在与生产相近的数据量上对比优化前后的耗时和扫描行数，注意新索引对写入性能的影响。",
+   "⑤ 防复发：慢 SQL 告警、上线前 SQL 审核、统计信息定期更新。"
   ],
   "example": {
-   "lang": "text",
-   "code": "慢日志 → EXPLAIN → 加索引/改写 → 压测对比 → 上线观察"
+   "lang": "sql",
+   "code": "-- 1. 慢日志找到的 SQL（2.3 秒）\nSELECT * FROM t_order\n WHERE DATE(create_time) = '2026-10-30' AND status = 1\n ORDER BY create_time DESC LIMIT 100000, 20;\n\n-- 2. EXPLAIN：type=ALL, rows=4,800,000, Extra=Using where; Using filesort\n\n-- 3. 优化：去掉列上函数 + 联合索引 + 游标分页 + 只查需要的列\nALTER TABLE t_order ADD INDEX idx_status_ctime (status, create_time);\n\nSELECT id, order_no, amount, create_time FROM t_order\n WHERE status = 1\n   AND create_time >= '2026-10-30' AND create_time < '2026-10-31'\n   AND create_time < #{lastCreateTime}          -- 游标：上一页最后一条\n ORDER BY create_time DESC LIMIT 20;\n\n-- 4. EXPLAIN ANALYZE 验证：type=range, rows≈20，实际 8ms"
   },
   "asks": [
-   "慢 SQL 步骤？",
-   "工具？",
-   "改写？",
-   "归档？"
+   "线上慢 SQL 从发现到优化你的步骤是什么？",
+   "你怎么找到最需要优化的 SQL？",
+   "EXPLAIN 关注哪些字段？",
+   "优化后怎么验证效果？"
   ],
   "followups": [
    {
-    "q": "强制索引？",
-    "a": "慎用临时。"
+    "q": "先优化单次最慢的还是总耗时最多的？",
+    "a": "优先总耗时最大的，一条 50ms 但每秒执行上千次的 SQL，对数据库的压力往往比一条偶尔执行的 5 秒 SQL 大得多。"
    },
    {
-    "q": "缓存？",
-    "a": "治标也可。"
+    "q": "加索引有什么代价？",
+    "a": "写入时要维护索引，插入更新变慢、占用更多空间；大表在线加索引要评估锁和复制延迟，可用 Online DDL 或 gh-ost。"
    },
    {
-    "q": "大表？",
-    "a": "分库分表归档。"
+    "q": "EXPLAIN 的 rows 和实际差很多怎么办？",
+    "a": "说明统计信息不准，执行 ANALYZE TABLE 更新，或用 EXPLAIN ANALYZE 看真实行数再判断。"
    }
   ],
   "answer": [
-   "总：度量-计划-改-再度量。",
-   "分：索引与改写优先。",
-   "实践：【结合你的项目】。",
-   "总结：数据说话。"
+   "总：慢 SQL 优化按“发现、分析、优化、验证、防复发”闭环来做。",
+   "分：用慢日志和 APM 按总耗时排序找目标；用 EXPLAIN 和 EXPLAIN ANALYZE 看访问类型、扫描行数和是否有文件排序；优先改写 SQL 和调整索引，再考虑分页优化、数据归档和缓存等架构手段；最后在相近数据量上验证并评估写入影响，加上慢 SQL 告警和上线审核。",
+   "实践：【结合你的项目】有条订单列表 SQL 用了 DATE 函数加深分页，耗时【待填】秒，改成范围条件、建 (status, create_time) 联合索引并改游标分页后降到【待填】毫秒。",
+   "总结：优化要用执行计划和真实数据说话，并且要把防复发机制建起来。"
   ],
   "pitfalls": [
-   "不看计划加索引。"
+   "只盯单次最慢的 SQL，忽视高频 SQL。",
+   "加索引不评估写入代价和大表 DDL 风险。",
+   "加分：讲 pt-query-digest、EXPLAIN ANALYZE 和上线前 SQL 审核。"
+  ]
+ },
+ "j-t5": {
+  "principle": [
+   "工具：jmap/jcmd heap_dump、MAT/JVisualVM、async-profiler。嫌疑：无界缓存、监听未注销、ThreadLocal 未 remove、类加载泄漏。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "jcmd <pid> GC.heap_dump /tmp/h.hprof"
+  },
+  "asks": [
+   "内存泄漏工具？",
+   "嫌疑点？",
+   "MAT？",
+   "堆外？"
+  ],
+  "followups": [
+   {
+    "q": "支配树？",
+    "a": "谁留住大对象。"
+   },
+   {
+    "q": "对比 dump？",
+    "a": "前后对比。"
+   },
+   {
+    "q": "生产？",
+    "a": "无损或摘流。"
+   }
+  ],
+  "answer": [
+   "总：dump+分析器。",
+   "分：常见泄漏源。",
+   "实践：【结合你的项目】。",
+   "总结：工具链要熟。"
+  ],
+  "pitfalls": [
+   "只会 top。"
+  ]
+ },
+ "p-t2": {
+  "principle": [
+   "CPU+Load 高：先分 user/sys/io wait；user 高看线程热点与 GC；io wait 看盘；load 高但 CPU 低可能大量 runnable 等内核或僵尸线程。工具：top、pidstat、jstack、perf。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "top -Hp <pid>; vmstat 1; iostat -x 1"
+  },
+  "asks": [
+   "CPU Load 都高看什么？",
+   "区分？",
+   "GC？",
+   "IO？"
+  ],
+  "followups": [
+   {
+    "q": "Load？",
+    "a": "可运行队列长度。"
+   },
+   {
+    "q": "Steal？",
+    "a": "虚拟化抢占。"
+   },
+   {
+    "q": "火焰图？",
+    "a": "最直观。"
+   }
+  ],
+  "answer": [
+   "总：先分类再工具下钻。",
+   "分：热点栈与 IO。",
+   "实践：排障清单。",
+   "总结：指标交叉验证。"
+  ],
+  "pitfalls": [
+   "只看 Load 重启。"
   ]
  }
 }

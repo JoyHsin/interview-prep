@@ -250,40 +250,46 @@
  },
  "p-sc2": {
   "principle": [
-   "Feed：推模式写扩散——发帖写入粉丝收件箱，读快写昂贵（大 V 难）。拉模式读扩散——读时聚合关注人，写快读贵。混合：普通推、大 V 拉。"
+   "Feed 流（朋友圈、微博关注流）要解决：用户打开时能快速看到所关注的人按时间排序的最新内容。核心是在“写时做功”还是“读时做功”之间取舍。",
+   "推模式（写扩散）：用户发帖时，把帖子 ID 写入每个粉丝的收件箱（如 Redis ZSet，score 为时间）。读时只需读自己的收件箱，非常快。问题：大 V 有上千万粉丝，一次发帖要写上千万次，延迟高、存储大；很多粉丝根本不活跃，写了也白写。",
+   "拉模式（读扩散）：每个人只写自己的发件箱。读时取出关注列表，从每个关注者的发件箱取最新若干条，多路归并排序。写入极轻，但关注数多时一次读要访问大量发件箱，延迟和压力集中在读。",
+   "推拉结合（主流方案）：普通用户发帖用推模式；大 V（粉丝数超过阈值）只写发件箱。用户读 Feed 时，合并“自己的收件箱（推过来的）”和“所关注大 V 的发件箱（实时拉）”。另外可以只给活跃粉丝推送，不活跃用户上线时再拉取补齐。",
+   "其他细节：收件箱只存 ID 和时间，内容另存并缓存；收件箱只保留最近 N 条（如 1000），更早的翻页走拉模式或数据库；删帖可以懒删除（读时过滤已删除）；推送通过 MQ 异步执行，避免发帖接口变慢；分页用“上一页最后的时间戳/ID”做游标。"
   ],
   "example": {
-   "lang": "text",
-   "code": "发帖：小用户推送收件箱；大 V 只写信箱\n读：合并关注的信箱 + 大 V 拉取，按时间归并"
+   "lang": "java",
+   "code": "// 发帖：普通用户推到活跃粉丝收件箱；大 V 只写发件箱\npublic void publish(long authorId, long postId, long ts) {\n    redis.opsForZSet().add(\"outbox:\" + authorId, String.valueOf(postId), ts);\n    if (followerCount(authorId) < BIG_V_THRESHOLD) {\n        mq.send(\"feed-fanout\", new Fanout(authorId, postId, ts));   // 异步推送\n    }\n}\n\n// 消费者：分批写活跃粉丝收件箱，只保留最近 1000 条\nvoid onFanout(Fanout f) {\n    for (List<Long> batch : activeFollowersInBatches(f.authorId(), 500)) {\n        redis.executePipelined((RedisCallback<Object>) c -> {\n            for (Long uid : batch) {\n                byte[] k = (\"inbox:\" + uid).getBytes();\n                c.zAdd(k, f.ts(), String.valueOf(f.postId()).getBytes());\n                c.zRemRange(k, 0, -1001);\n            }\n            return null;\n        });\n    }\n}\n\n// 读 Feed：收件箱 + 关注的大 V 发件箱，按时间归并，游标分页\nList<Long> feed(long uid, long maxTs, int size) {\n    Set<TypedTuple<String>> merged = new TreeSet<>(byScoreDesc);\n    merged.addAll(redis.opsForZSet().reverseRangeByScoreWithScores(\"inbox:\" + uid, 0, maxTs - 1, 0, size));\n    for (long bigV : followedBigVs(uid))\n        merged.addAll(redis.opsForZSet().reverseRangeByScoreWithScores(\"outbox:\" + bigV, 0, maxTs - 1, 0, size));\n    return merged.stream().limit(size).map(t -> Long.valueOf(t.getValue())).toList();\n}"
   },
   "asks": [
-   "推拉模式？",
-   "大 V？",
-   "推特类？",
-   "缓存？"
+   "Feed 流系统怎么设计？推模式和拉模式有什么区别？",
+   "大 V 发帖怎么处理？",
+   "Feed 流怎么分页？",
+   "用户删帖了，粉丝的收件箱怎么处理？"
   ],
   "followups": [
    {
-    "q": "扇出？",
-    "a": "写扩散粉丝数。"
+    "q": "为什么只推给活跃粉丝？",
+    "a": "大部分粉丝长期不登录，推送给他们浪费写入和存储；不活跃用户上线时再拉取补齐即可。"
    },
    {
-    "q": "排序？",
-    "a": "时间或相关度。"
+    "q": "分页为什么不用 offset？",
+    "a": "Feed 不断有新内容插入，用 offset 翻页会出现重复或遗漏，用上一页最后一条的时间戳或 ID 做游标更稳定。"
    },
    {
-    "q": "删帖？",
-    "a": "同步各收件箱或懒删。"
+    "q": "推送失败或延迟怎么办？",
+    "a": "推送通过 MQ 异步重试；读的时候即使收件箱缺了几条，也可以再拉一次关注者发件箱补齐，最终一致即可。"
    }
   ],
   "answer": [
-   "总：推快读、拉快写，混合治大 V。",
-   "分：按粉丝数策略。",
-   "实践：【结合你的项目】。",
-   "总结：热点账号特殊路径。"
+   "总：Feed 流设计的核心是在写扩散和读扩散之间取舍，主流是推拉结合。",
+   "分：推模式发帖时写粉丝收件箱，读得快但大 V 写放大严重；拉模式只写发件箱，读时多路归并，写轻读重；结合方案是普通用户推、大 V 拉，只推活跃粉丝；收件箱用 ZSet 存 ID 和时间并限制长度，推送走 MQ 异步，分页用时间戳游标，删帖懒删除。",
+   "实践：【结合你的项目】【待填：如做过消息通知或动态流，讲数据量和用的方案】。",
+   "总结：根据粉丝分布和读写比混合使用推拉，再用缓存、异步和游标分页把体验做好。"
   ],
   "pitfalls": [
-   "全球统一推。"
+   "只讲一种模式，不讲大 V 问题。",
+   "用 offset 分页导致重复或遗漏。",
+   "加分：讲活跃粉丝推送、收件箱截断和懒删除。"
   ]
  },
  "p2-34": {
@@ -322,6 +328,82 @@
   ],
   "pitfalls": [
    "只做按钮置灰。"
+  ]
+ },
+ "j-sc5": {
+  "principle": [
+   "短链：发号 Base62、映射存储、缓存、跳转、防刷过期统计——同 p-sc1，了解级强调防滥用与合规。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "限流+黑名单+垃圾 URL 检测+过期回收"
+  },
+  "asks": [
+   "短链要点？",
+   "发号？",
+   "防刷？",
+   "缓存？"
+  ],
+  "followups": [
+   {
+    "q": "301/302？",
+    "a": "永久/临时与 SEO。"
+   },
+   {
+    "q": "自定义？",
+    "a": "占用审核。"
+   },
+   {
+    "q": "统计？",
+    "a": "异步。"
+   }
+  ],
+  "answer": [
+   "总：发号编码缓存防刷。",
+   "分：合规回收。",
+   "实践：了解即可。",
+   "总结：读写比极端。"
+  ],
+  "pitfalls": [
+   "忽视防刷。"
+  ]
+ },
+ "p-sc3": {
+  "principle": [
+   "UUID：简单无序；号段：吞吐高依赖 DB；雪花：趋势增怕时钟；DB 自增：简单难分布。对比同 j-d5。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "订单：雪花/号段；追踪：UUID 也可"
+  },
+  "asks": [
+   "ID 方案对比？",
+   "时钟？",
+   "DB？",
+   "选型？"
+  ],
+  "followups": [
+   {
+    "q": "回拨？",
+    "a": "处理策略。"
+   },
+   {
+    "q": "安全？",
+    "a": "别暴露量。"
+   },
+   {
+    "q": "长度？",
+    "a": "适配存储。"
+   }
+  ],
+  "answer": [
+   "总：有序性与可用性权衡。",
+   "分：业务选号段/雪花。",
+   "实践：了解。",
+   "总结：主键宜趋势增。"
+  ],
+  "pitfalls": [
+   "UUID 聚簇主键。"
   ]
  }
 }

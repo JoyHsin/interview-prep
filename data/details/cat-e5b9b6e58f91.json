@@ -699,40 +699,45 @@
  },
  "p2-9": {
   "principle": [
-   "死锁四条件：互斥、持有并等待、不可剥夺、循环等待。破任一即可：固定加锁顺序、超时 tryLock、一次性申请、减少锁数量。"
+   "死锁是两个或多个线程互相持有对方需要的资源，并都在等待对方释放，导致永远无法继续。必须同时满足四个必要条件：",
+   "① 互斥：资源同一时刻只能被一个线程持有（锁本身的性质）。② 占有并等待：线程已持有至少一个资源，同时又在等待其他资源，并且不释放已持有的。③ 不可剥夺：已获得的资源不能被其他线程强行抢走，只能由持有者主动释放。④ 循环等待：存在一个线程等待环，T1 等 T2 的资源，T2 等 T1 的资源。",
+   "预防就是破坏其中任意一个条件：互斥通常无法破坏（锁的本质）；破坏“占有并等待”——一次性申请所有需要的资源，或者拿不到全部就释放已有的；破坏“不可剥夺”——用 tryLock(timeout)，超时获取失败就主动释放已持有的锁再重试；破坏“循环等待”——给资源定义全局顺序，所有线程按相同顺序加锁（最常用，比如按账户 ID 从小到大加锁）。",
+   "工程上的其他做法：缩小锁的范围和持有时间；避免在持有锁时调用外部方法或回调（你不知道它会再去拿什么锁）；尽量使用并发容器和无锁结构；数据库层面按固定顺序更新行、控制事务大小，并让应用对死锁错误做重试。排查用 jstack 查看 “Found one Java-level deadlock”。"
   ],
   "example": {
    "lang": "java",
-   "code": "if (a.id()<b.id()){ lock(a); lock(b);} else { lock(b); lock(a);} "
+   "code": "public class TransferService {\n\n    // 破坏循环等待：按账户 ID 排序后加锁\n    public void transfer(Account from, Account to, long amount) {\n        Account first  = from.getId() < to.getId() ? from : to;\n        Account second = first == from ? to : from;\n        synchronized (first) {\n            synchronized (second) {\n                from.debit(amount);\n                to.credit(amount);\n            }\n        }\n    }\n\n    // 破坏不可剥夺：tryLock 超时后释放已持有的锁并重试\n    public boolean transferWithTimeout(Account from, Account to, long amount) throws InterruptedException {\n        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);\n        while (System.nanoTime() < deadline) {\n            if (from.lock().tryLock(50, TimeUnit.MILLISECONDS)) {\n                try {\n                    if (to.lock().tryLock(50, TimeUnit.MILLISECONDS)) {\n                        try { from.debit(amount); to.credit(amount); return true; }\n                        finally { to.lock().unlock(); }\n                    }\n                } finally { from.lock().unlock(); }\n            }\n            Thread.sleep(ThreadLocalRandom.current().nextInt(10));   // 随机退避避免活锁\n        }\n        return false;\n    }\n}"
   },
   "asks": [
-   "四个条件？",
-   "如何避免？",
-   "排查？",
-   "活锁？"
+   "死锁的四个必要条件是什么？",
+   "怎么预防和避免死锁？",
+   "实际项目中最常用的避免死锁方法是什么？",
+   "死锁和活锁有什么区别？"
   ],
   "followups": [
    {
-    "q": "活锁？",
-    "a": "一直重试无进展。"
+    "q": "什么是活锁？",
+    "a": "线程没有阻塞但一直在互相谦让、反复重试却都无法推进，比如两个线程同时 tryLock 失败又同时重试；加入随机退避可以缓解。"
    },
    {
-    "q": "数据库？",
-    "a": "顺序访问+重试。"
+    "q": "为什么持锁时不要调用外部方法？",
+    "a": "外部方法可能再去获取其他锁，形成你无法控制的加锁顺序，从而引入死锁风险。"
    },
    {
-    "q": "检测？",
-    "a": "jstack。"
+    "q": "数据库死锁和 Java 死锁处理有什么不同？",
+    "a": "InnoDB 会自动检测死锁并回滚其中一个事务，应用需要捕获错误并重试；Java 层死锁 JVM 不会自动解除，只能预防或重启。"
    }
   ],
   "answer": [
-   "总：破环或超时。",
-   "分：顺序与 tryLock 最实用。",
-   "实践：转账案例。",
-   "总结：设计阶段就防。"
+   "总：死锁需要同时满足互斥、占有并等待、不可剥夺、循环等待四个条件，破坏任意一个就能避免。",
+   "分：互斥一般无法破坏；可以一次性申请资源破坏占有并等待；用 tryLock 超时释放破坏不可剥夺；最常用的是规定全局加锁顺序破坏循环等待；同时缩小锁范围、不在持锁时调外部方法，数据库按固定顺序更新并重试。",
+   "实践：【结合你的项目】【待填：如转账、批量更新或库存场景中，按 ID 排序加锁或按固定顺序更新行解决了死锁】。",
+   "总结：死锁要在设计阶段预防，统一加锁顺序加超时机制是最实用的组合。"
   ],
   "pitfalls": [
-   "只靠检测不防。"
+   "只背四个条件，说不出对应的破坏方法。",
+   "tryLock 重试不加退避导致活锁。",
+   "加分：区分 Java 死锁与数据库死锁的处理方式。"
   ]
  },
  "p2-49": {
@@ -771,6 +776,158 @@
   ],
   "pitfalls": [
    "线程池用 ITL 以为够。"
+  ]
+ },
+ "j-c9": {
+  "principle": [
+   "happens-before（HB）：JMM 定义的偏序，保证可见与有序。常见：程序次序；监视器解锁 HB 后续加锁；volatile 写 HB 读；线程 start HB 线程内、线程末 HB join；传递性。HB 不等于禁止所有重排，而是结果符合规则。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "写 volatile v; ... 读 v → 看到写之前的操作结果\nsynchronized 解锁 → 另一线程加同锁"
+  },
+  "asks": [
+   "HB 规则？",
+   "和 as-if-serial？",
+   "volatile？",
+   "传递？"
+  ],
+  "followups": [
+   {
+    "q": "as-if-serial？",
+    "a": "单线程外观串行。"
+   },
+   {
+    "q": "指令重排？",
+    "a": "不违反 HB 即可。"
+   },
+   {
+    "q": "硬件？",
+    "a": "内存屏障落地。"
+   }
+  ],
+  "answer": [
+   "总：HB 是可见性与顺序的契约。",
+   "分：锁/volatile/线程起停/传递。",
+   "实践：解释并发 bug。",
+   "总结：写并发靠 HB 推理。"
+  ],
+  "pitfalls": [
+   "背定义不会举例。"
+  ]
+ },
+ "p-th6": {
+  "principle": [
+   "StampedLock：乐观读（stamp 校验）、读锁、写锁；吞吐潜力高；不可重入、易用错（升级死锁）。复杂场景需谨慎，多数用读写锁即可。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "long s=sl.tryOptimisticRead(); // 读字段; if(!sl.validate(s)) { /* 加读锁重读 */ }"
+  },
+  "asks": [
+   "StampedLock？",
+   "乐观读？",
+   "坑？",
+   "何时？"
+  ],
+  "followups": [
+   {
+    "q": "重入？",
+    "a": "不支持。"
+   },
+   {
+    "q": "中断？",
+    "a": "API 有变体。"
+   },
+   {
+    "q": "替代？",
+    "a": "RWLock 更简单。"
+   }
+  ],
+  "answer": [
+   "总：乐观读提吞吐，复杂度高。",
+   "分：validate；易错。",
+   "实践：了解。",
+   "总结：默认 RWLock。"
+  ],
+  "pitfalls": [
+   "盲目替换 RWLock。"
+  ]
+ },
+ "p-th8": {
+  "principle": [
+   "LockSupport.park/unpark：阻塞/唤醒线程，不需持锁；AQS 基础。先 unpark 再 park 不丢许可（与 wait/notify 不同）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "LockSupport.park(); // 别线程 LockSupport.unpark(t);"
+  },
+  "asks": [
+   "LockSupport？",
+   "和 wait？",
+   "许可？",
+   "AQS？"
+  ],
+  "followups": [
+   {
+    "q": "许可？",
+    "a": "最多积一个。"
+   },
+   {
+    "q": "中断？",
+    "a": "park 可响应。"
+   },
+   {
+    "q": "伪唤醒？",
+    "a": "仍要循环条件。"
+   }
+  ],
+  "answer": [
+   "总：无锁的线程阻塞原语。",
+   "分：许可模型；AQS 用。",
+   "实践：读源码。",
+   "总结：比 wait 灵活。"
+  ],
+  "pitfalls": [
+   "当 wait 用却无锁。"
+  ]
+ },
+ "p2-10": {
+  "principle": [
+   "as-if-serial：单线程优化外观如按序。happens-before：跨线程可见顺序规则。二者共同构成 JMM 理解基础。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "单线程：重排但不能改结果；多线程：靠 HB/同步"
+  },
+  "asks": [
+   "HB 与 as-if-serial？",
+   "JMM？",
+   "例子？",
+   "volatile？"
+  ],
+  "followups": [
+   {
+    "q": "重排？",
+    "a": "单线程允许。"
+   },
+   {
+    "q": "指令级？",
+    "a": "硬件也重排。"
+   },
+   {
+    "q": "工具？",
+    "a": "jcstress。"
+   }
+  ],
+  "answer": [
+   "总：单线程外观串行，多线程靠 HB。",
+   "分：JMM 核心。",
+   "实践：解释可见性 bug。",
+   "总结：同 j-c9。"
+  ],
+  "pitfalls": [
+   "混为一谈。"
   ]
  }
 }
