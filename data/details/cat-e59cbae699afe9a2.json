@@ -43,5 +43,47 @@
    "忽略库存回补和对账。",
    "加分：讲热点库存分片和降级预案。"
   ]
+ },
+ "j-sc2": {
+  "principle": [
+   "支付平台（微信支付、支付宝）的异步通知会在未收到成功应答时多次重试，网络问题也可能让同一通知到达多次；同时还可能和主动查询（查单）并发更新同一订单。所以回调处理必须幂等且安全。",
+   "处理步骤：① 验签（用平台公钥/证书验证签名，微信 APIv3 还需解密报文），防止伪造通知；② 校验关键字段：商户订单号存在、金额与订单金额一致、商户号/AppID 正确；③ 幂等更新：以订单号（或支付流水号）为唯一键，用状态机条件更新 UPDATE ... WHERE status='WAIT_PAY'，影响 1 行才执行后续业务，影响 0 行说明已处理，直接返回成功；④ 后续动作（发货、积分、通知）通过本地消息表/MQ 异步进行，消费方同样幂等；⑤ 按平台要求的格式返回成功应答，避免继续重试。",
+   "兜底：回调可能丢失，需要定时任务对“待支付且超过一定时间”的订单主动查单；每日与平台对账单比对。对“订单已关闭但收到支付成功”的情况要走自动退款或人工处理流程。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@PostMapping(\"/pay/notify\")\npublic ResponseEntity<String> notify(@RequestBody String body, @RequestHeader HttpHeaders headers) {\n    PayNotify n = payClient.verifyAndDecrypt(body, headers);   // 1. 验签 + 解密，失败抛异常\n    Order order = orderMapper.findByNo(n.outTradeNo());\n    if (order == null || order.getAmount() != n.totalFee()) {  // 2. 校验订单与金额（单位：分）\n        log.warn(\"notify mismatch {}\", n);\n        return ResponseEntity.badRequest().body(\"FAIL\");\n    }\n    orderService.markPaid(n);                                   // 3. 幂等处理\n    return ResponseEntity.ok(\"SUCCESS\");                        // 4. 按平台要求格式应答\n}\n\n@Transactional(rollbackFor = Exception.class)\npublic void markPaid(PayNotify n) {\n    int rows = orderMapper.updateStatus(n.outTradeNo(), \"WAIT_PAY\", \"PAID\", n.transactionId());\n    if (rows == 0) return;                                      // 已处理过，直接成功\n    outboxMapper.insert(Outbox.of(\"order-paid\", n.outTradeNo())); // 后续动作异步、可靠\n}"
+  },
+  "asks": [
+   "支付回调怎么保证幂等？",
+   "收到重复通知怎么办？",
+   "支付回调没收到怎么办？",
+   "怎么防止伪造的支付通知？"
+  ],
+  "followups": [
+   {
+    "q": "回调丢了怎么办？",
+    "a": "定时查单任务主动向支付平台查询状态；每日对账兜底。"
+   },
+   {
+    "q": "订单已超时关闭但收到支付成功？",
+    "a": "不能直接改为已支付；走自动退款或进入异常单人工处理，并记录日志。"
+   },
+   {
+    "q": "为什么金额也要校验？",
+    "a": "防止篡改或订单与支付单不匹配（例如改价后旧支付单被支付）。"
+   }
+  ],
+  "answer": [
+   "总：回调处理 = 验签 + 校验 + 状态机幂等 + 异步后续 + 查单对账兜底。",
+   "分：平台会重试通知，所以以订单号为唯一键，用 WHERE status=待支付 的条件更新，更新 0 行直接返回成功；先验签、校验金额和商户信息；发货积分等走消息异步；定时查单处理回调丢失，日对账发现差异。",
+   "实践：【结合你的项目】【待填：如果做过支付，讲接入的渠道、遇到的重复通知或掉单问题】。",
+   "总结：支付链路宁可慢一点，也要保证正确、可追溯。"
+  ],
+  "pitfalls": [
+   "处理完重复通知返回失败，导致平台不断重试。",
+   "不验签或不校验金额。",
+   "加分：讲查单补偿、对账、关单后支付的处理。"
+  ]
  }
 }

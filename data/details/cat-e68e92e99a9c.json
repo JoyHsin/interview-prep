@@ -1,0 +1,91 @@
+{
+ "j-t1": {
+  "principle": [
+   "思路是“先止血，再定位，后复盘”，按链路分层排查，用数据缩小范围：",
+   "① 确认范围：是全部接口还是个别接口、所有实例还是部分实例、什么时间开始；对照最近的发布、配置变更、流量变化（营销活动、爬虫）。",
+   "② 看监控黄金指标：QPS、RT（P99）、错误率、饱和度（CPU、内存、线程池、连接池）。用链路追踪（SkyWalking、Zipkin 等）看慢在哪个 span：自身代码、DB、Redis、下游 HTTP/RPC、LLM 调用。",
+   "③ 分层定位：应用层——jstack 看是否大量线程阻塞在锁、连接池获取、外部调用；GC 日志看是否频繁 Full GC；Arthas trace 找慢方法。数据层——慢查询日志、EXPLAIN、锁等待（innodb_trx、data_locks）、连接数；Redis 慢日志、大 key、热 key。依赖层——下游超时、限流；网络与 DNS。",
+   "④ 止血：回滚最近发布、扩容、限流降级、摘除异常实例、切换备用依赖。",
+   "⑤ 修复与复盘：根因修复，补充监控告警（如 P99、连接池使用率），完善超时与熔断配置。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "# 线程：是否大量 BLOCKED / WAITING 在同一处\njstack <pid> > js.txt; grep -E \"java.lang.Thread.State\" js.txt | sort | uniq -c\ngrep -A 15 \"BLOCKED\" js.txt | head -60\n\n# Arthas：找出慢在哪个调用（阈值 200ms）\ntrace com.example.order.OrderController create '#cost > 200'\n\n# GC\njstat -gcutil <pid> 1000 10\n\n# MySQL：当前长事务与锁等待\nSELECT * FROM information_schema.innodb_trx ORDER BY trx_started LIMIT 10;\nSELECT * FROM performance_schema.data_lock_waits;    -- MySQL 8.0\n\n# Redis 慢日志\nredis-cli SLOWLOG GET 10"
+  },
+  "asks": [
+   "线上接口突然变慢，你怎么排查？",
+   "你遇到过最难排查的性能问题是什么？",
+   "怎么判断是数据库慢还是代码慢？",
+   "排查过程中怎么止血？"
+  ],
+  "followups": [
+   {
+    "q": "如何快速判断瓶颈在哪？",
+    "a": "看链路追踪各 span 耗时；没有链路追踪就用 Arthas trace 或在关键调用打耗时日志。"
+   },
+   {
+    "q": "连接池耗尽的表现？",
+    "a": "线程大量等待 getConnection，RT 飙升但 DB CPU 不高；原因可能是慢 SQL、长事务、连接泄漏或池太小。"
+   },
+   {
+    "q": "只有部分实例慢？",
+    "a": "看该实例的 GC、CPU、宿主机负载、网络，以及是否有热点请求被路由到这台。"
+   }
+  ],
+  "answer": [
+   "总：先止血，再按链路分层定位，最后复盘补监控。",
+   "分：先确认影响范围和时间点，对照发布和流量变化；看 QPS、P99、错误率、资源饱和度，用链路追踪找慢的环节；应用层查线程栈、GC、慢方法，数据层查慢 SQL 和锁，依赖层查下游和网络；必要时回滚、扩容、限流降级。",
+   "实践：【结合你的项目】讲一次真实案例：现象（P99 从【待填】涨到【待填】）→ 定位（如慢 SQL/连接池/下游超时）→ 处理 → 后续加的监控。",
+   "总结：有方法论、有工具、有案例，回答才有说服力。"
+  ],
+  "pitfalls": [
+   "一上来就说“加机器”。",
+   "没有止血步骤。",
+   "加分：讲具体工具命令和真实数据。"
+  ]
+ },
+ "j-t2": {
+  "principle": [
+   "Java 进程 CPU 打满，常见原因：死循环或空轮询、频繁 GC（GC 线程占满 CPU）、复杂正则回溯（灾难性回溯）、大对象序列化/JSON 解析、加密压缩计算、高并发下大量自旋（CAS 失败重试）、锁竞争导致频繁上下文切换。",
+   "定位思路是“找到最耗 CPU 的线程 → 映射到 Java 线程栈 → 看代码”：",
+   "① top 找到 CPU 高的进程 pid；② top -Hp <pid> 找到 CPU 高的线程 tid；③ printf '%x' tid 转十六进制；④ jstack <pid> 中搜 nid=0x<hex>，看线程栈停在哪个方法；多次采样（间隔几秒）确认是同一位置。",
+   "如果最耗 CPU 的是 “GC Thread” 或 “G1 Conc” 等 GC 线程，就转向内存问题排查（jstat、堆 dump）。",
+   "更快的方式：Arthas 的 thread -n 3 直接列出 CPU 最高的 3 个线程栈；profiler 生成火焰图看热点方法。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "top                                   # 找到高 CPU 的 java 进程，如 pid=12345\ntop -Hp 12345                         # 找到高 CPU 线程，如 tid=12400\nprintf '%x\\n' 12400                   # -> 3070\njstack 12345 | grep -A 30 'nid=0x3070'\n\n# Arthas 一步到位\njava -jar arthas-boot.jar 12345\nthread -n 3                           # CPU 占用最高的 3 个线程及栈\nprofiler start; profiler stop --format html   # 火焰图（async-profiler）\n\n# 一个典型元凶：灾难性回溯的正则\nPattern.compile(\"^(a+)+$\").matcher(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaab\").matches();"
+  },
+  "asks": [
+   "线上 CPU 100% 怎么排查？",
+   "怎么找到占用 CPU 最高的线程？",
+   "哪些情况会导致 CPU 飙高？",
+   "你用过 Arthas 吗？"
+  ],
+  "followups": [
+   {
+    "q": "如果 jstack 显示是 GC 线程？",
+    "a": "说明是内存压力导致频繁 GC，转向看 jstat、GC 日志和堆 dump。"
+   },
+   {
+    "q": "为什么要多次 jstack？",
+    "a": "单次只是瞬时快照，多次在同一位置才能确认热点。"
+   },
+   {
+    "q": "容器里没有 jstack 怎么办？",
+    "a": "使用 jcmd <pid> Thread.print，或挂载 Arthas；需要镜像包含 JDK 工具或使用 sidecar。"
+   }
+  ],
+  "answer": [
+   "总：从进程到线程再到代码逐级定位。",
+   "分：top 找进程，top -Hp 找线程，转十六进制后在 jstack 里找 nid 对应的栈，多次采样确认；如果是 GC 线程就转内存排查。Arthas 的 thread -n 和火焰图更高效。常见原因有死循环、正则回溯、频繁 GC、序列化、自旋。",
+   "实践：【结合你的项目】【待填：例如某次 JSON 序列化大对象或正则导致 CPU 飙高，如何定位和修复】。",
+   "总结：工具链熟练 + 多次采样 + 结合代码分析。"
+  ],
+  "pitfalls": [
+   "忘记十六进制转换。",
+   "只说“重启”。",
+   "加分：讲 GC 线程情况和火焰图。"
+  ]
+ }
+}

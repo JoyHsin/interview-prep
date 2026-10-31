@@ -87,5 +87,90 @@
    "忘记先保留 dump 就重启。",
    "加分：有真实案例和前后指标。"
   ]
+ },
+ "j-v2": {
+  "principle": [
+   "判断对象是否存活用可达性分析：从 GC Roots（栈中局部变量、静态变量、常量、JNI 引用、活跃线程、锁持有的对象等）出发，不可达的对象可回收（不用引用计数，因为它解决不了循环引用）。",
+   "三种基础算法：① 标记-清除：标记存活后清除其余，简单但产生内存碎片；② 复制：把存活对象复制到另一块空间，然后整块清空，无碎片、分配快（指针碰撞），但浪费空间，存活率高时复制成本大；③ 标记-整理：把存活对象向一端移动，无碎片、不浪费空间，但移动对象成本高。",
+   "分代假说：绝大多数对象朝生夕死，熬过多次 GC 的对象更难死。所以新生代（存活率低）用复制算法：Eden 和两个 Survivor 默认 8:1:1，Minor GC 时把 Eden + 一个 Survivor 的存活对象复制到另一个 Survivor，年龄 +1；年龄达到阈值（默认 15，-XX:MaxTenuringThreshold）或 Survivor 放不下则晋升老年代。老年代存活率高，用标记-清除或标记-整理。",
+   "跨代引用用记忆集/卡表（Card Table）记录老年代指向新生代的引用，Minor GC 时不用扫描整个老年代。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "新生代：Eden : S0 : S1 = 8 : 1 : 1   （-XX:SurvivorRatio=8）\nMinor GC：Eden + S0 存活对象 → 复制到 S1，年龄+1，清空 Eden 和 S0，下次 S0/S1 角色互换\n晋升老年代：年龄 ≥ 15 / 动态年龄判断 / 大对象直接进入 / Survivor 放不下\n老年代：标记-清除（CMS）或 标记-整理（Serial Old / Parallel Old）；G1 整体看是标记-整理，Region 之间是复制\n\n# 观察\njava -Xlog:gc*,gc+age=trace -XX:+UseG1GC -jar app.jar"
+  },
+  "asks": [
+   "垃圾回收算法有哪些？各自优缺点？",
+   "为什么要分代？",
+   "对象什么时候进入老年代？",
+   "怎么判断对象可以被回收？GC Roots 有哪些？"
+  ],
+  "followups": [
+   {
+    "q": "为什么 Survivor 有两个？",
+    "a": "复制算法需要一块空的目标区；两个 Survivor 轮换，保证每次 GC 后存活对象都集中在一块，没有碎片。"
+   },
+   {
+    "q": "什么是动态年龄判断？",
+    "a": "Survivor 中相同年龄对象总大小超过 Survivor 一半时，年龄大于等于该值的对象直接晋升。"
+   },
+   {
+    "q": "为什么不用引用计数？",
+    "a": "无法处理循环引用，且每次引用变化都要更新计数，有开销。"
+   }
+  ],
+  "answer": [
+   "总：GC 先用可达性分析找垃圾，再按分代选择算法。",
+   "分：三种算法——标记清除有碎片，复制无碎片但费空间，标记整理无碎片但移动成本高。新生代对象存活少，用复制，Eden 和两个 Survivor 8:1:1；年龄到 15 或空间不够晋升老年代；老年代存活多，用标记清除或整理。",
+   "实践：【结合你的项目】看 GC 日志发现对象过早晋升导致老年代涨得快，可以调大新生代或排查大对象。",
+   "总结：分代 + 合适算法是在吞吐、停顿和空间之间做权衡。"
+  ],
+  "pitfalls": [
+   "把“标记-清除”和“标记-整理”说混。",
+   "加分：讲卡表解决跨代引用。"
+  ]
+ },
+ "j-v3": {
+  "principle": [
+   "G1（Garbage First）是 JDK 9 起的默认收集器。它把堆划分为大小相等的 Region（1–32MB，2 的幂），每个 Region 动态扮演 Eden、Survivor、Old 或 Humongous（存放超过 Region 一半大小的大对象）。分代仍在，但物理上不连续。",
+   "核心是可预测停顿：用 -XX:MaxGCPauseMillis 设目标（默认 200ms），G1 记录每个 Region 的回收收益和耗时，每次优先回收“垃圾最多”的 Region（Garbage First 名字由来），在停顿目标内尽量多回收。",
+   "回收类型：Young GC（只回收新生代 Region）；老年代占用达到阈值（IHOP，默认 45%）后进行并发标记（初始标记 → 并发标记 → 最终标记 → 清理），之后做 Mixed GC，同时回收新生代和部分老年代 Region；回收跟不上分配时退化为 Full GC。Region 间用复制，整体无碎片。每个 Region 有记忆集（RSet）记录外部引用，并发标记用 SATB 保证正确性。",
+   "CMS 对比：CMS 以低停顿为目标，过程为初始标记 → 并发标记 → 重新标记 → 并发清除，用标记-清除，会产生碎片；并发阶段占用 CPU；会有浮动垃圾，如果并发期间老年代被填满就 Concurrent Mode Failure，退化成单线程 Serial Old，停顿很长。CMS 在 JDK 9 废弃、JDK 14 移除。大堆、低延迟更进一步可以看 ZGC。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "# 常见 G1 参数\njava -XX:+UseG1GC \\\n     -Xms8g -Xmx8g \\\n     -XX:MaxGCPauseMillis=100 \\\n     -XX:InitiatingHeapOccupancyPercent=45 \\\n     -XX:G1HeapRegionSize=16m \\\n     -Xlog:gc*:file=gc.log:time,uptime \\\n     -jar app.jar\n\n# GC 日志里关注：Pause Young (Normal) / Pause Young (Concurrent Start) /\n# Pause Young (Mixed) / Pause Full —— 出现 Full 说明回收跟不上"
+  },
+  "asks": [
+   "G1 有什么特点？",
+   "G1 和 CMS 的区别？",
+   "什么是 Mixed GC？",
+   "你们线上用的什么垃圾收集器？怎么调的？"
+  ],
+  "followups": [
+   {
+    "q": "Humongous 对象有什么问题？",
+    "a": "大对象直接占连续 Region，分配和回收成本高、易触发 GC；可以调大 Region 或避免大数组。"
+   },
+   {
+    "q": "MaxGCPauseMillis 设得越小越好吗？",
+    "a": "不是。设太小每次回收量变少，回收跟不上反而频繁 GC 甚至 Full GC，吞吐下降。"
+   },
+   {
+    "q": "ZGC 了解吗？",
+    "a": "JDK 15 正式可用的低延迟收集器，染色指针 + 读屏障，停顿通常在毫秒级以下，适合大堆；JDK 21 起支持分代 ZGC。"
+   }
+  ],
+  "answer": [
+   "总：G1 用 Region 化堆和可预测停顿，取代了 CMS。",
+   "分：G1 把堆分成等大 Region，按收益优先回收，有 Young GC 和 Mixed GC，Region 间复制没有碎片，可设停顿目标。CMS 是标记清除，有碎片、浮动垃圾，失败会退化为 Serial Old 长停顿，已在 JDK 14 移除。",
+   "实践：【结合你的项目】我们服务用 JDK【待填】默认 G1，堆【待填】G，主要调了 Xms=Xmx 和停顿目标，通过 GC 日志确认没有 Full GC。",
+   "总结：大多数服务用 G1 默认参数即可，超大堆低延迟考虑 ZGC。"
+  ],
+  "pitfalls": [
+   "说 CMS 是标记-整理。",
+   "乱调 MaxGCPauseMillis 到很小。",
+   "加分：讲 IHOP、Humongous、Concurrent Mode Failure。"
+  ]
  }
 }

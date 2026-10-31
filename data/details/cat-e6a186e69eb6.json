@@ -2,8 +2,8 @@
  "a-f2": {
   "principle": [
    "Spring AI 的 RAG 分两段：",
-   "ETL 入库：DocumentReader（如 TikaDocumentReader、PagePdfDocumentReader）读取文档 → TokenTextSplitter 等 DocumentTransformer 分块 → VectorStore.add() 写入；写入时 VectorStore 内部调用配置的 EmbeddingModel 生成向量。VectorStore 是统一抽象，支持 PGvector、Redis、Milvus、Elasticsearch、Qdrant 等。",
-   "检索生成：通过 Advisor 把检索嵌入 ChatClient 调用链。简单场景用 QuestionAnswerAdvisor：拿用户问题做相似度检索，把结果拼进 Prompt；复杂场景用 RetrievalAugmentationAdvisor 组合查询改写（RewriteQueryTransformer）、多检索器、空上下文策略等模块化组件。",
+   "ETL 入库：DocumentReader（如 TikaDocumentReader、PagePdfDocumentReader）读取文档 → TokenTextSplitter 等 DocumentTransformer 分块 → VectorStore.add() 写入；写入时 VectorStore 内部调用配置的 EmbeddingModel 生成向量。VectorStore 是统一抽象，支持 PGvector、Redis、Milvus、Elasticsearch、Qdrant 等。注意：使用 QuestionAnswerAdvisor 需要引入 spring-ai-vector-store-advisor 依赖；RetrievalAugmentationAdvisor 需要 spring-ai-rag 依赖。",
+   "SearchRequest 可设 topK、similarityThreshold 以及元数据过滤表达式（filterExpression），用于按租户/部门做权限过滤；也可以在每次请求时通过 advisors(a -> a.param(QuestionAnswerAdvisor.FILTER_EXPRESSION, \"dept == 'hr'\")) 动态传入。",
    "SearchRequest 可设 topK、similarityThreshold 以及元数据过滤表达式（filterExpression），用于按租户/部门做权限过滤。",
    "版本提示：Spring AI 1.0 正式版于 2025 年发布，此前的 M 系列里程碑版 API 变化较大（starter 命名、Advisor 构造方式等），网上旧教程需注意版本。"
   ],
@@ -29,6 +29,10 @@
    {
     "q": "向量库怎么选？",
     "a": "已有 PostgreSQL 且数据量中等用 PGvector，运维简单；超大规模用 Milvus。"
+   },
+   {
+    "q": "过滤条件每个请求不同怎么办？",
+    "a": "把 Advisor 设为默认，在每次调用时用 FILTER_EXPRESSION 参数动态传入过滤表达式；RetrievalAugmentationAdvisor 用 VectorStoreDocumentRetriever.FILTER_EXPRESSION 或传 Supplier。"
    }
   ],
   "answer": [

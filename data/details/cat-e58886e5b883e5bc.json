@@ -1,0 +1,89 @@
+{
+ "j-d1": {
+  "principle": [
+   "幂等：同一请求执行一次和多次的效果相同。重复请求来自用户连点、前端重试、网关/RPC 超时重试、MQ 重投。查询和删除天然幂等，新增和“增量更新”（如 balance = balance - 10）不幂等。",
+   "常见方案：① 唯一索引：业务唯一键（订单号、请求流水号）建唯一索引，重复插入失败即返回已有结果；② Token 机制：进入页面时服务端发一个一次性 token 存 Redis，提交时用 Lua 或 DEL 返回值原子地“校验并删除”，删除成功才执行，适合防表单重复提交；③ 状态机：更新带上前置状态条件，只有从合法状态才能迁移；④ 乐观锁：带 version 更新；⑤ 分布式锁：对同一业务键加锁，配合“先查后写”，防止并发重复；⑥ 去重表：记录已处理的请求 ID。",
+   "设计要点：幂等键由客户端生成并在重试时保持不变（如请求头 Idempotency-Key）；重复请求应返回与第一次相同的结果，而不是报错；还要考虑“第一次处理中”的状态，避免并发的第二次请求误判。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@PostMapping(\"/orders\")\npublic Result<OrderVO> create(@RequestHeader(\"Idempotency-Key\") String key,\n                              @RequestBody CreateOrderReq req) {\n    String redisKey = \"idem:order:\" + key;\n    // 原子占位：只有第一个请求能设置成功\n    Boolean first = redis.opsForValue().setIfAbsent(redisKey, \"PROCESSING\", Duration.ofMinutes(10));\n    if (!Boolean.TRUE.equals(first)) {\n        String v = redis.opsForValue().get(redisKey);\n        if (\"PROCESSING\".equals(v)) return Result.fail(\"请求处理中，请稍后\");\n        return Result.ok(JSON.parseObject(v, OrderVO.class));   // 返回第一次结果\n    }\n    try {\n        OrderVO vo = orderService.create(key, req);   // 订单表 request_no 唯一索引兜底\n        redis.opsForValue().set(redisKey, JSON.toJSONString(vo), Duration.ofHours(24));\n        return Result.ok(vo);\n    } catch (Exception e) {\n        redis.delete(redisKey);                       // 失败允许重试\n        throw e;\n    }\n}"
+  },
+  "asks": [
+   "接口幂等怎么设计？",
+   "怎么防止表单重复提交？",
+   "Token 机制具体怎么做？",
+   "哪些操作天然幂等？"
+  ],
+  "followups": [
+   {
+    "q": "Token 为什么要原子校验删除？",
+    "a": "先 GET 再 DEL 两步之间并发请求都能通过校验；要用 DEL 返回值或 Lua 脚本保证只有一个成功。"
+   },
+   {
+    "q": "重复请求返回什么？",
+    "a": "返回第一次的结果（或同样的成功语义），而不是报错，便于客户端重试。"
+   },
+   {
+    "q": "RPC 超时重试会不会扣两次钱？",
+    "a": "会，所以扣款接口必须带流水号，用唯一索引或状态机保证只扣一次。"
+   }
+  ],
+  "answer": [
+   "总：幂等 = 唯一标识 + 原子判重 + 返回一致结果。",
+   "分：方案有唯一索引、Token、状态机、乐观锁、分布式锁、去重表。幂等键由客户端生成并在重试中保持不变；要处理“处理中”状态；DB 唯一约束做最终兜底。",
+   "实践：【结合你的项目】下单接口用 Idempotency-Key + Redis 占位 + 订单表唯一索引兜底；支付回调用状态机。",
+   "总结：多层防护，最后一层一定落在数据库约束。"
+  ],
+  "pitfalls": [
+   "只说前端按钮置灰。",
+   "Token 校验和删除不是原子的。",
+   "加分：讲 Idempotency-Key 规范和“处理中”状态。"
+  ]
+ },
+ "j-d2": {
+  "principle": [
+   "微服务下一个业务跨多个数据库，本地事务无法保证一致。按一致性强弱选择方案：",
+   "① 2PC/XA：协调者先让所有参与者 prepare 再统一 commit，强一致，但同步阻塞、性能差、协调者单点，互联网业务很少用。",
+   "② Seata AT：对业务无侵入。一阶段执行本地 SQL 时自动记录前后镜像到 undo_log 并提交本地事务，同时向 TC 注册分支并获取全局锁；二阶段全局提交则异步删除 undo_log，回滚则根据前镜像生成反向 SQL 恢复。依赖数据库支持事务，有全局锁开销，适合一般业务。",
+   "③ TCC：业务实现 Try（预留资源，如冻结库存）、Confirm（确认使用）、Cancel（释放预留）三个接口。性能好、不长期锁库，但侵入大，需处理幂等、空回滚（Try 未执行就收到 Cancel）、悬挂（Cancel 先于 Try 到达后 Try 才执行）。",
+   "④ 可靠消息最终一致：本地消息表（业务和消息记录同一本地事务，定时任务投递，消费方幂等），或 RocketMQ 事务消息（半消息 + 本地事务 + 回查）。吞吐高，适合异步场景。",
+   "⑤ Saga：长事务拆成多个本地事务，每步有补偿操作，失败时逆序补偿。",
+   "原则：优先通过业务设计避免分布式事务；核心资金类用 TCC 或强一致方案，大多数场景用可靠消息实现最终一致。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 本地消息表：下单与“待发送消息”在同一个本地事务\n@Transactional(rollbackFor = Exception.class)\npublic void createOrder(Order order) {\n    orderMapper.insert(order);\n    outboxMapper.insert(new Outbox(order.getOrderNo(), \"order-created\", JSON.toJSONString(order), \"NEW\"));\n}\n\n// 定时任务投递，成功后标记；消费端（库存服务）做幂等\n@Scheduled(fixedDelay = 2000)\npublic void relay() {\n    for (Outbox m : outboxMapper.findNew(100)) {\n        try {\n            kafkaTemplate.send(m.getTopic(), m.getBizKey(), m.getPayload()).get(3, TimeUnit.SECONDS);\n            outboxMapper.markSent(m.getId());\n        } catch (Exception e) {\n            outboxMapper.incrRetry(m.getId());   // 超过次数告警人工处理\n        }\n    }\n}"
+  },
+  "asks": [
+   "分布式事务有哪些解决方案？",
+   "Seata AT 模式原理？",
+   "TCC 有什么问题？空回滚和悬挂怎么处理？",
+   "你们项目怎么处理跨服务一致性？"
+  ],
+  "followups": [
+   {
+    "q": "空回滚和悬挂怎么处理？",
+    "a": "用事务控制表记录每个分支的状态：Cancel 时没有 Try 记录则插入“已回滚”记录直接返回（空回滚）；Try 执行时发现已有回滚记录则拒绝执行（防悬挂）。"
+   },
+   {
+    "q": "AT 和 TCC 怎么选？",
+    "a": "AT 无侵入，开发快，但有全局锁和 undo 开销；TCC 性能好、可跨非关系型资源，但开发成本高，适合核心高并发链路。"
+   },
+   {
+    "q": "事务消息原理？",
+    "a": "先发半消息（消费者不可见），执行本地事务，成功则提交消息，失败则回滚；Broker 未收到结果会回查生产者的本地事务状态。"
+   }
+  ],
+  "answer": [
+   "总：按一致性强弱选型，大多数业务用最终一致。",
+   "分：2PC 强一致但阻塞；Seata AT 无侵入，靠 undo_log 和全局锁；TCC 靠业务三接口，要处理幂等、空回滚、悬挂；本地消息表和事务消息实现可靠异步，消费方幂等；Saga 适合长流程补偿。",
+   "实践：【结合你的项目】我们下单扣库存用【待填：本地消息表/事务消息/Seata】，配合对账任务兜底。",
+   "总结：先尽量避免分布式事务，再选最简单够用的方案，并一定有对账。"
+  ],
+  "pitfalls": [
+   "只会说 Seata 不会说原理。",
+   "忽略消费方幂等和对账。"
+  ]
+ }
+}

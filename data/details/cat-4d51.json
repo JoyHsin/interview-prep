@@ -1,0 +1,87 @@
+{
+ "j-q1": {
+  "principle": [
+   "消息丢失可能发生在三个环节，要分别保证（以 Kafka 为例，RocketMQ 思路相同）：",
+   "① 生产端：使用带回调的发送或同步发送，确认发送结果；acks=all（所有 ISR 副本写入才确认）；开启重试；开启幂等生产者 enable.idempotence=true（Kafka 3.0 起默认开启）避免重试导致重复。对“业务成功则必须发出”的消息，可用本地消息表或事务消息保证 DB 与发消息一致。",
+   "② Broker 端：replication.factor ≥ 3，min.insync.replicas ≥ 2（配合 acks=all，至少两个副本写成功才算成功），unclean.leader.election.enable=false（禁止落后副本当选 leader）。RocketMQ 可配同步刷盘 + 同步复制。",
+   "③ 消费端：关闭自动提交，业务处理成功后再手动提交 offset（RocketMQ 返回 CONSUME_SUCCESS）；失败则重试，多次失败进入死信队列并告警。",
+   "代价：可靠性配置会降低吞吐、增加延迟；而“至少一次”投递意味着必然可能重复，所以消费端必须幂等。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 生产者（spring-kafka）\n// application.yml:\n//   spring.kafka.producer.acks: all\n//   spring.kafka.producer.retries: 3\n//   spring.kafka.producer.properties.enable.idempotence: true\n//   spring.kafka.consumer.enable-auto-commit: false\n//   spring.kafka.listener.ack-mode: manual\nkafkaTemplate.send(\"order-paid\", orderNo, payload)\n        .whenComplete((result, ex) -> {\n            if (ex != null) {\n                log.error(\"send failed, orderNo={}\", orderNo, ex);\n                outboxService.markRetry(orderNo);      // 落库，定时任务补发\n            }\n        });\n\n// 消费者：处理成功后再提交\n@KafkaListener(topics = \"order-paid\", groupId = \"points\")\npublic void onMessage(ConsumerRecord<String, String> rec, Acknowledgment ack) {\n    pointsService.addPointsIdempotent(rec.key(), rec.value());   // 幂等处理\n    ack.acknowledge();\n}"
+  },
+  "asks": [
+   "怎么保证消息不丢失？",
+   "Kafka 的 acks 参数有哪几种？",
+   "消费者怎么避免丢消息？",
+   "消息可靠性和性能怎么权衡？"
+  ],
+  "followups": [
+   {
+    "q": "acks 取值区别？",
+    "a": "0 不等确认，最快但可能丢；1 leader 写入即确认，leader 宕机可能丢；all 所有 ISR 副本写入才确认，最可靠。"
+   },
+   {
+    "q": "min.insync.replicas 的作用？",
+    "a": "配合 acks=all，限制至少多少个同步副本写入成功，否则生产者报错，防止只有 leader 一个副本时“假确认”。"
+   },
+   {
+    "q": "消费失败一直重试怎么办？",
+    "a": "有限次重试后进死信队列，告警并人工或补偿处理，避免阻塞后续消息。"
+   }
+  ],
+  "answer": [
+   "总：从生产、存储、消费三个环节分别保证。",
+   "分：生产端用回调确认、acks=all、重试和幂等生产者，关键消息配本地消息表；Broker 端三副本、min.insync.replicas=2、禁止不干净选举；消费端关自动提交，处理成功再提交，失败重试加死信队列。",
+   "实践：【结合你的项目】我们订单支付消息用【待填：Kafka/RocketMQ】，发送失败落库定时补发，消费端手动提交并做幂等。",
+   "总结：不丢的代价是可能重复，所以必须配合消费幂等。"
+  ],
+  "pitfalls": [
+   "只讲某一个环节。",
+   "以为 acks=all 就绝对不丢（还需 min.insync.replicas）。",
+   "加分：本地消息表 + 死信队列 + 监控堆积。"
+  ]
+ },
+ "j-q2": {
+  "principle": [
+   "MQ 一般保证“至少一次”投递：生产者重试、消费者处理完但提交 offset 前宕机、Rebalance 都会造成重复消费，所以幂等必须由业务保证。幂等的核心是：给每条消息一个业务唯一标识，并确保“判断是否处理过”和“处理”具有原子性。",
+   "常用方案：① 数据库唯一约束：如以订单号/消息 ID 作为唯一索引插入流水表或去重表，重复插入报 DuplicateKey 即视为已处理，并与业务操作放在同一本地事务中，最可靠；② 状态机：UPDATE order SET status='PAID' WHERE order_no=? AND status='UNPAID'，影响行数为 0 说明已处理，天然幂等；③ Redis 去重：SET msgId 1 NX EX 86400，性能高，但 Redis 与 DB 不在同一事务，处理失败要删除标记，适合可容忍极小误差的场景；④ 乐观锁版本号。",
+   "注意唯一标识要用业务 ID 而不是 MQ 的 offset 或 msgId（生产者重发时 msgId 可能不同）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Transactional(rollbackFor = Exception.class)\npublic void addPointsIdempotent(String orderNo, String payload) {\n    try {\n        // 去重表 consume_log(biz_key) 有唯一索引，与业务在同一事务\n        consumeLogMapper.insert(new ConsumeLog(\"points:\" + orderNo));\n    } catch (DuplicateKeyException e) {\n        log.info(\"duplicate message, skip orderNo={}\", orderNo);\n        return;\n    }\n    PaidEvent ev = JSON.parseObject(payload, PaidEvent.class);\n    pointsMapper.add(ev.userId(), ev.amount() / 100);\n}\n\n-- 状态机方式\nUPDATE t_order SET status = 'PAID', paid_time = NOW()\n WHERE order_no = ? AND status = 'UNPAID';   -- 影响 0 行则说明已处理"
+  },
+  "asks": [
+   "消息重复消费怎么处理？",
+   "为什么会重复消费？",
+   "幂等有哪些实现方式？",
+   "用 Redis 去重有什么问题？"
+  ],
+  "followups": [
+   {
+    "q": "Redis 去重的问题？",
+    "a": "SETNX 成功后业务失败，标记已存在会导致消息被跳过；要在失败时删除标记，或用“处理中/已完成”两态并设过期。"
+   },
+   {
+    "q": "为什么不用 msgId？",
+    "a": "生产者重试时可能生成新的 msgId，业务含义相同的消息 ID 不同；应使用业务唯一键。"
+   },
+   {
+    "q": "能不能让 MQ 保证恰好一次？",
+    "a": "Kafka 事务可以在“消费-处理-生产”都在 Kafka 内时实现 exactly-once，但涉及外部数据库时仍要业务幂等。"
+   }
+  ],
+  "answer": [
+   "总：重复不可避免，幂等靠业务唯一键 + 原子判断。",
+   "分：重复来自生产重试、提交 offset 前宕机、Rebalance。方案有唯一索引去重表（与业务同事务，最可靠）、状态机条件更新、Redis SETNX（快但非事务）、乐观锁。唯一键要用业务 ID。",
+   "实践：【结合你的项目】支付成功送积分的消费者，我们用订单号作唯一键写去重表，与加积分同一事务。",
+   "总结：能用 DB 约束就用 DB，性能要求高再加 Redis 前置过滤。"
+  ],
+  "pitfalls": [
+   "用 MQ 的 msgId 做去重键。",
+   "Redis 标记和业务不在同一事务却不处理失败情况。"
+  ]
+ }
+}

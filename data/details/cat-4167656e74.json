@@ -50,7 +50,7 @@
    "MCP（Model Context Protocol）是 Anthropic 2024 年提出的开放协议，目标是让 AI 应用以统一方式接入外部工具和数据，类似“AI 的 USB 接口”：工具提供方写一次 MCP Server，任何支持 MCP 的客户端（Claude、Cursor、各种 Agent 框架）都能用，不用每个应用单独集成。",
    "角色：Host（AI 应用，如 IDE、聊天客户端）内含 MCP Client，每个 Client 与一个 MCP Server 保持连接；Server 暴露能力。",
    "三类能力：Tools（可执行动作，可能有副作用，由模型决定调用）、Resources（只读数据，如文件、记录，由应用决定读取）、Prompts（可复用的提示模板，由用户选择）。",
-   "通信基于 JSON-RPC 2.0；传输方式有 stdio（本地子进程）和 Streamable HTTP（远程服务，早期规范使用 HTTP + SSE）。流程：建立连接 → 能力协商 → tools/list 获取工具列表 → 模型决定后 tools/call 调用 → 返回结果。",
+   "通信消息用 JSON-RPC 编码；标准传输有两种：stdio（客户端启动本地子进程，按行分隔的 JSON-RPC）和 Streamable HTTP（每条消息 POST 到单一 MCP 端点，响应是 JSON 或该请求专属的 SSE 流；它取代了早期的 HTTP+SSE 双端点方式）。典型调用：tools/list 获取工具列表 → 模型决定后 tools/call 调用 → 返回结果。注意版本演进：早期规范有 initialize 握手和连接级会话，且允许服务端主动发请求；最新规范把协议版本和客户端能力放进每个请求的 _meta 元数据，服务端不再主动发起 JSON-RPC 请求，取消在 stdio 上发 notifications/cancelled、在 HTTP 上关闭响应流。面试说“stdio + Streamable HTTP、基于 JSON-RPC”即可，追问再讲版本差异。",
    "与 Function Calling 的关系：Function Calling 是模型层“输出要调用什么”的能力；MCP 是应用和工具之间的标准化接入协议，二者互补。与 A2A 的区别：MCP 连接 Agent 与工具，A2A 连接 Agent 与 Agent。"
   ],
   "example": {
@@ -75,6 +75,10 @@
    {
     "q": "MCP 和 A2A？",
     "a": "MCP 是 Agent 接工具（纵向），A2A 是 Agent 之间协作委派任务（横向）。"
+   },
+   {
+    "q": "MCP 现在还需要 initialize 握手吗？",
+    "a": "早期版本需要 initialize 建立会话并协商能力；最新规范改为每个请求自带协议版本和能力元数据，旧版本靠兼容回退。回答时说明“以官方最新规范为准”。"
    }
   ],
   "answer": [

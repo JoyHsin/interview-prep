@@ -41,5 +41,94 @@
    "说 RR 彻底解决幻读。",
    "把 max_trx_id 说成“最大活跃事务 ID”（实为下一个待分配 ID）。"
   ]
+ },
+ "j-m1": {
+  "principle": [
+   "索引失效的本质：优化器无法利用 B+ 树的有序性定位，或者判断走索引（加回表）比全表扫描更贵。常见情况：",
+   "① 对索引列做函数或运算：WHERE DATE(create_time) = '2026-10-01'、WHERE id + 1 = 10，B+ 树里存的是原值，无法直接定位（MySQL 8.0 可用函数索引）。",
+   "② 隐式类型转换：phone 是 varchar，写 WHERE phone = 13800000000（数字），MySQL 会把列转成数字比较，相当于对列用函数；反过来列是 int、参数是字符串则通常仍能用索引。字符集/排序规则不同的关联字段也会导致转换。",
+   "③ 违反联合索引最左前缀：索引 (a,b,c)，查询只用 b、c 用不上；a 用范围查询后 b 一般无法继续用于定位（8.0 有索引下推 ICP 可在索引内过滤）。",
+   "④ 前导模糊 LIKE '%abc'；⑤ OR 连接的条件中有一个列没有索引；⑥ !=、NOT IN、IS NOT NULL 等可能因选择性差而不走索引——这不是绝对失效，而是优化器基于成本选择全表；⑦ 区分度低的列、统计信息不准、数据量小时也会放弃索引。",
+   "判断方法：EXPLAIN 看 type（ALL 全表、index 全索引扫描、range、ref、const）、key、rows、Extra（Using index 覆盖、Using filesort、Using temporary）。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "CREATE TABLE t_order (\n  id BIGINT PRIMARY KEY, user_id BIGINT, phone VARCHAR(20), status TINYINT,\n  create_time DATETIME,\n  KEY idx_phone (phone),\n  KEY idx_user_status_time (user_id, status, create_time)\n);\n\n-- ❌ 隐式转换：phone 是 varchar，参数是数字\nEXPLAIN SELECT * FROM t_order WHERE phone = 13800000000;      -- type=ALL\n-- ✅\nEXPLAIN SELECT * FROM t_order WHERE phone = '13800000000';    -- type=ref\n\n-- ❌ 函数作用在列上\nEXPLAIN SELECT * FROM t_order WHERE DATE(create_time) = '2026-10-01';\n-- ✅ 改成范围\nEXPLAIN SELECT * FROM t_order\n WHERE create_time >= '2026-10-01' AND create_time < '2026-10-02';\n\n-- ❌ 跳过最左列\nEXPLAIN SELECT * FROM t_order WHERE status = 1;\n-- ✅ 最左前缀\nEXPLAIN SELECT * FROM t_order WHERE user_id = 42 AND status = 1;"
+  },
+  "asks": [
+   "索引什么时候会失效？",
+   "联合索引的最左前缀原则是什么？",
+   "你怎么分析一条慢 SQL？",
+   "EXPLAIN 关注哪些字段？"
+  ],
+  "followups": [
+   {
+    "q": "LIKE 'abc%' 能用索引吗？",
+    "a": "可以，前缀确定可以走范围扫描；'%abc' 不行。"
+   },
+   {
+    "q": "IS NULL 能用索引吗？",
+    "a": "可以，InnoDB 索引会存 NULL；是否使用取决于成本估算。"
+   },
+   {
+    "q": "索引下推是什么？",
+    "a": "MySQL 5.6+ 在存储引擎层用联合索引的后续列先过滤，减少回表次数，Extra 显示 Using index condition。"
+   }
+  ],
+  "answer": [
+   "总：失效的根本是用不了 B+ 树有序性，或优化器认为全表更便宜。",
+   "分：常见是列上做函数运算、隐式类型转换、违反最左前缀、前导模糊、OR 中有无索引列，以及选择性差导致优化器放弃。用 EXPLAIN 看 type、key、rows、Extra 判断。",
+   "实践：【结合你的项目】我们有条慢 SQL 是手机号字段传了数字导致全表扫描，改成字符串后从【待填】秒降到毫秒级；还有按日期查询改成范围条件。",
+   "总结：写 SQL 时让索引列“干干净净”出现在条件里。"
+  ],
+  "pitfalls": [
+   "把 != 说成“一定不走索引”。",
+   "说反隐式转换的方向。",
+   "加分：讲 ICP、函数索引、统计信息。"
+  ]
+ },
+ "j-m2": {
+  "principle": [
+   "InnoDB 用 B+ 树组织数据：非叶子节点只存键和指针，叶子节点有序且用双向链表相连，树高通常 3–4 层就能存千万级数据，范围查询友好。",
+   "聚簇索引：主键索引的叶子节点存的就是整行数据，“索引即数据”，一张表只有一个。没有主键时 InnoDB 选第一个非空唯一索引，再没有就用隐藏的 row_id。",
+   "二级索引（非聚簇索引）：叶子节点存的是索引列值 + 主键值。按二级索引查询时，先在二级索引树找到主键，再拿主键去聚簇索引查整行，这一步叫“回表”。回表是随机 IO，命中行数多时代价很大，优化器可能因此选择全表扫描。",
+   "覆盖索引：查询需要的列都在二级索引里（包括主键），就不用回表，EXPLAIN 的 Extra 显示 Using index。设计联合索引时把常查列放进去可实现覆盖。",
+   "主键建议用自增或趋势递增的 ID（如雪花算法）：顺序插入只在末尾追加，避免页分裂；主键越短，二级索引越小。UUID 随机主键会导致频繁页分裂和碎片。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "CREATE TABLE t_user (\n  id BIGINT AUTO_INCREMENT PRIMARY KEY,\n  name VARCHAR(50), age INT, city VARCHAR(50),\n  KEY idx_name_age (name, age)\n);\n\n-- 回表：二级索引找到 id，再回聚簇索引取 city\nEXPLAIN SELECT * FROM t_user WHERE name = '张三';\n-- 覆盖索引：name, age, id 都在 idx_name_age 中，Extra: Using index\nEXPLAIN SELECT id, name, age FROM t_user WHERE name = '张三';\n\n-- 深分页优化：先用覆盖索引查 id，再关联回表\nSELECT u.* FROM t_user u\nJOIN (SELECT id FROM t_user ORDER BY id LIMIT 1000000, 20) t ON u.id = t.id;"
+  },
+  "asks": [
+   "什么是聚簇索引和非聚簇索引？",
+   "什么是回表？怎么避免？",
+   "什么是覆盖索引？",
+   "为什么 InnoDB 用 B+ 树而不是 B 树或哈希？主键为什么推荐自增？"
+  ],
+  "followups": [
+   {
+    "q": "为什么用 B+ 树？",
+    "a": "非叶子不存数据，单页能放更多键，树更矮、IO 更少；叶子链表方便范围查询；哈希不支持范围和排序。"
+   },
+   {
+    "q": "深分页怎么优化？",
+    "a": "用覆盖索引先查主键再关联（延迟关联），或用上一页最后的 id 做游标分页 WHERE id > ? LIMIT 20。"
+   },
+   {
+    "q": "为什么不用 UUID 主键？",
+    "a": "随机写导致页分裂和碎片，而且 36 字节太长，使所有二级索引变大。"
+   }
+  ],
+  "answer": [
+   "总：聚簇索引存整行，二级索引存主键，二级索引查整行要回表，覆盖索引能免回表。",
+   "分：InnoDB 主键索引就是数据本身，一表一个；二级索引叶子只有索引列和主键，所以要回表；查询列都在索引中就是覆盖索引，Extra 显示 Using index。主键推荐自增或趋势递增，避免页分裂、减小二级索引。",
+   "实践：【结合你的项目】订单列表查询我建了 (user_id, create_time) 联合索引并只查需要的列；深分页用游标方式。",
+   "总结：少回表、短主键、合理联合索引是 SQL 优化的基本功。"
+  ],
+  "pitfalls": [
+   "说 MyISAM 也有聚簇索引。",
+   "SELECT * 却期望覆盖索引。",
+   "加分：讲延迟关联和游标分页。"
+  ]
  }
 }

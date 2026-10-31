@@ -84,5 +84,49 @@
    "解锁不校验持有者。",
    "加分：讲清主从丢锁和兜底策略。"
   ]
+ },
+ "j-r2": {
+  "principle": [
+   "最常用 Cache Aside（旁路缓存）：读时先查缓存，未命中再查 DB 并回填；写时先更新 DB，再删除缓存。",
+   "为什么删除而不是更新缓存？① 并发写时更新缓存可能因顺序错乱写入旧值；② 有些缓存值需要复杂计算，写多读少时更新是浪费；删除后下次读时懒加载。",
+   "为什么先更新 DB 再删缓存？如果先删缓存再更新 DB，在中间窗口另一个读请求会把旧值读回缓存，且这个窗口较长（DB 写耗时），不一致概率大。先更新 DB 再删缓存也有极小概率不一致（读请求在缓存失效时读到旧值，并在删缓存之后才回填），但需要“读比写还慢”，概率很低。",
+   "补救手段：① 删除失败要重试——把删除操作发到 MQ 重试，或订阅 binlog（Canal）异步删除缓存，与业务代码解耦；② 延迟双删：更新 DB 前后各删一次，第二次延迟几百毫秒，覆盖并发读回填旧值的窗口，但延迟时间难以精确；③ 都要设置过期时间兜底，保证最终一致。",
+   "边界：缓存方案只能做到最终一致；对强一致要求的数据（余额）直接读 DB 或加分布式锁串行化读写，代价是性能。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Transactional(rollbackFor = Exception.class)\npublic void updateProduct(Product p) {\n    productMapper.updateById(p);                       // 1. 先更新 DB\n    // 2. 事务提交后再删缓存，避免事务未提交时别人读到旧值并回填\n    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {\n        @Override public void afterCommit() {\n            String key = \"product:\" + p.getId();\n            try {\n                redis.delete(key);\n            } catch (Exception e) {\n                mq.send(\"cache-evict\", key);           // 3. 删除失败交给 MQ 重试\n            }\n        }\n    });\n}\n// 更彻底的做法：Canal 订阅 binlog → 消费者删除缓存，业务代码只写 DB"
+  },
+  "asks": [
+   "缓存和数据库怎么保证一致性？",
+   "为什么是删除缓存而不是更新缓存？",
+   "先删缓存还是先更新数据库？",
+   "延迟双删是什么？有什么问题？"
+  ],
+  "followups": [
+   {
+    "q": "删缓存失败怎么办？",
+    "a": "MQ 重试，或用 Canal 订阅 binlog 异步删除，并设过期时间兜底。"
+   },
+   {
+    "q": "能做到强一致吗？",
+    "a": "缓存体系下很难，只能最终一致；强一致场景走 DB 或读写加锁，牺牲性能。"
+   },
+   {
+    "q": "延迟时间怎么定？",
+    "a": "大于一次读请求查 DB 并回填的耗时，通常几百毫秒，基于压测估算，无法完全精确。"
+   }
+  ],
+  "answer": [
+   "总：用 Cache Aside，先更新 DB 再删缓存，配合重试与过期兜底，追求最终一致。",
+   "分：删而不更新是为了避免并发写乱序和无效计算；先写 DB 再删缓存的不一致窗口最小；删失败用 MQ 或 binlog 订阅重试；延迟双删可作为补充；所有 key 设 TTL。",
+   "实践：【结合你的项目】我们商品信息用 Cache Aside + Canal 监听 binlog 删缓存，业务代码只关心 DB。",
+   "总结：明确接受最终一致，强一致数据不走缓存。"
+  ],
+  "pitfalls": [
+   "说先删缓存再更新 DB 最安全。",
+   "没有删除失败的兜底。",
+   "加分：讲事务提交后再删、binlog 方案。"
+  ]
  }
 }

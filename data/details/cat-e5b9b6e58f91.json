@@ -173,5 +173,90 @@
    "说“弱引用导致泄漏”——其实是 value 强引用 + 线程长存导致。",
    "加分：提到串数据（安全问题）比泄漏更危险。"
   ]
+ },
+ "j-c4": {
+  "principle": [
+   "CAS（Compare-And-Swap）是 CPU 提供的原子指令（x86 上是 lock cmpxchg）：给定内存地址、期望值 A、新值 B，只有当前值等于 A 时才写入 B，否则失败，整个过程原子。Java 通过 Unsafe（JDK 9 起推荐 VarHandle）暴露，AtomicInteger、AQS、ConcurrentHashMap 都基于它。",
+   "它是乐观锁：失败不阻塞，而是自旋重试。AtomicInteger.incrementAndGet 内部就是“读当前值 → CAS(旧, 旧+1) → 失败重来”。",
+   "三个问题：① ABA：值从 A 变 B 又变回 A，CAS 以为没变过。对纯数值通常无害，但对链表/栈这类“值相同但含义变了”的结构会出错。解决：加版本号，AtomicStampedReference（int 版本戳）或 AtomicMarkableReference（布尔标记）。② 自旋开销：竞争激烈时大量失败重试浪费 CPU，此时用 LongAdder（分段累加，最后 sum）或直接加锁。③ 只能保证单个变量原子，多个变量要封装成对象用 AtomicReference，或加锁。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.concurrent.atomic.*;\n\npublic class CasDemo {\n    public static void main(String[] args) {\n        AtomicInteger cnt = new AtomicInteger();\n        cnt.incrementAndGet();                         // 内部 CAS 自旋\n\n        // 带版本号，解决 ABA\n        AtomicStampedReference<Integer> ref = new AtomicStampedReference<>(100, 0);\n        int stamp = ref.getStamp();\n        boolean ok = ref.compareAndSet(100, 80, stamp, stamp + 1);\n        System.out.println(ok + \" stamp=\" + ref.getStamp());   // true stamp=1\n        // 旧版本号再次 CAS 会失败\n        System.out.println(ref.compareAndSet(80, 50, stamp, stamp + 1)); // false\n\n        LongAdder pv = new LongAdder();                // 高并发计数优于 AtomicLong\n        pv.increment();\n        System.out.println(pv.sum());\n    }\n}"
+  },
+  "asks": [
+   "CAS 是什么？有什么问题？",
+   "什么是 ABA 问题？怎么解决？",
+   "AtomicInteger 是怎么保证原子性的？",
+   "LongAdder 为什么比 AtomicLong 快？"
+  ],
+  "followups": [
+   {
+    "q": "LongAdder 原理？",
+    "a": "竞争小时累加到 base；竞争大时每个线程按 hash 落到 Cell 数组不同槽位分别 CAS，sum 时汇总，减少冲突。代价是 sum 不是强一致快照。"
+   },
+   {
+    "q": "CAS 和 synchronized 怎么选？",
+    "a": "竞争低、操作简单用 CAS；竞争高或临界区复杂用锁，避免空转。"
+   },
+   {
+    "q": "数据库里有类似思想吗？",
+    "a": "乐观锁：UPDATE ... SET version=version+1 WHERE id=? AND version=?，也是比较后再更新。"
+   }
+  ],
+  "answer": [
+   "总：CAS 是硬件级原子“比较并交换”，是无锁并发的基础。",
+   "分：Java 用 Unsafe/VarHandle 调用，Atomic 类、AQS、CHM 都依赖它；失败就自旋重试，属于乐观锁。问题有三：ABA 用版本号（AtomicStampedReference）解决；高竞争自旋浪费 CPU，可换 LongAdder 或锁；只能保证单变量原子。",
+   "实践：【结合你的项目】接口计数统计我用 LongAdder；库存扣减在 DB 层用 version 字段做乐观锁，本质也是 CAS 思想。",
+   "总结：CAS 适合低竞争、简单操作。"
+  ],
+  "pitfalls": [
+   "说 CAS 不会有性能问题（高竞争会空转）。",
+   "加分：讲 LongAdder 分段思路和 DB 乐观锁类比。"
+  ]
+ },
+ "r-j1": {
+  "principle": [
+   "虚拟线程是 Java 21 正式发布（JEP 444）的轻量级线程，由 JVM 调度而不是一一对应操作系统线程。大量虚拟线程挂载（mount）到少量平台线程（载体线程，默认是一个 ForkJoinPool，并行度约等于 CPU 核数）上运行。",
+   "当虚拟线程执行阻塞 IO、sleep、等待锁等操作时，JVM 会把它的栈帧保存到堆上并卸载（unmount），载体线程去执行其他虚拟线程；IO 就绪后再挂载继续执行。所以可以用同步阻塞的写法获得接近异步的吞吐，单机轻松创建百万级虚拟线程。",
+   "适合：IO 密集、高并发、大量等待的场景，如调用下游 HTTP、数据库、LLM 接口（单次调用几秒）。不适合：CPU 密集型计算（不会更快）。",
+   "注意：① 不要池化虚拟线程，每个任务一个，用 Executors.newVirtualThreadPerTaskExecutor()；要限制并发访问下游，用 Semaphore；② Pinning：在 synchronized 块内阻塞或调用 native 方法时，虚拟线程无法卸载，会占住载体线程；JDK 24（JEP 491）已解决 synchronized 引起的 pinning，在 JDK 21 上建议改用 ReentrantLock；③ ThreadLocal 在百万线程下会占大量内存，可关注 ScopedValue；④ 下游连接池容量仍是瓶颈。",
+   "Spring Boot 3.2+ 配置 spring.threads.virtual.enabled=true 即可让 Tomcat 和 @Async 等使用虚拟线程。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.concurrent.*;\nimport java.util.stream.IntStream;\n\npublic class VtDemo {\n    public static void main(String[] args) throws Exception {\n        Semaphore limit = new Semaphore(50);                     // 限制对下游的并发，而不是池化\n        try (ExecutorService es = Executors.newVirtualThreadPerTaskExecutor()) {\n            IntStream.range(0, 10_000).forEach(i -> es.submit(() -> {\n                limit.acquire();\n                try {\n                    Thread.sleep(1000);                          // 模拟调用 LLM/HTTP，会卸载不占载体线程\n                } finally {\n                    limit.release();\n                }\n                return i;\n            }));\n        }   // try-with-resources 会等待所有任务结束\n        Thread vt = Thread.ofVirtual().name(\"vt-1\").start(() -> System.out.println(\"hello\"));\n        vt.join();\n    }\n}\n// Spring Boot 3.2+：application.yml\n// spring.threads.virtual.enabled: true"
+  },
+  "asks": [
+   "Java 21 虚拟线程是什么？",
+   "虚拟线程和平台线程、协程有什么区别？",
+   "什么场景适合用虚拟线程？",
+   "虚拟线程有哪些坑？"
+  ],
+  "followups": [
+   {
+    "q": "为什么不要池化？",
+    "a": "虚拟线程创建成本极低，池化反而限制并发；需要限流时用 Semaphore。"
+   },
+   {
+    "q": "什么是 pinning？",
+    "a": "虚拟线程在 synchronized 内阻塞或执行 native 调用时不能从载体线程卸载，导致载体线程被占；JDK 24 修复了 synchronized 的情况。"
+   },
+   {
+    "q": "和 WebFlux 怎么选？",
+    "a": "虚拟线程保留同步编程模型，易写易调试；WebFlux 适合需要背压和流式处理的场景，学习成本高。"
+   }
+  ],
+  "answer": [
+   "总：虚拟线程是 JVM 调度的轻量线程，阻塞时自动让出载体线程。",
+   "分：Java 21 正式可用，大量虚拟线程复用少量载体线程，阻塞 IO 时卸载、就绪后再挂载，用同步写法获得高吞吐。适合 IO 密集，不适合 CPU 密集。注意不要池化、用 Semaphore 限流、JDK 21 上避免 synchronized 内阻塞、ThreadLocal 内存。Boot 3.2+ 一个配置即可开启。",
+   "实践：【结合你的项目】调用大模型接口一次要几秒，如果用平台线程池很快占满；用虚拟线程可以【待填：压测数据】。",
+   "总结：IO 密集场景的低成本高并发方案。"
+  ],
+  "pitfalls": [
+   "说虚拟线程让 CPU 计算更快。",
+   "池化虚拟线程。",
+   "加分：知道 JDK 24 JEP 491 改进 pinning。"
+  ]
  }
 }

@@ -44,5 +44,93 @@
    "说 Spring 6 仍然只能 public（已放宽到非 private，仅限类代理）。",
    "加分：讲大事务危害和 REQUIRES_NEW 场景。"
   ]
+ },
+ "j-s1": {
+  "principle": [
+   "以单例 Bean 为例，AbstractAutowireCapableBeanFactory.doCreateBean 的主线：",
+   "① 实例化：通过构造器或工厂方法创建对象（此时属性为空）；",
+   "② 属性填充（populateBean）：依赖注入，@Autowired/@Value 由 AutowiredAnnotationBeanPostProcessor 处理；",
+   "③ 初始化（initializeBean）：先回调 Aware 接口（BeanNameAware、BeanClassLoaderAware、BeanFactoryAware；ApplicationContextAware 由后置处理器回调）→ BeanPostProcessor.postProcessBeforeInitialization（@PostConstruct 在这里执行）→ InitializingBean.afterPropertiesSet → 自定义 init-method → BeanPostProcessor.postProcessAfterInitialization（AOP 代理通常在这里生成，所以容器里拿到的可能是代理对象）；",
+   "④ 使用；⑤ 销毁：容器关闭时 @PreDestroy → DisposableBean.destroy → destroy-method。prototype Bean 容器不管销毁。",
+   "循环依赖：单例 + setter/字段注入时用三级缓存解决——singletonObjects（成品）、earlySingletonObjects（半成品）、singletonFactories（ObjectFactory，能按需提前生成代理）。A 创建中把自己的工厂放入三级缓存，注入 B 时 B 需要 A，从三级缓存拿到 A 的早期引用（必要时提前生成代理）。构造器注入的循环依赖无法解决；Spring Boot 2.6 起默认禁止循环依赖（spring.main.allow-circular-references 默认 false）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Component\npublic class DemoBean implements BeanNameAware, InitializingBean, DisposableBean {\n    public DemoBean() { System.out.println(\"1 构造/实例化\"); }\n\n    @Autowired\n    public void setEnv(Environment env) { System.out.println(\"2 属性注入\"); }\n\n    @Override public void setBeanName(String name) { System.out.println(\"3 Aware: \" + name); }\n\n    @PostConstruct public void post() { System.out.println(\"4 @PostConstruct\"); }\n\n    @Override public void afterPropertiesSet() { System.out.println(\"5 afterPropertiesSet\"); }\n\n    @PreDestroy public void pre() { System.out.println(\"7 @PreDestroy\"); }\n\n    @Override public void destroy() { System.out.println(\"8 DisposableBean.destroy\"); }\n}\n\n@Component\nclass LogProcessor implements BeanPostProcessor {\n    @Override\n    public Object postProcessAfterInitialization(Object bean, String name) {\n        if (bean instanceof DemoBean) System.out.println(\"6 BPP after（AOP 代理在此类处理器中生成）\");\n        return bean;\n    }\n}"
+  },
+  "asks": [
+   "Spring Bean 的生命周期讲一下？",
+   "BeanPostProcessor 有什么用？",
+   "Spring 怎么解决循环依赖？为什么要三级缓存？",
+   "@PostConstruct 和 afterPropertiesSet 谁先执行？"
+  ],
+  "followups": [
+   {
+    "q": "为什么是三级不是二级？",
+    "a": "二级缓存也能解决普通循环依赖，三级的 ObjectFactory 是为了 AOP：只有发生循环依赖时才提前创建代理，保证注入的是代理对象，又不破坏“初始化后才代理”的正常流程。"
+   },
+   {
+    "q": "构造器注入循环依赖怎么办？",
+    "a": "无法解决，需重构设计、抽出第三个 Bean，或对其中一个依赖使用 @Lazy 注入代理。"
+   },
+   {
+    "q": "@PostConstruct 为什么最先？",
+    "a": "它由 CommonAnnotationBeanPostProcessor 在 before 初始化阶段调用，早于 afterPropertiesSet 和 init-method。"
+   }
+  ],
+  "answer": [
+   "总：主线是实例化 → 属性填充 → 初始化 → 使用 → 销毁。",
+   "分：初始化阶段顺序是 Aware 回调、BPP 前置（含 @PostConstruct）、afterPropertiesSet、init-method、BPP 后置（生成 AOP 代理）；销毁是 @PreDestroy、destroy、destroy-method。循环依赖靠三级缓存提前暴露早期引用，三级存工厂是为了按需生成代理；构造器注入不能解决，Boot 2.6+ 默认禁止。",
+   "实践：【结合你的项目】我在 @PostConstruct 里做本地缓存预热；遇到过循环依赖启动报错，通过拆分职责解决。",
+   "总结：理解生命周期就能知道扩展点放哪、代理从哪来。"
+  ],
+  "pitfalls": [
+   "说 Spring 能解决所有循环依赖。",
+   "把 BPP after 和 AOP 的关系说反。",
+   "加分：讲 Boot 2.6 默认禁止循环依赖。"
+  ]
+ },
+ "j-s3": {
+  "principle": [
+   "@SpringBootApplication 是组合注解：@SpringBootConfiguration（即 @Configuration）+ @ComponentScan + @EnableAutoConfiguration。",
+   "@EnableAutoConfiguration 通过 @Import(AutoConfigurationImportSelector.class) 引入候选配置。这个选择器是 DeferredImportSelector，会在用户配置类处理完之后才执行，从而让“用户自己定义的 Bean 优先”。",
+   "候选列表来源：Spring Boot 2.7 起从各 jar 的 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports 读取；3.0 起不再支持在 spring.factories 中声明自动配置类（旧方式）。然后去重、排除（exclude）、按条件过滤。",
+   "条件注解决定是否生效：@ConditionalOnClass（类路径有某类，即引入了某 starter）、@ConditionalOnMissingBean（用户没自定义才创建默认 Bean）、@ConditionalOnProperty（配置开关）、@ConditionalOnWebApplication 等。配置值通过 @ConfigurationProperties 绑定 application.yml。",
+   "所以 starter = 依赖聚合 + 自动配置类 + 条件装配。排查哪些配置生效可开启 debug=true 查看条件评估报告，或用 Actuator 的 /actuator/conditions。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 自定义 starter：短信客户端自动配置\n@AutoConfiguration\n@ConditionalOnClass(SmsClient.class)\n@EnableConfigurationProperties(SmsProperties.class)\npublic class SmsAutoConfiguration {\n\n    @Bean\n    @ConditionalOnMissingBean                       // 用户自己定义了就不覆盖\n    @ConditionalOnProperty(prefix = \"sms\", name = \"enabled\", havingValue = \"true\", matchIfMissing = true)\n    public SmsClient smsClient(SmsProperties props) {\n        return new SmsClient(props.getEndpoint(), props.getAppKey());\n    }\n}\n\n@ConfigurationProperties(prefix = \"sms\")\npublic record SmsProperties(String endpoint, String appKey, boolean enabled) {}\n\n# 文件：src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports\ncom.example.sms.SmsAutoConfiguration"
+  },
+  "asks": [
+   "Spring Boot 自动配置原理是什么？",
+   "怎么自定义一个 starter？",
+   "@ConditionalOnMissingBean 有什么用？",
+   "Spring Boot 3 和 2 在自动配置上有什么变化？"
+  ],
+  "followups": [
+   {
+    "q": "自动配置类和用户配置冲突怎么办？",
+    "a": "自动配置在用户配置之后处理，配合 @ConditionalOnMissingBean，用户定义的 Bean 优先；也可以 exclude 掉某个自动配置。"
+   },
+   {
+    "q": "怎么看哪些自动配置生效了？",
+    "a": "启动加 debug=true 看 CONDITIONS EVALUATION REPORT，或访问 /actuator/conditions。"
+   },
+   {
+    "q": "spring.factories 还能用吗？",
+    "a": "在 3.x 中不能再用于注册自动配置类，要改用 AutoConfiguration.imports；其他扩展点（如 ApplicationListener）仍可用。"
+   }
+  ],
+  "answer": [
+   "总：自动配置 = 按约定加载候选配置类 + 条件注解按需装配。",
+   "分：@SpringBootApplication 包含 @EnableAutoConfiguration，它通过 AutoConfigurationImportSelector 读取 AutoConfiguration.imports 里的配置类，延迟到用户配置之后处理，再用 @ConditionalOnClass、@ConditionalOnMissingBean、@ConditionalOnProperty 过滤，属性通过 @ConfigurationProperties 绑定。",
+   "实践：【结合你的项目】我们封装过内部的【待填：如日志/鉴权/短信】starter，其他服务引依赖、改配置即可使用。",
+   "总结：约定优于配置，同时保留用户覆盖能力。"
+  ],
+  "pitfalls": [
+   "还说 Boot 3 用 spring.factories 注册自动配置。",
+   "加分：讲 DeferredImportSelector 保证用户 Bean 优先。"
+  ]
  }
 }
