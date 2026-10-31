@@ -178,46 +178,44 @@
  },
  "j-col4": {
   "principle": [
-   "equals/hashCode 契约：相等对象必须同 hash；参与 equals 的字段必须进入 hashCode；不要用可变字段；与 Comparable 一致。违反会导致 HashMap/HashSet 找不到元素。",
-   "进一步说：相等必须同 hash；作 Hash 键必须稳定；业务主键字段。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「集合」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「equals / hashCode 契约？」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "equals 和 hashCode 的契约：如果两个对象 equals 返回 true，它们的 hashCode 必须相等；hashCode 相等的两个对象 equals 不一定为 true（哈希冲突）；同一对象在未修改参与比较的字段时，多次调用 hashCode 结果必须一致。equals 本身还要满足自反性、对称性、传递性、一致性，以及与 null 比较返回 false。",
+   "违反契约的后果：HashMap、HashSet 先用 hashCode 定位桶，再用 equals 在桶内比较。如果只重写了 equals 而没有重写 hashCode，两个逻辑相等的对象哈希值不同，会落入不同的桶，导致 HashSet 中出现重复元素、HashMap 用逻辑相等的新对象作为键 get 不到值。",
+   "另一个常见问题是可变键：对象放入 HashSet 或作为 HashMap 的键后，又修改了参与 hashCode 计算的字段，哈希值改变，对象仍在原来的桶中，之后无法通过 contains 找到，也无法 remove，造成内存泄漏。因此作为键的对象最好不可变（如 String、record）。实现时使用 Objects.equals 和 Objects.hash，或者直接使用 record 或 Lombok 的 @EqualsAndHashCode 自动生成；JPA 实体要谨慎，基于数据库生成 ID 的实体在持久化前后 ID 会变化。"
   ],
   "example": {
    "lang": "java",
-   "code": "public boolean equals(Object o){...}\npublic int hashCode(){ return Objects.hash(...); }"
+   "code": "public final class SkuKey {\n    private final long skuId; private final String warehouse;\n    public SkuKey(long s, String w) { skuId = s; warehouse = w; }\n    @Override public boolean equals(Object o) {\n        if (this == o) return true;\n        if (!(o instanceof SkuKey k)) return false;\n        return skuId == k.skuId && Objects.equals(warehouse, k.warehouse);\n    }\n    @Override public int hashCode() { return Objects.hash(skuId, warehouse); }  // 字段与 equals 一致\n}\n// 更简洁：record SkuKey(long skuId, String warehouse) {}  自动生成 equals/hashCode"
   },
   "asks": [
-   "equals / hashCode 契约？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "equals 和 hashCode 的契约是什么？",
+   "只重写 equals 不重写 hashCode 会怎样？",
+   "为什么 HashMap 的键最好是不可变对象？",
+   "如何正确实现 equals 和 hashCode？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "hashCode 相等 equals 一定相等吗？",
+    "a": "不一定，不同对象可能产生相同的哈希值，这就是哈希冲突，HashMap 会在同一个桶中用 equals 再区分。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "修改了 HashSet 中元素的字段会怎样？",
+    "a": "如果字段参与 hashCode 计算，元素的哈希值改变后无法被 contains 找到或 remove 删除，导致逻辑错误和内存泄漏。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "JPA 实体实现 equals 要注意什么？",
+    "a": "数据库生成的 ID 在保存前为空，基于 ID 的 hashCode 在保存后会改变，应使用业务唯一键或保证 hashCode 稳定。"
    }
   ],
   "answer": [
-   "总：equals/hashCode 契约：相等对象必须同 hash；参与 equals 的字段必须进入 hashCode；不要用可变字段；与 Comparable 一致。违反会导致 H。",
-   "分：相等必须同 hash；作 Hash 键必须稳定；业务主键字段；equals 相等必须具有相同 hashCode，这是对象契约，不因是否放入哈希集合而改变。。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：相等必须同 hash、作 Hash 键必须稳定。关联知识点：相等必须同 hash、作 Hash 键必须稳定。关联知识点：相等必须同 hash、作 Hash 键必须稳定。关联知识点：相等必须同 hash、作 Hash 键必须稳定。"
+   "总：equals 相等则 hashCode 必须相等，两者必须基于同一组字段一起重写。",
+   "分：哈希集合先用 hashCode 定位桶再用 equals 比较；只重写 equals 会导致重复元素和查找失败；可变键修改后无法查找和删除；使用 Objects.hash、record 或 Lombok 生成，注意 JPA 实体。",
+   "实践：【结合你的项目】说明作为缓存键或 Map 键的复合对象是如何定义的，是否使用了 record。",
+   "总结：重写 equals 必须同时重写 hashCode，并尽量让作为键的对象不可变。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "只重写 equals 不重写 hashCode。",
+   "修改已放入 HashSet 中对象的关键字段。",
+   "加分：说明 equals 的对称性和传递性在继承时容易被破坏。"
   ]
  },
  "p-c1": {
@@ -305,129 +303,128 @@
  },
  "p-c3": {
   "principle": [
-   "PriorityQueue 是堆（二叉堆）实现的优先级队列：默认小顶堆，队头是最小元素；可传 Comparator 改成大顶堆。offer/poll 为 O(log n)，peek 为 O(1)。不允许 null；非线程安全，并发用 PriorityBlockingQueue。",
-   "不保证除堆顶外的整体排序，因此迭代顺序不是有序序列。适合 TopK、定时任务按触发时间出队、Dijkstra 等。对象优先级字段变化后不会自动上浮/下沉，需注意。",
-   "进一步说：堆实现；默认小顶堆；不能 null，非线程安全。作答时把这些要点串成因果，而不是并列背诵。"
+   "PriorityQueue 是基于二叉小顶堆实现的优先级队列，底层使用数组存储完全二叉树，下标为 i 的节点的子节点位于 2i+1 和 2i+2。默认按元素的自然顺序排列，队首（peek）总是最小的元素，也可以通过构造时传入 Comparator 自定义优先级，例如实现大顶堆。",
+   "时间复杂度：offer 插入元素时放到数组末尾再向上调整（siftUp），poll 取出队首时把最后一个元素放到堆顶再向下调整（siftDown），两者都是 O(log n)；peek 是 O(1)；remove(Object) 和 contains 需要线性查找，是 O(n)。容量不足时自动扩容。需要注意的是，它只保证队首是最小元素，整体并不是有序的，用迭代器遍历或者 toString 的结果不是排序结果，要得到有序序列必须不断 poll。",
+   "其他特点：不允许 null 元素；元素必须可比较，否则抛出 ClassCastException；非线程安全，多线程场景使用 PriorityBlockingQueue。典型应用：Top K 问题（维护大小为 K 的小顶堆求最大的 K 个数，复杂度 O(n log K)）、合并 K 个有序链表、定时任务按执行时间调度（DelayQueue 和 ScheduledThreadPoolExecutor 内部都基于堆）、Dijkstra 最短路径。"
   ],
   "example": {
    "lang": "java",
-   "code": "PriorityQueue<Integer> pq = new PriorityQueue<>(); // 小顶堆\npq.offer(5); pq.offer(1); pq.offer(3);\npq.poll(); // 1\n\nPriorityQueue<Integer> max = new PriorityQueue<>(Comparator.reverseOrder());\nmax.offer(5); max.poll(); // 5\n\n// TopK 大的：维护大小为 K 的小顶堆\nif (heap.size() < K) heap.offer(x);\nelse if (x > heap.peek()) { heap.poll(); heap.offer(x); }"
+   "code": "// Top K：求最大的 K 个数，维护大小为 K 的小顶堆\nstatic List<Integer> topK(int[] nums, int k) {\n    PriorityQueue<Integer> heap = new PriorityQueue<>(k);   // 小顶堆\n    for (int n : nums) {\n        if (heap.size() < k) heap.offer(n);\n        else if (n > heap.peek()) { heap.poll(); heap.offer(n); }\n    }\n    return new ArrayList<>(heap);        // 注意：结果不是有序的\n}\nPriorityQueue<Task> byDeadline = new PriorityQueue<>(Comparator.comparingLong(Task::deadline));\nPriorityQueue<Integer> maxHeap = new PriorityQueue<>(Comparator.reverseOrder());"
   },
   "asks": [
    "PriorityQueue 有什么特点？",
-   "如何实现大顶堆？",
-   "为什么不能存 null？",
-   "和 TreeSet 差别？"
+   "PriorityQueue 的底层实现是什么？",
+   "各操作的时间复杂度是多少？",
+   "PriorityQueue 有哪些典型应用？"
   ],
   "followups": [
    {
-    "q": "遍历 PriorityQueue 是有序的吗？",
-    "a": "不是，只有反复 poll 才能得到排序序列。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "为什么遍历 PriorityQueue 得到的结果不是有序的？",
+    "a": "堆只保证父节点不大于子节点，数组中元素并不完全有序，只有不断 poll 才能按顺序取出。"
    },
    {
-    "q": "元素优先级变了怎么办？",
-    "a": "堆不会自动调整，需移除再插入，或用支持减键的结构。"
+    "q": "求最大的 K 个数为什么用小顶堆？",
+    "a": "小顶堆的堆顶是当前 K 个数中最小的，遇到更大的数就替换堆顶，最终堆中保留的就是最大的 K 个数。"
    },
    {
-    "q": "线程安全版本？",
-    "a": "PriorityBlockingQueue；或外部加锁。"
+    "q": "多线程场景用什么替代？",
+    "a": "使用 PriorityBlockingQueue，它基于锁保证线程安全，并在队列为空时阻塞获取线程。"
    }
   ],
   "answer": [
-   "总：PriorityQueue 是堆实现的优先级队列，默认小顶堆，适合 TopK 与按优先级调度。",
-   "分：自定义比较器；禁 null；非线程安全；迭代无序；注意优先级变更。",
-   "实践：【结合你的项目】【待填：延时任务/TopK】用堆实现。",
-   "总结：抓住「堆顶极值 + 对数调整」即可。结合项目说明取舍、验证方式与风险控制。"
+   "总：PriorityQueue 是基于数组小顶堆的优先级队列，队首总是优先级最高的元素。",
+   "分：插入和取出 O(log n)，查看队首 O(1)，删除任意元素 O(n)；只保证队首最小，遍历不有序；不允许 null，非线程安全；用于 Top K、合并有序链表、定时调度。",
+   "实践：【结合你的项目】说明是否用堆实现过排行榜 Top K 或者按截止时间调度任务的功能。",
+   "总结：需要反复获取最值而不需要整体有序时，堆是最合适的数据结构。"
   ],
   "pitfalls": [
-   "声称迭代就是排序输出。",
-   "往里放 null 导致 NPE。",
-   "加分：手写 TopK 小顶堆。"
+   "以为遍历 PriorityQueue 可以得到有序结果。",
+   "在多线程环境下直接使用 PriorityQueue。",
+   "加分：能手写 siftUp 和 siftDown。"
   ]
  },
  "p-c5": {
   "principle": [
-   "BlockingQueue 在队列基础上提供阻塞的 put/take：队列满时生产者阻塞，空时消费者阻塞，是生产者-消费者的核心。常见实现：ArrayBlockingQueue（有界数组，可公平锁）、LinkedBlockingQueue（可选有界链表）、SynchronousQueue（不存元素，直接交接）、DelayQueue（到期才能取出）、PriorityBlockingQueue（阻塞优先队列）。",
-   "线程池工作队列就是 BlockingQueue：有界队列可触发扩到 max 与拒绝策略；无界 LinkedBlockingQueue 可能堆积任务导致 OOM。选型看是否要有界、是否要公平、是否要延时。"
+   "BlockingQueue 在队列的基础上增加了阻塞操作：put 在队列满时阻塞，take 在队列空时阻塞；offer 和 poll 可以设置超时时间；add 和 remove 在失败时抛出异常。它是生产者消费者模型和线程池工作队列的基础。",
+   "常见实现：ArrayBlockingQueue 基于数组，必须指定容量，有界，使用一把锁和两个 Condition，可以选择公平模式；LinkedBlockingQueue 基于链表，默认容量为 Integer.MAX_VALUE，近似无界，入队和出队使用两把独立的锁，并发吞吐更高，但每个元素需要额外的节点对象；SynchronousQueue 不存储元素，每次 put 都必须等待一个 take，用于直接交付任务，CachedThreadPool 使用它；PriorityBlockingQueue 是无界的优先级队列；DelayQueue 中的元素必须实现 Delayed 接口，只有到期后才能被取出，用于延时任务和缓存过期；LinkedTransferQueue 支持 transfer 操作，生产者可以等待消费者接收。",
+   "选择建议：生产环境优先使用有界队列（ArrayBlockingQueue 或指定容量的 LinkedBlockingQueue），防止消费速度跟不上时无限堆积导致 OOM；需要直接交付、不排队时用 SynchronousQueue；需要按优先级处理用 PriorityBlockingQueue，但它无界需要外部控制；单机延时任务用 DelayQueue，分布式或需要持久化时使用 MQ 延时消息或 Redis。"
   ],
   "example": {
    "lang": "java",
-   "code": "BlockingQueue<Runnable> q = new ArrayBlockingQueue<>(1024);\nq.put(task);                 // 满则阻塞\nRunnable t = q.take();       // 空则阻塞\n\n// 线程池\nnew ThreadPoolExecutor(4, 8, 60, SECONDS, new ArrayBlockingQueue<>(200),\n    new ThreadPoolExecutor.CallerRunsPolicy());\n\n// SynchronousQueue：CachedThreadPool 使用，来一个任务交接给一个线程"
+   "code": "BlockingQueue<Order> queue = new ArrayBlockingQueue<>(1000);   // 有界\n// 生产者\nif (!queue.offer(order, 50, TimeUnit.MILLISECONDS)) reject(order);  // 满了限时等待后拒绝\n// 消费者\nwhile (running) {\n    Order o = queue.poll(1, TimeUnit.SECONDS);                 // 可退出的等待\n    if (o != null) process(o);\n}\n// 延时任务\nclass Job implements Delayed {\n    final long at; Job(long delayMs) { at = System.currentTimeMillis() + delayMs; }\n    public long getDelay(TimeUnit u) { return u.convert(at - System.currentTimeMillis(), TimeUnit.MILLISECONDS); }\n    public int compareTo(Delayed o) { return Long.compare(at, ((Job) o).at); }\n}"
   },
   "asks": [
-   "BlockingQueue 常见实现有哪些？",
-   "和普通 Queue 差别？",
-   "线程池里怎么选队列？",
-   "SynchronousQueue 适合什么？"
+   "BlockingQueue 有哪些常见实现？",
+   "ArrayBlockingQueue 和 LinkedBlockingQueue 有什么区别？",
+   "SynchronousQueue 和 DelayQueue 适合什么场景？",
+   "生产环境应该如何选择阻塞队列？"
   ],
   "followups": [
    {
-    "q": "offer 和 put 区别？",
-    "a": "put 阻塞；offer 可立即返回失败或超时，线程池提交常用 offer。"
+    "q": "LinkedBlockingQueue 为什么吞吐量更高？",
+    "a": "入队和出队分别使用独立的锁，生产者和消费者可以同时操作队列的两端，减少锁竞争。"
    },
    {
-    "q": "LinkedBlockingQueue 默认容量？",
-    "a": "Integer.MAX_VALUE，近乎无界，作线程池队列要警惕。"
+    "q": "DelayQueue 适合做订单超时关闭吗？",
+    "a": "只适合单机且允许重启丢失的场景，数据在内存中，订单超时这类关键业务应使用 MQ 延时消息或数据库扫描。"
    },
    {
-    "q": "DrainTo 干什么？",
-    "a": "批量取出，减少锁竞争，适合消费者批量处理。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "消费者为什么用带超时的 poll 而不是 take？",
+    "a": "take 会无限阻塞，使用超时 poll 可以定期检查运行标志，让消费者线程能够优雅退出。"
    }
   ],
   "answer": [
-   "总：BlockingQueue 用阻塞上下架支撑生产者-消费者，也是线程池任务缓冲的关键。",
-   "分：Array/Linked/Synchronous/Delay 等各有场景；有界才能触发合理拒绝；无界可能 OOM。",
-   "实践：【结合你的项目】线程池队列用【待填】，容量【待填】，拒绝策略【待填】。",
-   "总结：讲清有界与阻塞语义，就能把集合题和线程池题串起来。"
+   "总：BlockingQueue 提供满时阻塞写、空时阻塞读的能力，是生产者消费者模型和线程池的基础。",
+   "分：ArrayBlockingQueue 有界单锁，LinkedBlockingQueue 默认近似无界双锁；SynchronousQueue 直接交付；PriorityBlockingQueue 按优先级；DelayQueue 处理到期元素；生产环境优先有界队列。",
+   "实践：【结合你的项目】说明异步处理或日志收集中使用的阻塞队列类型、容量以及队列满时的处理策略。",
+   "总结：选择阻塞队列要关注是否有界、锁的粒度以及是否需要排序或延时。"
   ],
   "pitfalls": [
-   "线程池无脑用无界队列。",
-   "分不清 put/offer/take/poll。",
-   "加分：结合拒绝策略讲背压。"
+   "使用不指定容量的 LinkedBlockingQueue 导致内存堆积。",
+   "用 DelayQueue 处理需要持久化的关键延时任务。",
+   "加分：说明 LinkedBlockingQueue 双锁的设计。"
   ]
  },
  "p2-5": {
   "principle": [
-   "ConcurrentHashMap 的 size 在 JDK8+ 用 baseCount+CounterCell 近似汇总，高并发下是估算，不是全局大锁精确计数；需要精确时要额外方案。",
-   "进一步说：baseCount+CounterCell；不加全局大锁；近似值在并发下。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「集合」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「ConcurrentHashMap size 怎」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "ConcurrentHashMap 的 size 计算需要兼顾并发性能和准确性。JDK 7 采用分段锁（Segment）：先在不加锁的情况下累加各 Segment 的 count 并记录修改次数，连续两次统计的修改次数相同则认为结果可用；尝试几次（默认 2 次）仍不一致，就锁住所有 Segment 再统计。",
+   "JDK 8 取消了 Segment，采用与 LongAdder 相同的思路：维护一个基础计数 baseCount 和一个 CounterCell 数组。put 或 remove 后调用 addCount，先尝试用 CAS 更新 baseCount；如果 CAS 失败说明存在竞争，就随机映射到 CounterCell 数组中的某个槽位进行 CAS 累加，竞争激烈时数组还会扩容。这样把对同一个计数器的竞争分散到多个槽位，避免大量线程在一个变量上自旋失败。",
+   "size() 和 mappingCount() 调用 sumCount，把 baseCount 与所有 CounterCell 的值相加。这个过程不加锁，所以在并发修改时返回的是一个近似的瞬时值，不保证与某一时刻的真实数量完全一致。由于 size 返回 int，元素超过 int 范围时会截断，推荐使用返回 long 的 mappingCount()。在并发场景中，不应该用 size 的结果做精确判断（如先判断 size 再插入），需要原子操作时应该使用 putIfAbsent、compute 等方法。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// ConcurrentHashMap size 怎么统计？\n// keypoints: baseCount+CounterCell; 不加全局大锁; 近似值在并发下\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "// JDK 8 简化逻辑\nfinal long sumCount() {\n    CounterCell[] cs = counterCells;\n    long sum = baseCount;\n    if (cs != null)\n        for (CounterCell c : cs) if (c != null) sum += c.value;\n    return sum;                       // 无锁求和：近似瞬时值\n}\n// 使用建议\nConcurrentHashMap<String, Long> map = new ConcurrentHashMap<>();\nlong n = map.mappingCount();          // 优先于 size()\nmap.merge(\"pv\", 1L, Long::sum);       // 原子累加，不要 get + put"
   },
   "asks": [
-   "ConcurrentHashMap size 怎么统计？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "ConcurrentHashMap 的 size 是怎么统计的？",
+   "JDK 7 和 JDK 8 的实现有什么区别？",
+   "CounterCell 解决了什么问题？",
+   "size 的结果是精确的吗？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "为什么不直接用一个 AtomicLong 计数？",
+    "a": "高并发下大量线程在同一个变量上 CAS 失败并自旋，性能很差，分散到多个槽位可以显著降低竞争。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "mappingCount 和 size 有什么区别？",
+    "a": "两者计算方式相同，但 mappingCount 返回 long，不会在元素数量超过 int 范围时截断，官方推荐使用。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "能用 size 判断后再插入吗？",
+    "a": "不能，判断和插入之间其他线程可能修改了映射，应使用 putIfAbsent 或 compute 等原子方法。"
    }
   ],
   "answer": [
-   "总：ConcurrentHashMap 的 size 在 JDK8+ 用 baseCount+CounterCell 近似汇总，高并发下是估算，不是全局大锁精确计数；需要精确时要额外方。",
-   "分：baseCount+CounterCell；不加全局大锁；近似值在并发下。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：baseCount+CounterCell、不加全局大锁。关联知识点：baseCount+CounterCell、不加全局大锁。关联知识点：baseCount+CounterCell、不加全局大锁。"
+   "总：JDK 8 的 ConcurrentHashMap 用 baseCount 加 CounterCell 数组分散计数，size 时无锁求和。",
+   "分：JDK 7 先无锁统计多次，不一致时锁住全部 Segment；JDK 8 先 CAS baseCount，冲突时累加到 CounterCell；求和不加锁，结果是近似瞬时值；推荐 mappingCount；精确逻辑使用原子方法。",
+   "实践：【结合你的项目】说明本地缓存或计数场景中是否依赖了 ConcurrentHashMap 的 size，以及如何避免检查后执行的竞态。",
+   "总结：并发容器的统计值只适合观测，不能作为并发控制的依据。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "把 size 的结果当作精确值做业务判断。",
+   "用 get 加 put 组合实现并发累加。",
+   "加分：联系 LongAdder 的分段累加思想。"
   ]
  },
  "j-col5": {
