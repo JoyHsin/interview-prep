@@ -434,5 +434,81 @@
   "pitfalls": [
    "说 Java 是引用传递。"
   ]
+ },
+ "p-b11": {
+  "principle": [
+   "SPI：ServiceLoader 读 META-INF/services/接口名列实现，可插拔。JDBC 驱动即例；常配合 TCCL 打破双亲委派。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "META-INF/services/com.example.Plugin\ncom.example.PluginImpl"
+  },
+  "asks": [
+   "SPI？",
+   "怎么用？",
+   "和双亲委派？",
+   "Spring？"
+  ],
+  "followups": [
+   {
+    "q": "加载？",
+    "a": "ServiceLoader.load。"
+   },
+   {
+    "q": "SpringFactories？",
+    "a": "类似思想。"
+   },
+   {
+    "q": "安全？",
+    "a": "实现来源可信。"
+   }
+  ],
+  "answer": [
+   "总：配置化插拔实现。",
+   "分：services 文件；TCCL。",
+   "实践：插件扩展。",
+   "总结：扩展点标准做法。"
+  ],
+  "pitfalls": [
+   "不会举 JDBC。"
+  ]
+ },
+ "p-b12": {
+  "principle": [
+   "JDK 代理：基于接口。CGLIB：子类。Spring AOP 按是否有接口/配置选择（Boot 常偏 CGLIB）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Proxy.newProxyInstance(cl, new Class[]{Api.class}, handler);"
+  },
+  "asks": [
+   "两种动态代理？",
+   "Spring？",
+   "限制？",
+   "性能？"
+  ],
+  "followups": [
+   {
+    "q": "final？",
+    "a": "CGLIB 不行。"
+   },
+   {
+    "q": "生成？",
+    "a": "运行期字节码。"
+   },
+   {
+    "q": "与注解？",
+    "a": "注解驱动代理。"
+   }
+  ],
+  "answer": [
+   "总：接口 JDK，类 CGLIB。",
+   "分：AOP 选型。",
+   "实践：事务代理。",
+   "总结：同 j-s4 了解级。"
+  ],
+  "pitfalls": [
+   "说只有一种。"
+  ]
  }
 }

@@ -322,5 +322,43 @@
   "pitfalls": [
    "业务逻辑跑 EventLoop。"
   ]
+ },
+ "p-io7": {
+  "principle": [
+   "HeapBuffer 在堆，受 GC；Direct 堆外，IO 少一次拷贝，分配慢、泄漏难查（Cleaner）。池化复用；MaxDirectMemorySize。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "ByteBuffer.allocateDirect(8<<20);"
+  },
+  "asks": [
+   "Direct vs Heap？",
+   "何时 Direct？",
+   "泄漏？",
+   "参数？"
+  ],
+  "followups": [
+   {
+    "q": "Netty？",
+    "a": "池化 Direct。"
+   },
+   {
+    "q": "大？",
+    "a": "慎频繁分配。"
+   },
+   {
+    "q": "谁回收？",
+    "a": "幻引用清理。"
+   }
+  ],
+  "answer": [
+   "总：堆外换拷贝，代价是管理。",
+   "分：池化；监控。",
+   "实践：NIO 网络。",
+   "总结：同堆外 OOM。"
+  ],
+  "pitfalls": [
+   "任意 new Direct。"
+  ]
  }
 }

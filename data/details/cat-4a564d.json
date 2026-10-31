@@ -564,5 +564,119 @@
   "pitfalls": [
    "用语混淆不看日志。"
   ]
+ },
+ "j-v7": {
+  "principle": [
+   "ZGC：超低停顿（染色指针/读屏障），适合大堆；JDK21 有分代 ZGC。引用：强（普通）、软（内存足保留，适合缓存）、弱（GC 即清，ThreadLocal key）、虚（唯一目的入队跟踪，DirectByteBuffer 清理）。ReferenceQueue 感知回收。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "SoftReference<byte[]> cache=new SoftReference<>(big);\nWeakReference<Object> w=new WeakReference<>(obj, queue);"
+  },
+  "asks": [
+   "ZGC？",
+   "四类引用？",
+   "软 vs 弱？",
+   "虚引用？"
+  ],
+  "followups": [
+   {
+    "q": "缓存？",
+    "a": "软或专业缓存库。"
+   },
+   {
+    "q": "ThreadLocal？",
+    "a": "key 弱引用。"
+   },
+   {
+    "q": "停顿？",
+    "a": "ZGC 毫秒级目标。"
+   }
+  ],
+  "answer": [
+   "总：ZGC 低停顿；引用控制生命周期。",
+   "分：软缓存弱即清虚跟踪。",
+   "实践：慎用软当缓存唯一方案。",
+   "总结：引用类型要匹配场景。"
+  ],
+  "pitfalls": [
+   "软弱分不清。"
+  ]
+ },
+ "p-v4": {
+  "principle": [
+   "CMS：低停顿标记清除，碎片、浮动垃圾、Concurrent Mode Failure→退化 Serial Old 长停顿；JDK9 废弃 14 移除，由 G1/ZGC 替代。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "失败：并发清理跟不上晋升 → Full GC"
+  },
+  "asks": [
+   "CMS 为何淘汰？",
+   "碎片？",
+   "CMF？",
+   "替代？"
+  ],
+  "followups": [
+   {
+    "q": "清除？",
+    "a": "不整理。"
+   },
+   {
+    "q": "CPU？",
+    "a": "并发占核。"
+   },
+   {
+    "q": "调优？",
+    "a": "历史知识。"
+   }
+  ],
+  "answer": [
+   "总：碎片与失败停顿致命。",
+   "分：G1 取而代之。",
+   "实践：面试历史题。",
+   "总结：知道缺陷即可。"
+  ],
+  "pitfalls": [
+   "生产仍推 CMS。"
+  ]
+ },
+ "p-v5": {
+  "principle": [
+   "Arthas：watch/trace/stack/jad/ognl、thread、dashboard；条件与耗时过滤；有限热更新；生产慎用写操作。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "java -jar arthas-boot.jar\ntrace com.demo.Api save '#cost>200'\nthread -n 3"
+  },
+  "asks": [
+   "Arthas？",
+   "常用命令？",
+   "风险？",
+   "替代？"
+  ],
+  "followups": [
+   {
+    "q": "生产？",
+    "a": "只读优先；权限。"
+   },
+   {
+    "q": "安装？",
+    "a": "进程附着。"
+   },
+   {
+    "q": "火焰图？",
+    "a": "profiler。"
+   }
+  ],
+  "answer": [
+   "总：线上诊断利器。",
+   "分：trace/watch/thread。",
+   "实践：慢方法定位。",
+   "总结：会用加分。"
+  ],
+  "pitfalls": [
+   "生产随意 retransform。"
+  ]
  }
 }

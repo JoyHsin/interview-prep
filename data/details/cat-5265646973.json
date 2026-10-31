@@ -405,5 +405,43 @@
   "pitfalls": [
    "设了 lease 还以为会续。"
   ]
+ },
+ "j-r6": {
+  "principle": [
+   "BigKey：大 value/大集合，阻塞、内存尖峰；拆分、扫描删用渐进。热点 Key：单 key QPS 极高；本地缓存、读写分离、复制多副本、拆 key。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "redis-cli --bigkeys\nMEMORY USAGE key"
+  },
+  "asks": [
+   "BigKey？",
+   "热点 Key？",
+   "怎么治？",
+   "发现？"
+  ],
+  "followups": [
+   {
+    "q": "热 key？",
+    "a": "代理上报或猜测。"
+   },
+   {
+    "q": "拆？",
+    "a": "哈希分桶。"
+   },
+   {
+    "q": "删大 key？",
+    "a": "UNLINK。"
+   }
+  ],
+  "answer": [
+   "总：大与热都要拆与挡。",
+   "分：本地缓存打热；渐进删大。",
+   "实践：【结合你的项目】。",
+   "总结：监控 key 分布。"
+  ],
+  "pitfalls": [
+   "KEYS * 删大键。"
+  ]
  }
 }

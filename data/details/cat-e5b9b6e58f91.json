@@ -772,5 +772,119 @@
   "pitfalls": [
    "线程池用 ITL 以为够。"
   ]
+ },
+ "j-c9": {
+  "principle": [
+   "happens-before（HB）：JMM 定义的偏序，保证可见与有序。常见：程序次序；监视器解锁 HB 后续加锁；volatile 写 HB 读；线程 start HB 线程内、线程末 HB join；传递性。HB 不等于禁止所有重排，而是结果符合规则。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "写 volatile v; ... 读 v → 看到写之前的操作结果\nsynchronized 解锁 → 另一线程加同锁"
+  },
+  "asks": [
+   "HB 规则？",
+   "和 as-if-serial？",
+   "volatile？",
+   "传递？"
+  ],
+  "followups": [
+   {
+    "q": "as-if-serial？",
+    "a": "单线程外观串行。"
+   },
+   {
+    "q": "指令重排？",
+    "a": "不违反 HB 即可。"
+   },
+   {
+    "q": "硬件？",
+    "a": "内存屏障落地。"
+   }
+  ],
+  "answer": [
+   "总：HB 是可见性与顺序的契约。",
+   "分：锁/volatile/线程起停/传递。",
+   "实践：解释并发 bug。",
+   "总结：写并发靠 HB 推理。"
+  ],
+  "pitfalls": [
+   "背定义不会举例。"
+  ]
+ },
+ "p-th6": {
+  "principle": [
+   "StampedLock：乐观读（stamp 校验）、读锁、写锁；吞吐潜力高；不可重入、易用错（升级死锁）。复杂场景需谨慎，多数用读写锁即可。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "long s=sl.tryOptimisticRead(); // 读字段; if(!sl.validate(s)) { /* 加读锁重读 */ }"
+  },
+  "asks": [
+   "StampedLock？",
+   "乐观读？",
+   "坑？",
+   "何时？"
+  ],
+  "followups": [
+   {
+    "q": "重入？",
+    "a": "不支持。"
+   },
+   {
+    "q": "中断？",
+    "a": "API 有变体。"
+   },
+   {
+    "q": "替代？",
+    "a": "RWLock 更简单。"
+   }
+  ],
+  "answer": [
+   "总：乐观读提吞吐，复杂度高。",
+   "分：validate；易错。",
+   "实践：了解。",
+   "总结：默认 RWLock。"
+  ],
+  "pitfalls": [
+   "盲目替换 RWLock。"
+  ]
+ },
+ "p-th8": {
+  "principle": [
+   "LockSupport.park/unpark：阻塞/唤醒线程，不需持锁；AQS 基础。先 unpark 再 park 不丢许可（与 wait/notify 不同）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "LockSupport.park(); // 别线程 LockSupport.unpark(t);"
+  },
+  "asks": [
+   "LockSupport？",
+   "和 wait？",
+   "许可？",
+   "AQS？"
+  ],
+  "followups": [
+   {
+    "q": "许可？",
+    "a": "最多积一个。"
+   },
+   {
+    "q": "中断？",
+    "a": "park 可响应。"
+   },
+   {
+    "q": "伪唤醒？",
+    "a": "仍要循环条件。"
+   }
+  ],
+  "answer": [
+   "总：无锁的线程阻塞原语。",
+   "分：许可模型；AQS 用。",
+   "实践：读源码。",
+   "总结：比 wait 灵活。"
+  ],
+  "pitfalls": [
+   "当 wait 用却无锁。"
+  ]
  }
 }

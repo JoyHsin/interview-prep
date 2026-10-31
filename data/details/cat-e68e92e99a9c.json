@@ -287,5 +287,43 @@
   "pitfalls": [
    "不看计划加索引。"
   ]
+ },
+ "j-t5": {
+  "principle": [
+   "工具：jmap/jcmd heap_dump、MAT/JVisualVM、async-profiler。嫌疑：无界缓存、监听未注销、ThreadLocal 未 remove、类加载泄漏。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "jcmd <pid> GC.heap_dump /tmp/h.hprof"
+  },
+  "asks": [
+   "内存泄漏工具？",
+   "嫌疑点？",
+   "MAT？",
+   "堆外？"
+  ],
+  "followups": [
+   {
+    "q": "支配树？",
+    "a": "谁留住大对象。"
+   },
+   {
+    "q": "对比 dump？",
+    "a": "前后对比。"
+   },
+   {
+    "q": "生产？",
+    "a": "无损或摘流。"
+   }
+  ],
+  "answer": [
+   "总：dump+分析器。",
+   "分：常见泄漏源。",
+   "实践：【结合你的项目】。",
+   "总结：工具链要熟。"
+  ],
+  "pitfalls": [
+   "只会 top。"
+  ]
  }
 }

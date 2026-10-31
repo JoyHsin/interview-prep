@@ -403,5 +403,119 @@
   "pitfalls": [
    "以为绝对精确。"
   ]
+ },
+ "j-col5": {
+  "principle": [
+   "fail-fast：ArrayList 等迭代时若结构被改，modCount 变化抛 ConcurrentModificationException（非绝对可靠）。CopyOnWrite：写时复制数组，迭代快照弱一致，读多写少；写贵、占内存。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "for(Integer i: list) list.remove(i); // 可能 CME → Iterator.remove\nCopyOnWriteArrayList<String> cow=new CopyOnWriteArrayList<>();"
+  },
+  "asks": [
+   "fail-fast？",
+   "COW？",
+   "适用？",
+   "CME？"
+  ],
+  "followups": [
+   {
+    "q": "绝对？",
+    "a": "不一定每次检测到。"
+   },
+   {
+    "q": "写多？",
+    "a": "别用 COW。"
+   },
+   {
+    "q": "并发改？",
+    "a": "用并发容器。"
+   }
+  ],
+  "answer": [
+   "总：快速失败检测并发改；COW 读优化。",
+   "分：写少才 COW。",
+   "实践：监听器列表。",
+   "总结：选型看读写比。"
+  ],
+  "pitfalls": [
+   "多线程用 ArrayList 迭代。"
+  ]
+ },
+ "r-j2": {
+  "principle": [
+   "Java 21：Record Patterns 在 switch/instanceof 解构 record；Sequenced Collections 统一 List/Deque/LinkedHashSet 等有序集合的 getFirst/getLast/reversed。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "record Point(int x,int y){}\nswitch(obj){ case Point(int x,int y) -> x+y; default -> 0; }\nlist.getFirst(); list.reversed();"
+  },
+  "asks": [
+   "Record Patterns？",
+   "Sequenced？",
+   "好处？",
+   "版本？"
+  ],
+  "followups": [
+   {
+    "q": "21？",
+    "a": "LTS。"
+   },
+   {
+    "q": "逆向视图？",
+    "a": "reversed。"
+   },
+   {
+    "q": "模式匹配？",
+    "a": "更简洁。"
+   }
+  ],
+  "answer": [
+   "总：21 语法增强可读性。",
+   "分：解构与有序集合 API。",
+   "实践：升级 21 可用。",
+   "总结：了解新 API。"
+  ],
+  "pitfalls": [
+   "背特性无例子。"
+  ]
+ },
+ "p-c4": {
+  "principle": [
+   "WeakHashMap：键弱引用，键无强引用时条目可被回收，适合暂时缓存；值仍强引用可能需处理。非线程安全。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Map<Key,Meta> m=new WeakHashMap<>();"
+  },
+  "asks": [
+   "WeakHashMap？",
+   "用途？",
+   "值？",
+   "并发？"
+  ],
+  "followups": [
+   {
+    "q": "值泄漏？",
+    "a": "值引用键则回收不了。"
+   },
+   {
+    "q": "缓存？",
+    "a": "更推荐专业缓存。"
+   },
+   {
+    "q": "谁清？",
+    "a": "GC+过道清理。"
+   }
+  ],
+  "answer": [
+   "总：弱键地图。",
+   "分：缓存场景有限。",
+   "实践：了解即可。",
+   "总结：慎用。"
+  ],
+  "pitfalls": [
+   "当通用缓存。"
+  ]
  }
 }
