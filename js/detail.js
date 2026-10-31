@@ -1,6 +1,7 @@
 (function(){
   const all = window.QUESTIONS || [];
   const idx = window.DETAIL_INDEX || {};
+  const diagrams = window.DIAGRAMS || {};
   const params = new URLSearchParams(location.search);
   const id = params.get('id');
   const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -35,11 +36,13 @@
   setNav($('dNext'), list[pos+1]);
   
   document.title = q.question.slice(0,30) + ' · 详解';
+  const hasDiag = !!diagrams[id];
   $('dMeta').innerHTML = `
-    <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px">
+    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:8px">
       <span class="tag p-${q.priority}">${q.priority}</span>
       <span class="tag">${esc(q.category)}</span>
       <span class="tag" style="color:var(--text3)">${esc(q.section)}</span>
+      ${hasDiag ? '<span class="tag" style="background:var(--accent-soft);color:var(--accent);border-color:var(--accent-border);font-weight:600">📐 内置高清图解</span>' : ''}
     </div>
   `;
   $('dTitle').textContent = q.question;
@@ -70,6 +73,17 @@
   `;
   
   const paras = a => (a||[]).map(p => `<p>${esc(p).replace(/【(结合你的项目|待填)[^】]*】/g, m => `<mark>${m}</mark>`)}</p>`).join('');
+
+  function buildDiagramSec() {
+    const diagSvg = diagrams[id];
+    if (!diagSvg) return '';
+    return sec('📐', '核心流程 / 原理架构图解', `
+      <div style="padding:18px 12px;background:var(--bg-elev-2);border-radius:10px;border:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;">
+        ${diagSvg}
+      </div>
+      <p class="tiny muted" style="text-align:center;margin:8px 0 0">💡 提示：该矢量图解随系统深浅主题自适应适配，作答时结合下方原理串联因果</p>
+    `, 'var(--accent)');
+  }
   
   function renderDetail(d){
     const codeBlock = d.example ? `
@@ -80,7 +94,10 @@
       <div class="tiny" style="color:var(--text3); font-family:var(--mono); margin-top:4px">语言：${esc(d.example.lang || 'code')}</div>
     ` : '<p class="muted">暂无示例代码</p>';
 
+    const diagPart = buildDiagramSec();
+
     $('dBody').innerHTML =
+      diagPart +
       sec('💡', '原理深度剖析', paras(d.principle), 'var(--accent)') +
       sec('💻', '核心示例与代码逻辑', codeBlock, '#6366f1') +
       sec('🎯', '面试常见问法与追问', `<ol style="padding-left:20px;margin:8px 0">${d.asks.map(a=>`<li style="margin:6px 0">${esc(a)}</li>`).join('')}</ol><h3 style="margin-top:16px">常见追问及应对：</h3>` +
@@ -103,9 +120,17 @@
   }
 
   const file = idx[id];
-  if (!file) { $('dBody').innerHTML = sec('📖', '详细解析', '<p class="muted">该题暂未编写扩展长详解，核心考点请参考上方“要点速记”。</p>'); return; }
+  const diagPartOnly = buildDiagramSec();
+  if (!file) { 
+    $('dBody').innerHTML = diagPartOnly + sec('📖', '详细解析', '<p class="muted">该题暂未编写扩展长详解，核心考点请参考上方“要点速记”。</p>'); 
+    return; 
+  }
+  
   $('dBody').innerHTML = '<div class="card" style="text-align:center;padding:30px;color:var(--text3)">正在加载权威详解…</div>';
   fetch('./data/details/' + file + '.json').then(r => r.json()).then(data => {
-    if (data[id]) renderDetail(data[id]); else $('dBody').innerHTML = sec('📖', '详细解析', '<p class="muted">详解收录中。</p>');
-  }).catch(() => { $('dBody').innerHTML = sec('📖', '详细解析', '<p class="muted">详解加载失败，请检查网络或刷新页面。</p>'); });
+    if (data[id]) renderDetail(data[id]); 
+    else $('dBody').innerHTML = diagPartOnly + sec('📖', '详细解析', '<p class="muted">详解收录中。</p>');
+  }).catch(() => { 
+    $('dBody').innerHTML = diagPartOnly + sec('📖', '详细解析', '<p class="muted">详解加载失败，请检查网络或刷新页面。</p>'); 
+  });
 })();

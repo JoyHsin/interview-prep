@@ -60,6 +60,7 @@
       const ref = (q.refLinks||[]).find(r => r && r.url);
       const ext = ref ? `<div class="ext-link">可选 · <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">原文参考</a>（外链，非必读）</div>` : '';
       const hasDetail = !!(window.DETAIL_INDEX||{})[q.id];
+      const hasDiag = !!(window.DIAGRAMS||{})[q.id];
 
       const noteBlock = note ? `
         <div class="note-box" style="margin-top:12px; padding:8px 12px; background:var(--bg-elev-2); border-radius:8px; border:1px solid var(--border);">
@@ -84,7 +85,10 @@
             <span class="tag">${escapeHtml(q.category)}</span>
             <span class="tag" style="color:var(--text3)">${escapeHtml(q.section)}</span>
           </div>
-          ${hasDetail ? `<a class="d-badge" href="${detailLink(q.id)}" style="text-decoration:none">⚡ 查看详解</a>` : ''}
+          <div style="display:flex; gap:6px; align-items:center;">
+            ${hasDiag ? `<span class="tag" style="background:var(--accent-soft);color:var(--accent);border-color:var(--accent-border);font-weight:600;margin:0">📐 有图解</span>` : ''}
+            ${hasDetail ? `<a class="d-badge" href="${detailLink(q.id)}" style="text-decoration:none">⚡ 详解</a>` : ''}
+          </div>
         </div>
         
         <div class="q-title">
