@@ -209,192 +209,215 @@
  },
  "p-b4": {
   "principle": [
-   "浅拷贝：复制对象，引用字段仍指向同一对象。深拷贝：递归复制引用图。Cloneable/clone 易错（浅拷贝默认、检查异常、final 字段）；更推荐拷贝构造、手工、序列化（注意性能与Transient）、或 record/不可变设计减少需求。"
+   "浅拷贝：创建一个新对象，基本类型字段复制值，引用类型字段只复制引用地址，新旧对象共享同一个引用对象。修改拷贝对象中的引用对象（如 List 中加元素），原对象也会受影响。深拷贝：不仅复制对象本身，还递归复制它引用的所有对象，新旧对象完全独立。",
+   "Java 中的实现方式：① Object.clone()：类实现 Cloneable 接口并重写 clone（调用 super.clone()），默认是浅拷贝；要实现深拷贝必须在 clone 中对每个引用字段再次调用 clone。Cloneable 设计饱受批评：它是一个没有方法的标记接口，clone 绕过了构造方法，对 final 字段无法重新赋值，异常处理也别扭，《Effective Java》建议尽量避免。② 拷贝构造方法或静态工厂方法：手动 new 新对象并复制字段，引用字段也新建，最清晰可控，推荐使用。③ 序列化方式：通过 Java 序列化或 JSON（Jackson）先序列化再反序列化，自动实现深拷贝，但性能较差，要求所有对象可序列化，transient 字段会丢失。④ 工具类：Spring BeanUtils.copyProperties、MapStruct 都是浅拷贝（只复制属性引用），常用于 DTO 转换。",
+   "注意：不可变对象（String、Integer、LocalDate）共享引用没有问题，不需要深拷贝；集合的 new ArrayList<>(list) 也只是浅拷贝，新列表中的元素对象仍然是共享的。对象图中有循环引用时，手写递归深拷贝要防止死循环。"
   ],
   "example": {
    "lang": "java",
-   "code": "class Node { int v; Node next;\n  Node deep() { Node n=new Node(); n.v=v; n.next=next==null?null:next.deep(); return n; }\n}"
+   "code": "class Address { String city; Address(String c) { city = c; } Address(Address o) { this(o.city); } }\nclass User implements Cloneable {\n    String name; Address addr; List<String> tags = new ArrayList<>();\n\n    @Override public User clone() {                 // 默认 super.clone() 是浅拷贝\n        try { return (User) super.clone(); } catch (CloneNotSupportedException e) { throw new AssertionError(e); }\n    }\n    // 推荐：拷贝构造方法实现深拷贝\n    User(User o) {\n        this.name = o.name;                          // String 不可变，共享无妨\n        this.addr = new Address(o.addr);\n        this.tags = new ArrayList<>(o.tags);\n    }\n    User() {}\n}\n\nUser a = new User(); a.addr = new Address(\"上海\");\nUser shallow = a.clone();\nshallow.addr.city = \"北京\";\nSystem.out.println(a.addr.city);   // 北京：共享了 Address\n\nUser deep = new User(a);\ndeep.addr.city = \"深圳\";\nSystem.out.println(a.addr.city);   // 北京：互不影响\n\n// JSON 深拷贝（简单但慢）\nUser copy = mapper.readValue(mapper.writeValueAsString(a), User.class);"
   },
   "asks": [
-   "深拷贝浅拷贝？",
-   "Cloneable 坑？",
-   "怎么做深拷贝？",
-   "不可变？"
+   "深拷贝和浅拷贝有什么区别？",
+   "clone 方法默认是深拷贝还是浅拷贝？",
+   "怎么实现深拷贝？",
+   "BeanUtils.copyProperties 是深拷贝吗？"
   ],
   "followups": [
    {
-    "q": "坑？",
-    "a": "默认浅拷贝；需每个类正确实现。"
+    "q": "为什么不推荐用 Cloneable？",
+    "a": "它是没有方法的标记接口，clone 绕过构造方法、无法给 final 字段赋新值、需要处理受检异常，容易出错，拷贝构造更清晰。"
    },
    {
-    "q": "序列化？",
-    "a": "简单但慢，要 Serializable。"
+    "q": "new ArrayList<>(list) 是深拷贝吗？",
+    "a": "不是，它只复制了列表结构，列表中的元素对象仍然与原列表共享。"
    },
    {
-    "q": "循环引用？",
-    "a": "注意图拷贝标记。"
+    "q": "什么情况下浅拷贝就够了？",
+    "a": "对象的引用字段都是不可变对象，或者确定拷贝后不会修改引用对象时，浅拷贝即可。"
    }
   ],
   "answer": [
-   "总：浅共享引用，深递归复制。",
-   "分：少用 clone；偏好不可变与拷贝构造。",
-   "实践：【结合你的项目】DTO 转换而非 clone。",
-   "总结：能不可变就不拷贝。"
+   "总：浅拷贝只复制引用，新旧对象共享内部对象；深拷贝递归复制所有引用对象，两者完全独立。",
+   "分：clone 默认是浅拷贝，深拷贝需要逐个复制引用字段，Cloneable 设计缺陷多不推荐；推荐拷贝构造或工厂方法；序列化和 JSON 方式简单但性能差；BeanUtils 和 MapStruct 是浅拷贝；不可变对象无需深拷贝，new ArrayList 只是浅拷贝。",
+   "实践：【结合你的项目】【待填：如复制订单模板时用 BeanUtils 浅拷贝，修改明细列表影响了原模板，改为拷贝构造解决】。",
+   "总结：拷贝前先想清楚哪些字段是可变的引用对象，按需深拷贝，优先选择清晰可控的方式。"
   ],
   "pitfalls": [
-   "直接 clone 当深拷贝。"
+   "以为 BeanUtils.copyProperties 或 new ArrayList 是深拷贝。",
+   "实现了 Cloneable 却没有处理引用字段。",
+   "加分：讲不可变对象无需深拷贝和循环引用问题。"
   ]
  },
  "p-b6": {
   "principle": [
-   "try-with-resources：资源实现 AutoCloseable/Closeable，try 结束（正常或异常）自动 close。编译器生成 finally，多资源逆序关闭；close 异常通过 addSuppressed 挂到主异常上，不会丢失。"
+   "try-with-resources 是 Java 7 引入的语法，用于自动关闭资源。只要资源类实现了 AutoCloseable 接口（Closeable 是它的子接口），在 try 后的括号中声明，代码块结束时（无论正常结束还是抛出异常）都会自动调用 close()。多个资源用分号分隔，关闭顺序与声明顺序相反（后打开的先关闭）。Java 9 起可以直接使用外部已声明的 final 或等效 final 的变量。",
+   "编译器的实现：它是语法糖，编译后会生成类似 try-finally 的代码，并且对资源为 null 的情况做了判断。关键在于异常处理：如果 try 块抛出异常 A，close() 又抛出异常 B，传统的 finally 写法中 B 会覆盖 A，导致真正的原始异常丢失，排查困难。try-with-resources 会保留主异常 A，并把 B 通过 A.addSuppressed(B) 附加为被抑制的异常，可以通过 getSuppressed() 获取，堆栈中显示为 Suppressed。",
+   "对比传统写法：手动在 finally 中关闭需要判空、嵌套 try-catch 处理 close 的异常，多个资源时代码非常冗长且容易漏关，造成连接、文件句柄泄漏。",
+   "注意事项：资源要在 try 括号中创建，如果包装流的构造器抛出异常（如 new BufferedReader(new FileReader(f))），内层流可能没有被管理，更稳妥的是把每个资源分别声明；close() 的实现应该是幂等的；自定义资源类实现 AutoCloseable 后也可以使用这个语法，比如分布式锁、计时器、MDC 上下文的清理。"
   ],
   "example": {
    "lang": "java",
-   "code": "try (InputStream in = Files.newInputStream(p);\n     OutputStream out = Files.newOutputStream(q)) {\n  in.transferTo(out);\n} // 先关 out 再关 in；异常带 suppressed"
+   "code": "// 多个资源：关闭顺序与声明相反（先关 ps，再关 conn）\ntry (Connection conn = dataSource.getConnection();\n     PreparedStatement ps = conn.prepareStatement(\"SELECT name FROM t_user WHERE id = ?\")) {\n    ps.setLong(1, id);\n    try (ResultSet rs = ps.executeQuery()) {\n        return rs.next() ? rs.getString(1) : null;\n    }\n}\n\n// 编译后大致等价于（简化）\nConnection conn = dataSource.getConnection();\nThrowable primary = null;\ntry { /* ... */ }\ncatch (Throwable t) { primary = t; throw t; }\nfinally {\n    if (conn != null) {\n        if (primary != null) {\n            try { conn.close(); } catch (Throwable s) { primary.addSuppressed(s); }\n        } else { conn.close(); }\n    }\n}\n\n// 自定义资源：分布式锁自动释放\npublic final class LockHandle implements AutoCloseable {\n    private final RLock lock;\n    LockHandle(RLock lock) { this.lock = lock; lock.lock(); }\n    @Override public void close() { if (lock.isHeldByCurrentThread()) lock.unlock(); }\n}\ntry (LockHandle h = new LockHandle(redisson.getLock(\"order:\" + id))) { process(id); }"
   },
   "asks": [
-   "try-with-resources 原理？",
-   "抑制异常？",
-   "必须实现什么？",
-   "多个资源顺序？"
+   "try-with-resources 的原理是什么？",
+   "它和 try-finally 相比好在哪里？",
+   "什么是被抑制的异常？",
+   "自定义类怎么使用 try-with-resources？"
   ],
   "followups": [
    {
-    "q": "抑？",
-    "a": "主异常 addSuppressed(close异常)。"
+    "q": "多个资源的关闭顺序是什么？",
+    "a": "与声明顺序相反，后声明的先关闭，符合资源依赖关系，比如先关 Statement 再关 Connection。"
    },
    {
-    "q": "手动 finally？",
-    "a": "易丢异常或关漏。"
+    "q": "catch 和 finally 块执行时资源关闭了吗？",
+    "a": "已经关闭了，资源在 try 块结束后、进入 catch 和 finally 之前就会被关闭。"
    },
    {
-    "q": "返回？",
-    "a": "try 返回前会 close。"
+    "q": "怎么查看被抑制的异常？",
+    "a": "调用主异常的 getSuppressed() 获取数组，打印异常堆栈时也会以 Suppressed 的形式显示。"
    }
   ],
   "answer": [
-   "总：语法糖生成 finally close，抑异常不丢。",
-   "分：AutoCloseable；多资源逆序。",
-   "实践：连接、流、HTTP 客户端一律用。",
-   "总结：别手写 close。"
+   "总：try-with-resources 是编译器提供的语法糖，让实现了 AutoCloseable 的资源在代码块结束时自动关闭。",
+   "分：编译后生成带判空的 try-finally 代码；多个资源按声明的相反顺序关闭；如果业务代码和 close 都抛异常，会保留主异常并把 close 的异常通过 addSuppressed 附加，避免原始异常被覆盖；在 catch、finally 执行之前资源已经关闭；自定义类实现 AutoCloseable 即可使用。",
+   "实践：【结合你的项目】我们把 JDBC、文件流统一改成 try-with-resources，并且把分布式锁封装成 AutoCloseable，避免了忘记解锁的问题。",
+   "总结：凡是需要关闭的资源都应该用 try-with-resources，它比手写 finally 更安全简洁。"
   ],
   "pitfalls": [
-   "空 catch 吞 close 异常。"
+   "以为 close 的异常会覆盖业务异常。",
+   "包装流嵌套创建，构造失败时内层资源泄漏。",
+   "加分：讲 addSuppressed 和 Java 9 对外部变量的支持。"
   ]
  },
  "p-b8": {
   "principle": [
-   "反射：运行时获取类信息、构造实例、调方法、访字段；Spring、序列化、注解处理大量用。代价：慢（可缓存 Method）、突破封装、安全模块限制、难优化（JIT）。能不用则不用在业务热路径。"
+   "反射是指程序在运行时获取类的信息（类名、字段、方法、构造器、注解、泛型信息）并动态操作它们：创建对象、调用方法、读写字段（包括私有成员）。入口是 Class 对象，获取方式有 类名.class、对象.getClass()、Class.forName(全限定名)。",
+   "用途：反射是几乎所有 Java 框架的基础。Spring IoC 通过反射实例化 Bean、注入依赖、解析 @Autowired 等注解；Spring AOP 和 JDK 动态代理通过 Method.invoke 调用目标方法；MyBatis 把结果集映射到对象字段；Jackson、Gson 序列化反序列化；JUnit 查找和执行 @Test 方法；ORM、RPC 框架根据接口生成调用逻辑。业务开发中直接使用较少，常见于通用工具（如通用导出、字段比对）。",
+   "代价：① 性能：反射调用需要做访问检查、参数装箱和数组封装，早期比直接调用慢很多。JVM 对频繁调用的反射方法会进行膨胀优化（调用超过阈值后生成字节码访问器），JDK 18 以后反射改用 MethodHandle 实现，差距已经很小。仍需避免在热点路径上反复执行 getDeclaredMethod 等查找操作，应该缓存 Method 对象。② 破坏封装：setAccessible(true) 可以访问私有成员，绕过设计者的约束，代码也难以理解和重构（编译器无法检查方法名字符串）。③ 安全和兼容性：JDK 9 模块化后，默认不允许反射访问 JDK 内部未开放的包，需要 --add-opens，JDK 16/17 起强封装更严格。④ 失去编译期类型检查，错误在运行时才暴露。⑤ GraalVM 原生镜像需要提前声明反射元数据。"
   ],
   "example": {
    "lang": "java",
-   "code": "Method m = User.class.getDeclaredMethod(\"getId\");\nm.setAccessible(true); // 模块系统下可能失败\nObject id = m.invoke(user);"
+   "code": "// 通用：根据字段名读取属性（缓存 Field，避免重复查找）\nprivate static final Map<String, Field> FIELD_CACHE = new ConcurrentHashMap<>();\n\nstatic Object readField(Object target, String name) throws IllegalAccessException {\n    Field f = FIELD_CACHE.computeIfAbsent(target.getClass().getName() + \"#\" + name, k -> {\n        try {\n            Field fd = target.getClass().getDeclaredField(name);\n            fd.setAccessible(true);           // 访问私有字段：破坏封装\n            return fd;\n        } catch (NoSuchFieldException e) { throw new IllegalArgumentException(e); }\n    });\n    return f.get(target);\n}\n\n// 模拟框架：扫描注解并调用方法\nfor (Method m : clazz.getDeclaredMethods()) {\n    if (m.isAnnotationPresent(Scheduled.class)) {\n        Object bean = clazz.getDeclaredConstructor().newInstance();\n        m.invoke(bean);\n    }\n}\n\n// 更高性能的替代：MethodHandle\nMethodHandle mh = MethodHandles.lookup()\n        .findVirtual(User.class, \"getName\", MethodType.methodType(String.class));\nString name = (String) mh.invoke(user);"
   },
   "asks": [
-   "反射能做什么？",
-   "代价？",
-   "Spring 为何用？",
-   "替代？"
+   "什么是反射？能做什么？",
+   "反射在哪些框架中使用？",
+   "反射有什么缺点？",
+   "反射为什么慢？怎么优化？"
   ],
   "followups": [
    {
-    "q": "替代？",
-    "a": "方法句柄、编译期代码生成、接口多态。"
+    "q": "反射能修改 final 字段吗？",
+    "a": "实例的 final 字段在 setAccessible 后技术上可以修改，但 static final 常量可能已被编译器内联，修改无效，而且 JDK 新版本限制更多，不应该这样做。"
    },
    {
-    "q": "setAccessible？",
-    "a": "JPMS 可能禁止。"
+    "q": "JDK 17 中反射访问 JDK 内部类报错怎么办？",
+    "a": "这是模块强封装导致的，需要通过 --add-opens 参数开放对应包，更好的办法是升级不依赖内部 API 的库版本。"
    },
    {
-    "q": "性能？",
-    "a": "热点缓存 Method/Constructor。"
+    "q": "怎么减少反射的性能开销？",
+    "a": "缓存 Class、Method、Field 对象，避免重复查找；热点路径用 MethodHandle、LambdaMetafactory 或编译期生成代码（如 MapStruct）替代。"
    }
   ],
   "answer": [
-   "总：强大但慢且破封装，框架用业务慎用。",
-   "分：热路径避免；注意模块限制。",
-   "实践：业务偏好接口注入。",
-   "总结：反射是工具不是默认。"
+   "总：反射让程序在运行时获取和操作类的结构，是 Spring、MyBatis、Jackson 等框架的基础。",
+   "分：通过 Class 对象获取字段、方法、构造器和注解，可以动态创建对象、调用方法、访问私有成员；代价是有一定性能开销、破坏封装、失去编译期检查，并且受 JDK 模块强封装限制；优化方式是缓存反射对象，热点路径用 MethodHandle 或编译期代码生成。",
+   "实践：【结合你的项目】【待填：如写过通用的字段变更比对或 Excel 导出工具，用反射读取字段并缓存 Field，同时用注解配置列名】。",
+   "总结：反射适合写框架和通用组件，业务代码中应谨慎使用。"
   ],
   "pitfalls": [
-   "业务里到处反射。"
+   "说反射一定非常慢，不知道 JVM 的优化和缓存的作用。",
+   "随意用 setAccessible 修改私有字段。",
+   "加分：讲 JDK 9 以后模块强封装和 MethodHandle 替代。"
   ]
  },
  "p-b9": {
   "principle": [
-   "注解是元数据：@Retention(SOURCE/CLASS/RUNTIME) 决定存活阶段；@Target 限制位置；@Documented/@Inherited。自定义后运行时反射读，或编译期 APT 生成代码（如 MapStruct、Dagger）。"
+   "注解是附加在类、方法、字段、参数等程序元素上的元数据，本身不影响代码逻辑，需要由编译器、工具或框架读取后才产生作用。本质上注解是一个继承了 java.lang.annotation.Annotation 的接口，运行时通过动态代理生成实现对象。",
+   "元注解用于定义注解：① @Retention 决定保留到什么阶段：SOURCE（只在源码中，编译后丢弃，如 @Override、Lombok 的注解）、CLASS（保留在 class 文件中但运行时不可见，默认值）、RUNTIME（运行时可通过反射读取，Spring 的注解大多如此）。② @Target 限制可以标注的位置：TYPE、METHOD、FIELD、PARAMETER 等。③ @Inherited 允许子类继承父类上的类注解。④ @Documented 包含在 Javadoc 中。⑤ @Repeatable 允许重复标注。",
+   "注解的处理方式：① 运行时反射：通过 isAnnotationPresent、getAnnotation 读取，Spring 的 @Transactional、自定义的 AOP 切面都是这种。② 编译期注解处理器（APT，实现 AbstractProcessor）：在编译阶段读取注解并生成新的源代码，Lombok（修改 AST）、MapStruct、Dagger 属于这一类，运行时没有反射开销。",
+   "自定义注解的典型场景：配合 AOP 实现日志记录、权限校验、限流、幂等、分布式锁；配合参数校验框架实现自定义校验规则（@Constraint）；标记需要脱敏的字段。注意：注解属性只能是基本类型、String、Class、枚举、注解及它们的数组，并且值必须是编译期常量；Spring 中要用 AnnotationUtils/AnnotatedElementUtils 才能识别组合注解和别名（@AliasFor）。"
   ],
   "example": {
    "lang": "java",
-   "code": "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\npublic @interface RateLimit { int qps() default 10; }\n\nRateLimit rl = method.getAnnotation(RateLimit.class);"
+   "code": "// 1. 定义注解：运行时保留，标注在方法上\n@Target(ElementType.METHOD)\n@Retention(RetentionPolicy.RUNTIME)\n@Documented\npublic @interface RateLimit {\n    String key() default \"\";\n    int permitsPerSecond() default 10;\n}\n\n// 2. AOP 切面读取注解并执行逻辑\n@Aspect @Component\npublic class RateLimitAspect {\n    @Around(\"@annotation(limit)\")\n    public Object around(ProceedingJoinPoint pjp, RateLimit limit) throws Throwable {\n        String key = limit.key().isEmpty() ? pjp.getSignature().toShortString() : limit.key();\n        if (!limiter.tryAcquire(key, limit.permitsPerSecond())) {\n            throw new BizException(429, \"请求过于频繁\");\n        }\n        return pjp.proceed();\n    }\n}\n\n// 3. 使用\n@RateLimit(key = \"sms:send\", permitsPerSecond = 5)\npublic void sendSms(String phone) { ... }"
   },
   "asks": [
    "注解是什么？",
-   "怎么自定义？",
-   "Retention？",
-   "APT？"
+   "元注解有哪些？@Retention 的三种策略有什么区别？",
+   "注解是怎么生效的？",
+   "你自定义过哪些注解？怎么实现的？"
   ],
   "followups": [
    {
-    "q": "SOURCE？",
-    "a": "如 @Override 编译后丢。"
+    "q": "Lombok 的注解为什么运行时读不到？",
+    "a": "Lombok 注解是 SOURCE 级别，它在编译期通过注解处理器修改语法树生成代码，编译后注解就被丢弃了。"
    },
    {
-    "q": "RUNTIME？",
-    "a": "Spring @Transactional 等。"
+    "q": "为什么切面里拿不到方法上的注解？",
+    "a": "可能是拿到的是接口或代理类的方法，需要用 AopUtils 获取目标类的真实方法，或者用 AnnotatedElementUtils 查找。"
    },
    {
-    "q": "参数？",
-    "a": "只能基本类型/Class/枚举/注解数组。"
+    "q": "注解属性可以是任意对象吗？",
+    "a": "不可以，只能是基本类型、String、Class、枚举、注解以及这些类型的数组，而且必须是编译期常量。"
    }
   ],
   "answer": [
-   "总：元数据 + 保留策略 + 处理器。",
-   "分：运行时反射或编译期生成。",
-   "实践：【结合你的项目】自定义权限/限流注解。",
-   "总结：注解本身不做逻辑。"
+   "总：注解是一种元数据，需要通过编译期处理器或运行时反射读取后才能产生作用。",
+   "分：用 @Retention 指定保留策略，SOURCE、CLASS、RUNTIME 分别保留到源码、字节码和运行时；用 @Target 限制位置，还有 @Inherited、@Documented、@Repeatable；运行时注解通过反射和 AOP 生效，编译期注解通过 APT 生成代码，比如 Lombok 和 MapStruct；自定义注解常配合 AOP 做日志、权限、限流和幂等。",
+   "实践：【结合你的项目】我们自定义了【待填：如 @Idempotent / @RateLimit】注解，通过切面统一实现，业务方法只需加一个注解。",
+   "总结：注解把横切逻辑声明化，配合 AOP 或编译期处理器能大幅减少重复代码。"
   ],
   "pitfalls": [
-   "以为注解能直接执行代码。"
+   "自定义注解忘记设置 RUNTIME，导致反射读不到。",
+   "以为注解本身就能执行逻辑。",
+   "加分：讲 APT 编译期处理和 Spring 的组合注解与 @AliasFor。"
   ]
  },
  "p-b10": {
   "principle": [
-   "String 不可变：内部 byte[]/coder 且类 final，无改字符 API；好处：线程安全、常量池共享、hash 缓存可作可靠 key。拼接循环用 StringBuilder；+ 在编译期可能优化但循环仍可能多次建对象。常量池：字面量入池，intern 可入池（慎用）。"
+   "String 不可变的实现：类被 final 修饰不能被继承；内部存储字符的数组是 private final 的（JDK 8 是 char[]，JDK 9 起改为 byte[] 加编码标识 coder，即紧凑字符串，纯 Latin-1 字符串每个字符只占 1 字节，节省内存）；并且没有提供任何修改数组内容的方法，所有看起来修改字符串的方法（substring、replace、concat）都会返回新的 String 对象。",
+   "为什么设计成不可变：① 字符串常量池的前提：多个引用可以安全地共享同一个字符串对象，如果可变，一个地方修改会影响所有引用。② 线程安全：不可变对象天然线程安全，可以在多线程间自由共享。③ 哈希值缓存：String 的 hashCode 计算后缓存在 hash 字段中，作为 HashMap 的 key 时效率高且安全，如果可变，放进 Map 后哈希值变化就再也找不到了。④ 安全性：类名、文件路径、网络地址、数据库连接串都以字符串传递，不可变可以防止在校验之后被篡改。",
+   "字符串常量池：JDK 7 起位于堆中。字面量（\"abc\"）在类加载解析时会进入常量池；new String(\"abc\") 会在堆上另外创建一个对象（如果常量池中还没有 \"abc\"，也会在池中创建一个）；intern() 会返回常量池中等值字符串的引用，不存在时 JDK 7+ 把当前对象的引用放入池中。编译期可确定的常量拼接（\"a\" + \"b\"、final 常量拼接）会被编译器直接优化为 \"ab\"。",
+   "拼接：含变量的 + 拼接，JDK 8 编译为 StringBuilder.append，JDK 9 起改为 invokedynamic 调用 StringConcatFactory，性能更好。但在循环中用 + 拼接仍然每次迭代都创建新对象，应在循环外创建 StringBuilder。StringBuffer 是线程安全的（方法加了 synchronized），一般场景下用 StringBuilder。"
   ],
   "example": {
    "lang": "java",
-   "code": "String a = \"hi\"; String b = \"hi\"; // 同池\nString c = new String(\"hi\");      // 堆中另对象\nassert a == b && a != c && a.equals(c);\nString s = new StringBuilder().append(\"a\").append(\"b\").toString();"
+   "code": "String a = \"hello\";\nString b = \"hello\";\nString c = new String(\"hello\");\nString d = \"hel\" + \"lo\";             // 编译期常量折叠为 \"hello\"\nString part = \"hel\";\nString e = part + \"lo\";              // 运行时拼接，新对象\n\nSystem.out.println(a == b);          // true  同一常量池对象\nSystem.out.println(a == c);          // false c 在堆上\nSystem.out.println(a == d);          // true\nSystem.out.println(a == e);          // false\nSystem.out.println(a == e.intern()); // true  返回池中引用\n\n// 循环拼接：用 StringBuilder\nStringBuilder sb = new StringBuilder(ids.size() * 8);\nfor (Long id : ids) sb.append(id).append(',');\nString joined = sb.length() > 0 ? sb.substring(0, sb.length() - 1) : \"\";\n// 或 String.join(\",\", list) / Collectors.joining(\",\")"
   },
   "asks": [
-   "为何不可变？",
-   "常量池？",
-   "拼接？",
-   "intern？"
+   "String 为什么是不可变的？",
+   "不可变带来了哪些好处？",
+   "new String(\"abc\") 创建了几个对象？",
+   "String、StringBuilder、StringBuffer 有什么区别？"
   ],
   "followups": [
    {
-    "q": "安全？",
-    "a": "作锁或 key 不会被改。"
+    "q": "new String(\"abc\") 创建了几个对象？",
+    "a": "如果常量池中还没有 \"abc\"，会在常量池创建一个、在堆上再创建一个，共两个；如果池中已有，就只在堆上创建一个。"
    },
    {
-    "q": "新 String？",
-    "a": "一般不必要。"
+    "q": "用反射修改 String 内部数组能改变它吗？",
+    "a": "技术上可以，但会破坏常量池中共享的字符串，导致不可预料的问题；JDK 新版本的模块封装也会阻止这种访问。"
    },
    {
-    "q": "Builder 线程安全？",
-    "a": "不，StringBuffer 同步。"
+    "q": "JDK 9 为什么改成 byte[]？",
+    "a": "大量字符串只包含 Latin-1 字符，用 byte[] 每个字符只占 1 字节，能显著减少堆内存占用，只有需要时才用 UTF-16 的 2 字节。"
    }
   ],
   "answer": [
-   "总：不可变利安全与池化，拼接用 Builder。",
-   "分：常量池共享字面量；忌滥用 intern。",
-   "实践：日志与循环拼接查 Builder。",
-   "总结：理解不可变才能用好 String。"
+   "总：String 通过 final 类、私有 final 数组和不提供修改方法实现不可变，这是常量池、线程安全和哈希缓存的基础。",
+   "分：不可变让多个引用安全共享同一字符串、天然线程安全、哈希值可以缓存，也避免了安全校验后被篡改；常量池在 JDK 7 后位于堆中，字面量入池，new String 会在堆上另建对象，intern 返回池中引用；编译期常量拼接会被折叠，循环中拼接应该使用 StringBuilder，StringBuffer 线程安全但较慢。",
+   "实践：【结合你的项目】【待填：如日志或报表拼接大量字符串时改用 StringBuilder 并预设容量，减少了 GC 压力】。",
+   "总结：String 的不可变是一种以空间换安全和性能的设计，理解它有助于写出高效的字符串处理代码。"
   ],
   "pitfalls": [
-   "循环里用 + 大量拼接。"
+   "说 final 修饰数组引用就保证了内容不可变，忽略了没有修改方法和 private 封装。",
+   "在循环中使用 + 拼接字符串。",
+   "加分：讲 JDK 9 紧凑字符串和 invokedynamic 拼接优化。"
   ]
  },
  "p2-2": {

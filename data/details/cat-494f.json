@@ -173,154 +173,176 @@
  },
  "p-io3": {
   "principle": [
-   "select：fd 集合有限、每次内核拷贝并遍历。poll：类似无数量限制仍遍历。epoll：事件就绪队列，几乎 O(就绪数)，支持 LT/ET，Linux 高并发首选。"
+   "select、poll、epoll 都是 Linux 的 IO 多路复用机制：让一个线程同时监视多个文件描述符（fd），哪个就绪就处理哪个，避免一个连接一个线程。",
+   "select：用 fd_set 位图传入要监听的 fd，默认上限 1024（FD_SETSIZE）。每次调用都要把整个 fd_set 从用户态拷贝到内核态，内核线性遍历所有 fd 检查是否就绪，返回后用户还要再遍历一遍找出就绪的 fd，并且 fd_set 被内核修改，下次调用要重新设置。时间复杂度 O(n)。",
+   "poll：用 pollfd 数组代替位图，没有 1024 的数量上限，但仍是每次全量拷贝和线性扫描，本质问题没有解决。",
+   "epoll：拆成三个调用。epoll_create 在内核中创建一个 epoll 实例（内部用红黑树保存所有被监听的 fd，再用一个就绪链表保存已就绪的 fd）；epoll_ctl 增删改监听的 fd，只在注册时拷贝一次；fd 就绪时内核通过回调把它加入就绪链表；epoll_wait 只返回就绪的 fd，复杂度与就绪数量相关而不是与连接总数相关。因此在“连接很多但同时活跃的少”的场景（如长连接网关、IM）优势巨大。",
+   "触发模式：水平触发 LT（默认，只要缓冲区还有数据，每次 epoll_wait 都会通知，编程简单）和边缘触发 ET（只在状态变化时通知一次，必须配合非阻塞 fd 一次读到 EAGAIN，系统调用更少）。Java NIO 的 Selector 在 Linux 上默认基于 epoll（LT），Netty 额外提供了基于 ET 的原生 epoll 传输 EpollEventLoopGroup。Redis、Nginx 也都基于 epoll。"
   ],
   "example": {
-   "lang": "text",
-   "code": "C10K：select/poll 难撑；epoll/kqueue 支撑海量连接\nJava NIO Selector 在 Linux 用 epoll"
+   "lang": "java",
+   "code": "// Java NIO Selector 在 Linux 下底层是 epoll\nSelector selector = Selector.open();                 // ≈ epoll_create\nServerSocketChannel server = ServerSocketChannel.open();\nserver.bind(new InetSocketAddress(8080));\nserver.configureBlocking(false);\nserver.register(selector, SelectionKey.OP_ACCEPT);   // ≈ epoll_ctl(ADD)\n\nwhile (true) {\n    selector.select();                               // ≈ epoll_wait，只返回就绪的\n    Iterator<SelectionKey> it = selector.selectedKeys().iterator();\n    while (it.hasNext()) {\n        SelectionKey key = it.next(); it.remove();\n        if (key.isAcceptable()) {\n            SocketChannel ch = server.accept();\n            ch.configureBlocking(false);\n            ch.register(selector, SelectionKey.OP_READ);\n        } else if (key.isReadable()) {\n            ByteBuffer buf = ByteBuffer.allocate(1024);\n            if (((SocketChannel) key.channel()).read(buf) < 0) key.cancel();\n        }\n    }\n}\n// Netty 在 Linux 可用 new EpollEventLoopGroup()（ET 模式原生传输）"
   },
   "asks": [
-   "select poll epoll？",
-   "为何 epoll 快？",
-   "LT/ET？",
-   "跨平台？"
+   "select、poll、epoll 有什么区别？",
+   "epoll 为什么高效？",
+   "水平触发和边缘触发有什么区别？",
+   "Java NIO 底层用的是什么？"
   ],
   "followups": [
    {
-    "q": "拷贝？",
-    "a": "select 每次传全集合。"
+    "q": "epoll 一定比 select 快吗？",
+    "a": "连接数少且大部分都活跃时差别不大，甚至 select 更简单；epoll 的优势在于大量连接中只有少数活跃的场景。"
    },
    {
-    "q": "惊群？",
-    "a": "新内核有缓解。"
+    "q": "ET 模式为什么必须用非阻塞 fd？",
+    "a": "ET 只通知一次，必须循环读到 EAGAIN 才能把数据读完，如果 fd 是阻塞的，最后一次读会把线程卡住。"
    },
    {
-    "q": "Windows？",
-    "a": "IOCP 不同模型。"
+    "q": "epoll 用了 mmap 共享内存吗？",
+    "a": "这是常见误解，epoll 并没有用 mmap 共享就绪列表，它高效的原因是只注册一次 fd 和基于回调的就绪链表。"
    }
   ],
   "answer": [
-   "总：epoll 事件驱动避免无脑遍历。",
-   "分：Linux 首选；NIO 封装。",
-   "实践：Netty 用 epoll。",
-   "总结：多路复用实现决定上限。"
+   "总：三者都是 IO 多路复用，epoll 通过注册一次加事件回调解决了 select 和 poll 的全量拷贝与线性扫描问题。",
+   "分：select 用位图有 1024 上限，每次全量拷贝并遍历；poll 去掉了数量上限但仍是 O(n)；epoll 用红黑树管理 fd、就绪链表收集事件，epoll_wait 只返回就绪的 fd；它支持 LT 和 ET 两种触发模式，Java NIO 默认基于 epoll，Netty 还提供原生 ET 传输。",
+   "实践：【结合你的项目】我们的【待填：长连接/网关】基于 Netty，单机维持【待填】个连接，在 Linux 上切换到 EpollEventLoopGroup 后 CPU 有所下降。",
+   "总结：在高并发长连接场景下，epoll 是 Linux 高性能网络服务的基础。"
   ],
   "pitfalls": [
-   "说三者没区别。"
+   "说 epoll 用 mmap 共享内存。",
+   "说 poll 解决了性能问题，其实只解决了数量上限。",
+   "加分：讲 LT/ET 的区别和 Netty 的原生 epoll 传输。"
   ]
  },
  "p-io4": {
   "principle": [
-   "零拷贝：减少用户态/内核态之间数据拷贝次数。sendfile 文件→socket；mmap 映射；splice 等。Kafka、Nginx 静态文件、Netty FileRegion 常用。并非零次拷贝，而是更少。"
+   "传统的“读文件发到网络”过程：read() 把数据从磁盘经 DMA 拷贝到内核页缓存，再由 CPU 拷贝到用户缓冲区；write() 再由 CPU 从用户缓冲区拷贝到 socket 缓冲区，最后经 DMA 拷贝到网卡。共 4 次拷贝（2 次 CPU 拷贝）和 4 次用户态/内核态切换。数据在用户态没有任何加工，这些 CPU 拷贝和上下文切换完全是浪费。",
+   "零拷贝就是减少甚至消除 CPU 参与的数据拷贝：① mmap + write：把内核页缓存映射到用户空间，省去一次“内核到用户”的 CPU 拷贝，仍有一次页缓存到 socket 缓冲区的 CPU 拷贝。适合需要读写文件内容的场景，如 RocketMQ 的 CommitLog 用 MappedByteBuffer。② sendfile：一次系统调用直接在内核中把页缓存数据送到 socket，只有 2 次上下文切换；网卡支持 SG-DMA 时连页缓存到 socket 缓冲区的拷贝也省掉，只传描述符，实现真正的 0 次 CPU 拷贝。Java 中对应 FileChannel.transferTo。Kafka 消费者拉取消息时就用 transferTo 直接从页缓存发送到网络。",
+   "Netty 的“零拷贝”含义更广：除了 FileRegion 封装 transferTo 外，还指用户态层面避免内存复制，例如 CompositeByteBuf 把多个 Buffer 逻辑组合而不复制、slice 共享底层内存、使用堆外直接内存（DirectBuffer）避免 JVM 堆到本地内存的额外拷贝。",
+   "限制：sendfile 只能在数据不需要修改时使用（如静态文件、消息透传）；需要加密（TLS）时数据必须进入用户态处理，零拷贝就失效了（除非使用内核 TLS）。"
   ],
   "example": {
    "lang": "java",
-   "code": "FileChannel.in.transferTo(0, size, socketChannel); // 可能走 sendfile"
+   "code": "// 传统方式：4 次拷贝\ntry (FileInputStream in = new FileInputStream(file); OutputStream out = socket.getOutputStream()) {\n    byte[] buf = new byte[8192];\n    int n;\n    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);   // 数据进出用户态\n}\n\n// 零拷贝：sendfile（FileChannel.transferTo）\ntry (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {\n    long pos = 0, size = fc.size();\n    while (pos < size) pos += fc.transferTo(pos, size - pos, socketChannel);\n}\n\n// mmap：文件映射到内存（RocketMQ CommitLog 思路）\nMappedByteBuffer mb = FileChannel.open(path, READ, WRITE)\n        .map(FileChannel.MapMode.READ_WRITE, 0, 1L << 30);\nmb.put(msgBytes);\n\n// Netty：组合缓冲区而不复制\nCompositeByteBuf msg = Unpooled.compositeBuffer();\nmsg.addComponents(true, header, body);    // header、body 内存未被复制\nctx.writeAndFlush(new DefaultFileRegion(fc, 0, fc.size()));"
   },
   "asks": [
-   "零拷贝是什么？",
-   "sendfile？",
-   "谁在用？",
-   "适用？"
+   "什么是零拷贝？",
+   "mmap 和 sendfile 有什么区别？",
+   "Kafka 为什么快，和零拷贝有什么关系？",
+   "Netty 的零拷贝体现在哪里？"
   ],
   "followups": [
    {
-    "q": "DMA？",
-    "a": "部分路径可 DMA。"
+    "q": "零拷贝是真的一次拷贝都没有吗？",
+    "a": "DMA 拷贝依然存在，零拷贝指的是没有 CPU 参与的数据拷贝；sendfile 配合 SG-DMA 时 CPU 拷贝为 0。"
    },
    {
-    "q": "加密？",
-    "a": "要改数据则难零拷贝。"
+    "q": "为什么 HTTPS 下 sendfile 效果打折？",
+    "a": "TLS 加密必须在用户态（或内核 TLS）处理数据，数据不能直接从页缓存送到网卡，零拷贝就无法使用。"
    },
    {
-    "q": "Java？",
-    "a": "transferTo/transferFrom。"
+    "q": "RocketMQ 为什么用 mmap 而不是 sendfile？",
+    "a": "RocketMQ 需要按消息读写和处理文件内容，mmap 可以像操作内存一样读写；sendfile 只适合原样整体传输。"
    }
   ],
   "answer": [
-   "总：少拷贝降 CPU 与延迟。",
-   "分：sendfile/mmap；静态发文件场景。",
-   "实践：【结合你的项目】。",
-   "总结：吞吐优化利器。"
+   "总：零拷贝是减少 CPU 参与的数据拷贝和用户态内核态切换，让数据尽量在内核中直接流转。",
+   "分：传统读写有 4 次拷贝和 4 次切换；mmap 把页缓存映射到用户空间，省一次拷贝，适合需要读写内容的场景；sendfile 在内核中直接把页缓存发到 socket，配合 SG-DMA 可以做到 0 次 CPU 拷贝，Java 用 transferTo；Kafka 消费发送用 sendfile，RocketMQ 用 mmap；Netty 还通过组合缓冲区、slice 和直接内存避免用户态复制。",
+   "实践：【结合你的项目】【待填：如文件下载服务改用 transferTo 后 CPU 占用下降】，或在 Netty 中用 CompositeByteBuf 拼装协议包。",
+   "总结：零拷贝适用于数据不需要加工的传输场景，是 Kafka、Netty 等高性能组件的基础。"
   ],
   "pitfalls": [
-   "说完全没有拷贝。"
+   "说零拷贝没有任何拷贝。",
+   "把 Netty 用户态的零拷贝和操作系统的零拷贝混为一谈。",
+   "加分：讲 SG-DMA、TLS 下的限制和 Kafka/RocketMQ 的不同选择。"
   ]
  },
  "p-io6": {
   "principle": [
-   "TCP 流无消息边界→粘包/半包。解决：定长；分隔符；长度前缀（常用）。Netty LengthFieldBasedFrameDecoder 等。设计协议时明确帧格式。"
+   "TCP 是面向字节流的协议，没有“消息”的边界概念。发送方连续调用 send 写入的数据，在 TCP 层可能被合并成一个报文段发送（Nagle 算法、缓冲区积累），也可能因为 MSS、窗口大小被拆分成多个段；接收方一次 read 读到的字节数也取决于缓冲区里已有多少数据。所以应用层会看到：一次读到多条消息粘在一起（粘包），或者一条消息只读到一部分（半包/拆包）。UDP 有消息边界，不存在这个问题。",
+   "解决思路是在应用层定义消息边界（协议设计）：① 定长消息：每条消息固定 N 字节，不足补齐。实现简单，但浪费空间、不灵活。② 分隔符：用特殊字符（如换行符）结尾，例如 Redis 协议的 \\r\\n、HTTP 头部。要处理消息体中出现分隔符的转义问题。③ 长度字段（最常用）：消息头中用固定长度的字段（如 4 字节）写明消息体长度，接收方先读头部拿到长度，再等待读满对应字节数。HTTP 的 Content-Length、Dubbo、gRPC 帧、Kafka 协议都是这种方式。",
+   "Netty 提供现成的解码器：FixedLengthFrameDecoder（定长）、LineBasedFrameDecoder / DelimiterBasedFrameDecoder（分隔符）、LengthFieldBasedFrameDecoder（长度字段，可配置长度字段偏移、长度、调整值、剥离字节数），配合 LengthFieldPrepender 在发送端自动加长度头。它们内部会累积不完整的数据，直到凑够一帧才向后传递。",
+   "设计协议时还要考虑：设置最大帧长度防止恶意超大长度导致 OOM；加魔数和版本号便于识别和升级；加校验码。"
   ],
   "example": {
    "lang": "java",
-   "code": "pipeline.addLast(new LengthFieldBasedFrameDecoder(1<<20,0,4,0,4));\npipeline.addLast(new LengthFieldPrepender(4));"
+   "code": "// 自定义协议：| magic 2B | version 1B | length 4B | body |\npublic class ServerInit extends ChannelInitializer<SocketChannel> {\n    @Override\n    protected void initChannel(SocketChannel ch) {\n        ch.pipeline()\n          .addLast(new LengthFieldBasedFrameDecoder(\n                  1024 * 1024,   // maxFrameLength，防止恶意超大帧\n                  3,             // lengthFieldOffset：跳过 magic + version\n                  4,             // lengthFieldLength\n                  0,             // lengthAdjustment\n                  0))            // initialBytesToStrip：保留头部交给后续解码\n          .addLast(new MyProtocolDecoder())     // 校验 magic、解析 body\n          .addLast(new MyProtocolEncoder())     // 写 magic、version、length、body\n          .addLast(new BizHandler());\n    }\n}\n\n// 简单文本协议：按换行分隔，单行最长 8KB\nch.pipeline().addLast(new LineBasedFrameDecoder(8192), new StringDecoder(UTF_8));"
   },
   "asks": [
-   "粘包半包？",
-   "怎么处理？",
-   "Netty？",
-   "HTTP？"
+   "什么是 TCP 粘包和半包？",
+   "为什么会出现粘包半包？UDP 会有吗？",
+   "有哪些解决方案？",
+   "Netty 怎么处理粘包半包？"
   ],
   "followups": [
    {
-    "q": "HTTP？",
-    "a": "靠 Content-Length/chunk。"
+    "q": "关闭 Nagle 算法能解决粘包吗？",
+    "a": "不能，TCP_NODELAY 只是减少发送端合并，接收端读取的字节数仍然不确定，必须在应用层定义消息边界。"
    },
    {
-    "q": "分隔符？",
-    "a": "内容需转义。"
+    "q": "长度字段方式要注意什么？",
+    "a": "要设置最大帧长度，防止对方发送一个极大的长度值让服务端分配大量内存；还要明确长度是否包含头部。"
    },
    {
-    "q": "只靠 read 一次？",
-    "a": "不够。"
+    "q": "HTTP 是怎么界定消息的？",
+    "a": "头部用 \\r\\n\\r\\n 分隔结束，消息体用 Content-Length 指定长度，或者用分块传输编码逐块带长度。"
    }
   ],
   "answer": [
-   "总：应用层定义帧。",
-   "分：长度字段最常见；Decoder 处理。",
-   "实践：自定义协议必做。",
-   "总结：别假设一次 read 一条消息。"
+   "总：粘包半包是因为 TCP 是无边界的字节流，解决办法是在应用层定义消息边界。",
+   "分：发送端合并和拆分、接收端一次读取多少都不确定，所以会出现多条粘在一起或一条读不全；方案有定长、分隔符和长度字段三种，长度字段最常用；Netty 提供对应的解码器，LengthFieldBasedFrameDecoder 会累积数据直到读满一帧；协议还要有最大帧长、魔数、版本和校验。",
+   "实践：【结合你的项目】【待填：如设备接入/RPC 中设计了魔数+版本+长度+内容的协议，用 LengthFieldBasedFrameDecoder 解码】。",
+   "总结：只要用 TCP 自定义协议，就必须先设计好帧格式，这是网络编程的基本功。"
   ],
   "pitfalls": [
-   "忽略半包。"
+   "以为关闭 Nagle 就不会粘包。",
+   "说 UDP 也有粘包问题。",
+   "加分：讲最大帧长度防 OOM 和 LengthFieldBasedFrameDecoder 各参数含义。"
   ]
  },
  "p2-15": {
   "principle": [
-   "Reactor 单线程：一个线程一个 Selector 处理所有，实现简单。主从多线程：Boss 接受连接，Workers 处理 IO（Netty 默认）。主从多 Reactor 还可多层。"
+   "Reactor 模式是基于 IO 多路复用的事件驱动模型：Reactor 负责监听和分发事件（连接、可读、可写），Handler 负责处理具体事件。根据线程分工不同分为三种。",
+   "① 单 Reactor 单线程：一个线程完成 accept、读写和业务处理。没有线程切换和锁，简单高效；但无法利用多核，任何一个 Handler 处理慢都会阻塞所有连接。Redis 6.0 之前的命令处理就是这种模型，前提是操作都在内存中，非常快。",
+   "② 单 Reactor 多线程：一个 Reactor 线程负责 accept 和 IO 读写，读到数据后把业务处理交给工作线程池，处理完再由 Reactor 线程写回。业务计算不再阻塞 IO，但单个 Reactor 同时处理所有连接的事件和读写，在高并发下成为瓶颈。",
+   "③ 主从 Reactor 多线程：主 Reactor（mainReactor）只负责 accept 新连接，然后把连接注册到某个从 Reactor（subReactor）；多个从 Reactor 各自负责一批连接的读写事件，一个连接的整个生命周期绑定在同一个从 Reactor 线程上，不用加锁。耗时的业务再交给独立的业务线程池。Netty 的 bossGroup/workerGroup 就是主从 Reactor，Nginx 和 Memcached 也采用类似模型。",
+   "Netty 中每个 EventLoop 是一个线程加一个 Selector；workerGroup 默认线程数是 CPU 核数的 2 倍。重要原则：不要在 EventLoop 线程中执行阻塞操作（数据库查询、远程调用），否则这个线程上的所有连接都会被卡住，应该交给业务线程池或者给 Handler 指定单独的 EventExecutorGroup。"
   ],
   "example": {
-   "lang": "text",
-   "code": "BossGroup(1) → accept → WorkerGroup(N) → read/write/pipeline"
+   "lang": "java",
+   "code": "// Netty 主从 Reactor\nEventLoopGroup boss = new NioEventLoopGroup(1);        // 主 Reactor：只处理 accept\nEventLoopGroup worker = new NioEventLoopGroup();       // 从 Reactor：默认 CPU*2 个线程处理读写\nEventExecutorGroup biz = new DefaultEventExecutorGroup(32);  // 业务线程池，执行阻塞逻辑\n\nnew ServerBootstrap()\n    .group(boss, worker)\n    .channel(NioServerSocketChannel.class)\n    .childHandler(new ChannelInitializer<SocketChannel>() {\n        @Override protected void initChannel(SocketChannel ch) {\n            ch.pipeline()\n              .addLast(new LengthFieldBasedFrameDecoder(1 << 20, 0, 4, 0, 4))\n              .addLast(new RequestDecoder())                 // 在 IO 线程执行，很快\n              .addLast(biz, new DbQueryHandler());           // 阻塞查询放到业务线程池\n        }\n    })\n    .bind(8080).sync();"
   },
   "asks": [
-   "单线程 vs 主从？",
-   "Netty？",
-   "为何主从？",
-   "线程数？"
+   "Reactor 有哪几种线程模型？",
+   "单 Reactor 单线程有什么优缺点？",
+   "Netty 用的是哪种模型？",
+   "为什么不能在 EventLoop 里做阻塞操作？"
   ],
   "followups": [
    {
-    "q": "Boss 数？",
-    "a": "通常 1。"
+    "q": "Redis 单线程为什么还这么快？",
+    "a": "命令都在内存中执行，耗时极短，又避免了线程切换和锁竞争；6.0 以后把网络读写交给 IO 线程，命令执行仍是单线程。"
    },
    {
-    "q": "Worker？",
-    "a": "默认 2*CPU。"
+    "q": "bossGroup 为什么通常设 1 个线程？",
+    "a": "一个服务端端口只有一个 ServerSocketChannel，accept 只会在一个 EventLoop 上处理，多设也用不上，除非监听多个端口。"
    },
    {
-    "q": "业务？",
-    "a": "另池，勿堵 EventLoop。"
+    "q": "一个连接的读写为什么固定在一个线程？",
+    "a": "这样同一连接的事件串行处理，Handler 不需要加锁，避免并发问题和线程切换。"
    }
   ],
   "answer": [
-   "总：主从分离 accept 与 IO。",
-   "分：Netty 默认主从多线程。",
-   "实践：业务线程池分离。",
-   "总结：模型匹配连接数。"
+   "总：Reactor 是基于多路复用的事件分发模型，按线程分工分为单线程、单 Reactor 多线程和主从多线程三种。",
+   "分：单线程简单无锁但无法利用多核，慢操作会阻塞所有连接；单 Reactor 多线程把业务交给线程池，但 Reactor 本身仍可能成为瓶颈；主从模型由主 Reactor 负责 accept，多个从 Reactor 分担连接读写，连接绑定线程无需加锁；Netty 的 boss/worker 就是主从模型，阻塞操作必须交给业务线程池。",
+   "实践：【结合你的项目】【待填：我们的 Netty 服务在 Handler 中查数据库导致延迟抖动，改为独立 EventExecutorGroup 后恢复】。",
+   "总结：主从 Reactor 把连接接入、IO 读写和业务处理分开，是高并发网络服务的标准架构。"
   ],
   "pitfalls": [
-   "业务逻辑跑 EventLoop。"
+   "在 Netty Handler 中直接做数据库或远程调用。",
+   "把 Reactor 和 Proactor 混淆。",
+   "加分：讲 Redis 6.0 IO 多线程和连接与线程绑定的无锁设计。"
   ]
  },
  "p-io7": {
