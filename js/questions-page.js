@@ -1,4 +1,3 @@
-
 (function(){
   const qs = window.QUESTIONS || [];
   const uniq = (arr) => [...new Set(arr)].sort();
@@ -6,9 +5,20 @@
   fill(document.getElementById('fSection'), uniq(qs.map(q=>q.section)));
   fill(document.getElementById('fCat'), uniq(qs.map(q=>q.category)));
   fill(document.getElementById('fSrc'), uniq(qs.map(q=>q.source)));
+
+  // Apply URL query (?section=&category=&priority=)
+  const params = new URLSearchParams(location.search);
+  ['section','category','priority','source','mastery','q'].forEach(k => {
+    const map = {section:'fSection',category:'fCat',priority:'fPri',source:'fSrc',mastery:'fMastery',q:'qSearch'};
+    const el = document.getElementById(map[k]);
+    if (el && params.get(k)) el.value = params.get(k);
+  });
+
   const showPoints = document.getElementById('showPoints');
   showPoints.checked = AppCommon.state.settings.showPoints !== false;
   showPoints.onchange = () => { AppCommon.state.settings.showPoints = showPoints.checked; AppCommon.persist(); render(); };
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
   function render() {
     const s = document.getElementById('fSection').value;
@@ -27,23 +37,23 @@
       if (kw && !(q.question.toLowerCase().includes(kw) || (q.keyPoints||[]).join(' ').toLowerCase().includes(kw))) return false;
       return true;
     });
-    document.getElementById('qCount').textContent = `显示 ${list.length} / ${qs.length} 题`;
+    document.getElementById('qCount').textContent = `本页展示 ${list.length} / 共 ${qs.length} 题（答案要点在卡片内，无需跳转外站）`;
     const box = document.getElementById('qList');
     box.innerHTML = list.map(q => {
       const mast = AppCommon.masteryOf(q.id);
       const note = AppCommon.state.notes[q.id] || '';
       const points = (q.keyPoints||[]).map(t => `<li>${escapeHtml(t)}</li>`).join('');
-      const refs = (q.refLinks||[]).map(r => `<a href="${r.url}" target="_blank" rel="noopener">参考</a>`).join(' ');
+      const ref = (q.refLinks||[]).find(r => r && r.url);
+      const ext = ref ? `<div class="ext-link">可选 · <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">原文参考</a>（外链，非必读）</div>` : '';
       return `<article class="card q-item" data-id="${q.id}">
-        <div><span class="tag p-${q.priority}">${q.priority}</span><span class="tag">${q.category}</span><span class="tag">${q.section}</span><span class="tiny">${q.source}</span></div>
+        <div><span class="tag p-${q.priority}">${q.priority}</span><span class="tag">${escapeHtml(q.category)}</span><span class="tag">${escapeHtml(q.section)}</span></div>
         <div class="q-title">${escapeHtml(q.question)}</div>
-        <ul class="points ${showPoints.checked?'':'hidden'}">${points}</ul>
-        <div class="tiny">${refs}</div>
+        <ul class="points ${showPoints.checked?'':'hidden'}">${points || '<li>暂无要点</li>'}</ul>
+        ${ext}
         <div class="q-actions">
           <div class="seg" data-mastery>
             ${['未学','模糊','掌握'].map(x => `<button type="button" data-m="${x}" class="${mast===x?'on-'+x:''}">${x}</button>`).join('')}
           </div>
-          <button type="button" class="ghost" data-toggle-points>要点</button>
         </div>
         <textarea class="note" placeholder="个人笔记…">${escapeHtml(note)}</textarea>
       </article>`;
@@ -51,26 +61,21 @@
 
     box.querySelectorAll('[data-mastery] button').forEach(btn => {
       btn.onclick = () => {
-        const id = btn.closest('.q-item').dataset.id;
-        AppCommon.setMastery(id, btn.dataset.m);
+        AppCommon.setMastery(btn.closest('.q-item').dataset.id, btn.dataset.m);
         render();
       };
     });
-    box.querySelectorAll('[data-toggle-points]').forEach(btn => {
-      btn.onclick = () => btn.closest('.q-item').querySelector('.points').classList.toggle('hidden');
-    });
     box.querySelectorAll('textarea.note').forEach(ta => {
       ta.onchange = () => {
-        const id = ta.closest('.q-item').dataset.id;
-        AppCommon.state.notes[id] = ta.value;
+        AppCommon.state.notes[ta.closest('.q-item').dataset.id] = ta.value;
         AppCommon.persist();
       };
     });
   }
-  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   ['fSection','fCat','fPri','fSrc','fMastery','qSearch'].forEach(id => {
-    document.getElementById(id).addEventListener('input', render);
-    document.getElementById(id).addEventListener('change', render);
+    const el = document.getElementById(id);
+    el.addEventListener('input', render);
+    el.addEventListener('change', render);
   });
   render();
 })();

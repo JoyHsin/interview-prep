@@ -30,8 +30,7 @@
     countdown() {
       const target = new Date('2027-03-01T00:00:00+08:00');
       const now = new Date();
-      const days = Math.ceil((target - now) / 86400000);
-      return days;
+      return Math.ceil((target - now) / 86400000);
     },
     stats(questions) {
       const total = questions.length;
@@ -39,22 +38,46 @@
       const fuzzy = questions.filter(q => this.masteryOf(q.id) === '模糊').length;
       const unknown = total - mastered - fuzzy;
       const bySection = {};
+      const byCategory = {};
       questions.forEach(q => {
         bySection[q.section] = bySection[q.section] || { total: 0, mastered: 0 };
         bySection[q.section].total++;
         if (this.masteryOf(q.id) === '掌握') bySection[q.section].mastered++;
+        byCategory[q.category] = byCategory[q.category] || { total: 0, mastered: 0, section: q.section };
+        byCategory[q.category].total++;
+        if (this.masteryOf(q.id) === '掌握') byCategory[q.category].mastered++;
       });
-      return { total, mastered, fuzzy, unknown, bySection };
+      return { total, mastered, fuzzy, unknown, bySection, byCategory };
     },
   };
 
-  // nav active
+  // Hamburger for mobile
+  const nav = document.querySelector('.nav');
+  if (nav && !nav.querySelector('.nav-toggle')) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'nav-toggle';
+    btn.setAttribute('aria-label', '菜单');
+    btn.textContent = '☰';
+    const tools = nav.querySelector('.tools');
+    if (tools) nav.insertBefore(btn, tools);
+    else nav.appendChild(btn);
+    btn.addEventListener('click', () => {
+      nav.classList.toggle('open');
+      btn.textContent = nav.classList.contains('open') ? '✕' : '☰';
+    });
+    nav.querySelectorAll('.links a').forEach(a => a.addEventListener('click', () => {
+      nav.classList.remove('open');
+      btn.textContent = '☰';
+    }));
+  }
+
   document.querySelectorAll('.nav .links a').forEach(a => {
     const href = a.getAttribute('href');
     if (!href) return;
-    const path = location.pathname.replace(/\\/g, '/');
-    if (path.endsWith(href.replace('./', '')) || (href === './index.html' && /\/(index\.html)?$/.test(path))) {
-      a.classList.add('active');
-    }
+    try {
+      const url = new URL(href, location.href);
+      if (url.pathname.replace(/\/$/, '') === location.pathname.replace(/\/$/, '')) a.classList.add('active');
+    } catch (e) {}
   });
 })();

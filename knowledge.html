@@ -25,18 +25,24 @@
   <div class="tools"><button type="button" class="ghost" id="themeBtn">主题</button></div>
 </nav>
 <main class="wrap">
-
-<h1>知识体系（映射 pdai.tech）</h1>
-<p class="muted">以下为主题树与原文链接，便于对照复习。本站<strong>不复制</strong> pdai 文章正文。sitemap 约 795 页；本地图收录面试相关分支约 <span id="kCount"></span> 页；抽样抓取了约 53 个真实标题。</p>
-<p><a href="https://pdai.tech/" target="_blank" rel="noopener">打开 pdai.tech 首页</a></p>
-<div class="tree" id="tree"></div>
-
+<h1>知识体系</h1>
+<p class="muted">按本站题库分类整理。点分类进入题库筛选；<strong>面试答案要点都在本站题卡里</strong>，不必先跳外站。</p>
+<h2>传统 Java</h2>
+<div class="topic-grid" id="gridJava"></div>
+<h2>AI Agent</h2>
+<div class="topic-grid" id="gridAi"></div>
+<h2>系统设计</h2>
+<div class="topic-grid" id="gridSd"></div>
+<div class="card ext-box">
+  <h3>延伸阅读（外链，可选）</h3>
+  <p class="muted">若想深入看长文，可打开下列 pdai.tech 专题。答题背诵请用本站题库要点。</p>
+  <ul id="extList"></ul>
+</div>
 </main>
 <div class="footer wrap">
-  <p>个人面试备考站 · 进度保存在本机浏览器 localStorage，可用导入/导出迁移。</p>
-  <p>知识外链：<a href="https://pdai.tech/" target="_blank" rel="noopener">pdai.tech</a>；本站不收录其正文。</p>
+  <p>个人面试备考站 · 进度保存在本机浏览器 localStorage。</p>
+  <p>延伸阅读外链：pdai.tech；本站不收录其文章正文。</p>
 </div>
-
 <script src="./data/questions.js"></script>
 <script src="./data/guide.js"></script>
 <script src="./data/knowledge.js"></script>

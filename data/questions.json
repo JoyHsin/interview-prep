@@ -6,9 +6,9 @@
     "priority": "必背",
     "question": "线程池七大参数与拒绝策略？",
     "keyPoints": [
-      "core/max/keepAlive/queue/factory/handler",
-      "Abort/CallerRuns/Discard/DiscardOldest",
-      "IO 密集 vs CPU 密集如何估 size"
+      "七大参数：corePoolSize、maximumPoolSize、keepAliveTime、unit、workQueue、threadFactory、handler",
+      "拒绝策略：AbortPolicy 抛异常；CallerRuns 调用者跑；Discard / DiscardOldest 丢弃",
+      "线程数：CPU 密集≈核数+1；IO 密集可更大，最终用压测和队列堆积校准"
     ],
     "source": "本指南",
     "refLinks": [
@@ -25,9 +25,9 @@
     "priority": "必背",
     "question": "synchronized 与 ReentrantLock 区别？",
     "keyPoints": [
-      "JVM monitor vs AQS",
-      "可中断/超时/公平/多 Condition",
-      "锁升级：偏向→轻量→重量"
+      "synchronized 是 JVM monitor（偏向→轻量→重量锁升级）；ReentrantLock 基于 AQS",
+      "ReentrantLock 支持可中断、超时、公平锁、多个 Condition；synchronized 更简单",
+      "面试常问：无特殊需求用 synchronized；需要高级能力再用 Lock"
     ],
     "source": "本指南",
     "refLinks": [
@@ -48,9 +48,9 @@
     "priority": "必背",
     "question": "AQS 原理？",
     "keyPoints": [
-      "state + CLH 变体队列",
-      "独占/共享",
-      "模板方法 tryAcquire"
+      "AQS 用 volatile state + CLH 变体队列管理等待线程",
+      "模板方法：子类实现 tryAcquire/tryRelease（独占）或 tryAcquireShared（共享）",
+      "ReentrantLock、Semaphore、CountDownLatch 都基于 AQS"
     ],
     "source": "本指南",
     "refLinks": [
@@ -631,9 +631,9 @@
     "priority": "必背",
     "question": "穿透 / 击穿 / 雪崩？",
     "keyPoints": [
-      "布隆/空值缓存",
-      "互斥锁或逻辑过期",
-      "过期打散 + 多级缓存"
+      "穿透：查不存在的数据打穿到 DB → 布隆过滤器 / 缓存空值",
+      "击穿：热点 key 过期瞬间打爆 DB → 互斥锁重建或逻辑过期",
+      "雪崩：大量 key 同时过期 → 过期时间打散 + 多级缓存 + 限流"
     ],
     "source": "本指南",
     "refLinks": [
