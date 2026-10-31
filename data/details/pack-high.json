@@ -910,524 +910,758 @@
  },
  "pack-h19": {
   "principle": [
-   "先确认影响范围和调用链，结合延迟、错误率、线程池及连接池指标定位瓶颈。",
-   "通过限流、合理超时、隔离和可接受的降级保护主链路，并避免无界重试。",
-   "恢复后复盘容量、告警和演练；涉及写操作时确认超时请求是否已生效。"
+   "下游超时导致接口大面积失败时，先止血再定位。止血手段：对该依赖快速熔断，返回降级结果（缓存旧值、默认值或「稍后重试」）；缩短超时，避免线程池/连接池被慢请求占满，进而把整个服务拖垮（级联雪崩）。",
+   "定位看三处：下游自身指标（RT、错误率、是否发布）、网络（DNS、连接建立耗时、丢包）、本服务资源（线程池活跃数、连接池等待、GC）。慢调用占满线程是最常见放大器，所以舱壁隔离（每个依赖独立线程池或信号量）很关键。",
+   "恢复阶段用半开探测逐步放量，并确认重试不会放大流量：多层重试叠加时 3×3×3 会把下游打得更死。事后补齐超时预算、熔断配置和告警。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "错误率上升 → 按链路定位下游 → 限流和隔离 → 确认写入结果 → 恢复后复盘"
+   "lang": "java",
+   "code": "// Resilience4j 组合：超时 + 熔断 + 舱壁 + 降级\n@TimeLimiter(name = \"price\")\n@CircuitBreaker(name = \"price\", fallbackMethod = \"cachedPrice\")\n@Bulkhead(name = \"price\", type = Bulkhead.Type.THREADPOOL)\npublic CompletableFuture<Price> getPrice(long sku) {\n    return CompletableFuture.supplyAsync(() -> priceClient.query(sku));\n}\nCompletableFuture<Price> cachedPrice(long sku, Throwable t) {\n    return CompletableFuture.completedFuture(priceCache.getStale(sku));\n}\n# resilience4j.circuitbreaker.instances.price.failureRateThreshold=50\n# resilience4j.timelimiter.instances.price.timeoutDuration=300ms"
   },
   "asks": [
-   "下游依赖超时导致接口大量失败，如何处置？",
-   "为什么要限制重试？"
+   "下游超时导致大量失败怎么处置？",
+   "为什么一个慢依赖能拖垮整个服务？",
+   "降级返回什么合适？",
+   "恢复时要注意什么？"
   ],
   "followups": [
    {
-    "q": "为什么要限制重试？",
-    "a": "多层或无界重试会放大请求，进一步压垮已有故障的依赖。"
+    "q": "把超时调长能缓解吗？",
+    "a": "通常更糟：慢请求占用线程更久，池更快耗尽。应缩短超时并熔断，让失败快速返回。"
+   },
+   {
+    "q": "重试能不能救回来？",
+    "a": "下游已过载时重试只会放大流量；只在少量幂等调用上做带退避的有限重试，且全链路只在一层重试。"
+   },
+   {
+    "q": "哪些接口不能降级？",
+    "a": "涉及资金、库存确认等强一致写操作不能返回假成功，应明确失败让用户重试或进入补偿流程。"
    }
   ],
   "answer": [
-   "核心思路：先确认影响范围和调用链，结合延迟、错误率、线程池及连接池指标定位瓶颈。",
-   "展开说明：通过限流、合理超时、隔离和可接受的降级保护主链路，并避免无界重试。",
-   "实践与边界：恢复后复盘容量、告警和演练；涉及写操作时确认超时请求是否已生效。"
+   "总：先熔断降级止血，防止慢依赖耗尽线程造成雪崩，再定位下游根因并逐步恢复。",
+   "分：短超时+熔断+舱壁隔离+降级是一套组合；定位看下游指标、网络、本服务池化资源；避免多层重试放大。",
+   "实践：【结合你的项目】说清哪个依赖出过问题、当时的超时与熔断配置，以及恢复用了多久。",
+   "总结：依赖故障不可避免，系统设计要保证它只影响局部功能，而不是整个接口集群。"
   ],
   "pitfalls": [
-   "未确认写入结果就直接重复执行。"
+   "只调大超时或疯狂重试。",
+   "所有依赖共用一个线程池，没有隔离。",
+   "加分：讲清全链路超时预算与只在一层重试。"
   ]
  },
  "pack-h21": {
   "principle": [
-   "复制通常异步进行，主库写入后从库可能暂时读不到新值。",
-   "主库故障切换时，尚未复制的数据可能丢失；持久化和复制配置影响风险。",
-   "按业务选择读主、容忍延迟或其他一致性方案，并监测复制延迟。"
+   "Redis 主从复制默认是异步的：主库写成功即返回客户端，再把命令流发给从库。因此会有复制延迟，读从库可能读到旧值（读己之写失效）。主库宕机切换时，尚未同步到从库的写会丢失。",
+   "另一个问题是脑裂：网络分区下旧主仍接受写入，哨兵选出新主后旧主降级，旧主上分区期间的写入被丢弃。min-replicas-to-write / min-replicas-max-lag 可让主库在从库不足时拒绝写，降低丢失窗口但牺牲可用性。",
+   "WAIT 命令可让客户端等待 N 个副本确认，但仍不是强一致（故障切换时仍可能丢）。需要强一致的数据（如资金）不应只依赖 Redis 复制。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "写主库成功 → 从库复制尚未追上 → 立即从从库读取可能看到旧值"
+   "lang": "text",
+   "code": "# 降低脑裂丢写窗口\nmin-replicas-to-write 1\nmin-replicas-max-lag 10\n\n# 关键写入后等待副本确认（不等于强一致）\nSET order:1 paid\nWAIT 1 100     # 等 1 个副本，最多 100ms\n\n# 读己之写：刚写完的读走主库\nif (justWritten(key)) readFromMaster(key) else readFromReplica(key)"
   },
   "asks": [
-   "Redis 主从复制可能带来哪些一致性问题？",
-   "读主库就解决所有一致性问题吗？"
+   "Redis 主从复制有哪些一致性问题？",
+   "读从库会有什么问题？",
+   "什么是脑裂，怎么缓解？",
+   "WAIT 能保证强一致吗？"
   ],
   "followups": [
    {
-    "q": "读主库就解决所有一致性问题吗？",
-    "a": "它可避免读副本延迟，但故障切换、应用缓存及事务设计仍需考虑。"
+    "q": "复制延迟一般怎么监控？",
+    "a": "对比 INFO replication 里主库 master_repl_offset 与从库 offset 的差值，并设告警阈值。"
+   },
+   {
+    "q": "主从切换一定会丢数据吗？",
+    "a": "不一定，但只要有未复制完的写就会丢；异步复制下丢失窗口取决于延迟大小。"
+   },
+   {
+    "q": "分布式锁受这个影响吗？",
+    "a": "会。主库加锁后宕机、锁未同步到从库，新主上锁不存在，另一客户端可再次加锁，需要业务侧 fencing token 或幂等兜底。"
    }
   ],
   "answer": [
-   "核心思路：复制通常异步进行，主库写入后从库可能暂时读不到新值。",
-   "展开说明：主库故障切换时，尚未复制的数据可能丢失；持久化和复制配置影响风险。",
-   "实践与边界：按业务选择读主、容忍延迟或其他一致性方案，并监测复制延迟。"
+   "总：Redis 复制默认异步，会带来读到旧值、故障切换丢写和脑裂三类一致性问题。",
+   "分：读己之写可走主库；min-replicas 参数缩小脑裂丢写窗口；WAIT 只是增强不是强一致；锁要考虑切换丢锁。",
+   "实践：【结合你的项目】说明你们读写是否分离、哪些读必须走主，以及是否遇到过切换后数据回退。",
+   "总结：把 Redis 当高性能但弱一致的存储，强一致的事实要以数据库为准。"
   ],
   "pitfalls": [
-   "把异步复制视为同步提交。"
+   "以为主从复制是同步的、不会丢数据。",
+   "在从库上读刚写入的数据做判断。",
+   "加分：说清分布式锁在主从切换下失效的原因。"
   ]
  },
  "pack-h23": {
   "principle": [
-   "加载获取类的二进制表示并创建对应的 Class；链接包含验证、准备和解析。",
-   "准备阶段为类变量设置初始值；初始化阶段执行类初始化逻辑。",
-   "解析的具体时机可以灵活，需区分类加载与对象创建。"
+   "类加载分三大阶段。加载：通过类加载器按全限定名找到字节码（文件、JAR、网络、动态生成），在方法区生成类的运行时结构，并在堆中创建对应的 Class 对象。",
+   "链接包括验证、准备、解析。验证检查字节码格式和安全性；准备为静态变量分配内存并赋默认零值（static int a = 5 此时 a=0，但 static final 编译期常量直接赋值）；解析把常量池里的符号引用替换为直接引用，可能延迟到首次使用时做。",
+   "初始化执行编译器生成的 <clinit>：按源码顺序执行静态变量赋值和静态代码块，JVM 保证多线程下只执行一次（加锁），这也是静态内部类单例线程安全的原因。触发初始化的时机是首次主动使用：new、访问静态字段/方法、反射、初始化子类、作为启动主类等；通过子类引用父类静态字段、定义数组、引用常量不会触发。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "加载 → 验证 / 准备 / 解析 → 初始化；准备阶段设置默认值，初始化执行类初始化逻辑"
+   "lang": "java",
+   "code": "class Parent { static { System.out.println(\"Parent init\"); } static int v = 1; }\nclass Child extends Parent { static { System.out.println(\"Child init\"); } }\n\npublic class Demo {\n    public static void main(String[] a) {\n        System.out.println(Child.v); // 只打印 Parent init：子类引用父类静态字段不触发子类初始化\n        Child[] arr = new Child[3];  // 不触发初始化\n    }\n}\n// 静态内部类单例依赖 <clinit> 只执行一次\nclass Singleton { private static class H { static final Singleton I = new Singleton(); }\n                  static Singleton get() { return H.I; } }"
   },
   "asks": [
-   "类加载的加载、链接和初始化分别做什么？",
-   "解析一定在初始化之前完成吗？"
+   "类加载的加载、链接、初始化分别做什么？",
+   "准备阶段和初始化阶段有什么区别？",
+   "什么情况会触发类初始化？",
+   "为什么静态内部类单例是线程安全的？"
   ],
   "followups": [
    {
-    "q": "解析一定在初始化之前完成吗？",
-    "a": "不一定；解析时机允许实现按需进行。"
+    "q": "准备阶段 static int a = 5 的值是多少？",
+    "a": "是默认值 0，赋值 5 发生在初始化阶段的 <clinit> 中；static final 编译期常量例外，准备阶段就赋值。"
+   },
+   {
+    "q": "<clinit> 里抛异常会怎样？",
+    "a": "该类初始化失败，后续再使用会抛 NoClassDefFoundError，而不是重新初始化。"
+   },
+   {
+    "q": "解析一定在初始化之前吗？",
+    "a": "不一定。JVM 允许解析延迟到符号引用第一次被使用时进行，以支持动态绑定。"
    }
   ],
   "answer": [
-   "核心思路：加载获取类的二进制表示并创建对应的 Class；链接包含验证、准备和解析。",
-   "展开说明：准备阶段为类变量设置初始值；初始化阶段执行类初始化逻辑。",
-   "实践与边界：解析的具体时机可以灵活，需区分类加载与对象创建。"
+   "总：加载找到字节码并生成 Class 对象，链接做验证、准备默认值和符号解析，初始化执行 <clinit> 完成静态赋值。",
+   "分：准备只给零值，真正赋值在初始化；初始化只在首次主动使用时触发且由 JVM 加锁保证执行一次；被动引用不会触发。",
+   "实践：【结合你的项目】可以举静态内部类单例或排查过的 NoClassDefFoundError（静态块异常）的例子。",
+   "总结：理解这三个阶段，就能解释单例线程安全、静态块执行顺序和一些诡异的类加载报错。"
   ],
   "pitfalls": [
-   "混淆类初始化和每次创建对象的实例初始化。"
+   "把准备阶段说成执行静态赋值。",
+   "认为引用子类就一定初始化子类。",
+   "加分：能举出被动引用不触发初始化的例子。"
   ]
  },
  "pack-h24": {
   "principle": [
-   "延迟消息只是唤醒检查的信号，数据库中的订单状态和截止时间才是判断依据。即使消息提前或重复到达，也应重新读取或通过条件更新检查是否确实满足关单条件。",
-   "支付与关单存在竞争：支付请求可能已被渠道受理，但回调尚未到达。业务必须定义支付中、已支付、已关闭等状态的允许转换，并在关单前后对渠道结果进行核对或补偿，不能只靠本地时间做出最终判断。",
-   "补偿扫描使用状态和过期时间的合适索引，分批处理并记录失败，避免全表扫描和大事务。监控应覆盖应关未关订单数量、事件积压、扫描延迟与支付冲突；恢复时控制补偿速率。"
+   "未支付订单超时关闭的本质是「到点执行一个状态变更」，要求可靠、不重复关闭已支付订单、且对数据库压力可控。常见方案：定时任务扫表、延迟消息、Redis 有序集合/过期事件、时间轮。",
+   "定时扫表最简单：按 status=待支付 AND create_time<now-30min 分批关闭，需要索引并控制批量，缺点是有延迟、表大时扫描贵。延迟消息（RocketMQ 延时级别/定时消息、RabbitMQ 死信+TTL 或延迟插件）在下单时投递，到期消费检查状态再关闭，精度好、压力小。Redis 过期键通知不可靠（可能丢、延迟），不宜作为唯一手段。",
+   "关键是关单动作要幂等并与支付并发安全：UPDATE order SET status=CLOSED WHERE id=? AND status=UNPAID，影响行数为 0 说明已支付或已关闭。关单后释放库存、优惠券也要幂等。通常用延迟消息为主、定时扫表兜底。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "创建待支付订单并记录过期时间 → 延迟触发 → 按状态和截止时间条件更新 → 扫描补偿"
+   "lang": "java",
+   "code": "// 下单时发延迟消息（RocketMQ 5 定时消息）\nMessage msg = new Message(\"order-timeout\", orderId.getBytes());\nmsg.setDeliverTimeMs(System.currentTimeMillis() + 30 * 60 * 1000);\nproducer.send(msg);\n\n// 消费：条件更新保证与支付回调并发安全\nint n = orderMapper.closeIfUnpaid(orderId); \n// UPDATE t_order SET status='CLOSED' WHERE id=#{id} AND status='UNPAID'\nif (n == 1) { stockService.release(orderId); couponService.release(orderId); }\n\n// 兜底：每 5 分钟扫一次漏网之鱼\n// SELECT id FROM t_order WHERE status='UNPAID' AND create_time < NOW() - INTERVAL 35 MINUTE LIMIT 500"
   },
   "asks": [
    "未支付订单超时关闭如何设计？",
-   "支付回调与关单同时到达怎么办？"
+   "定时任务和延迟消息怎么选？",
+   "关单和支付回调同时发生怎么办？",
+   "Redis 过期通知能用吗？"
   ],
   "followups": [
    {
-    "q": "支付回调与关单同时到达怎么办？",
-    "a": "用状态条件更新和明确的业务状态机处理竞争；必要时核对支付渠道状态。"
+    "q": "关单后用户又支付成功了怎么办？",
+    "a": "支付回调发现订单已关闭时应走自动退款或人工处理流程，并记录对账差异，不能直接把订单改回已支付。"
+   },
+   {
+    "q": "订单量很大时扫表有什么问题？",
+    "a": "全表扫描慢且占数据库资源；需要 status+create_time 联合索引、分批处理，并把扫表降级为兜底而非主手段。"
+   },
+   {
+    "q": "延迟消息丢了怎么办？",
+    "a": "这就是要保留定时扫表兜底的原因，同时消息发送失败要有重试或本地消息表保证投递。"
    }
   ],
   "answer": [
-   "核心思路：订单创建时记录过期时间，可用延迟消息触发检查，并以定时扫描作为补偿。",
-   "展开说明：关闭时以订单 ID 和待支付状态做条件更新；支付回调也需要条件更新，避免并发覆盖。",
-   "实践与边界：处理消息重复、延迟投递、任务积压和支付渠道状态不确定，并监控超时关闭的延迟。"
+   "总：超时关单用延迟消息做主触发、定时扫表兜底，核心是用条件更新保证幂等和与支付并发安全。",
+   "分：扫表简单但有延迟和压力；延迟消息精度好；Redis 过期通知不可靠；关单后释放库存和优惠券同样要幂等。",
+   "实践：【结合你的项目】说明你们超时时间、采用的方案，以及是否处理过关单后到账的退款场景。",
+   "总结：任何到点触发的方案都可能重复或丢失，所以正确性要落在状态机条件更新和兜底任务上。"
   ],
   "pitfalls": [
-   "只依赖单条延迟消息或 Redis 过期通知，缺少补偿。"
+   "只用 Redis 过期事件且无兜底。",
+   "关单直接 UPDATE 不带状态条件，覆盖已支付订单。",
+   "加分：讲清关单与支付回调竞态和退款补偿。"
   ]
  },
  "pack-h25": {
   "principle": [
-   "resultType 适合字段与属性能直接匹配的简单结果；resultMap 可显式定义列到属性的映射。",
-   "复杂对象、关联对象及集合可使用 resultMap 的关联映射，但要注意关联加载的查询次数。",
-   "字段别名或下划线转驼峰可简化简单映射；实际结果以配置和类型处理器为准。"
+   "resultType 直接指定返回的 Java 类型，MyBatis 按列名与属性名自动映射（可配合 mapUnderscoreToCamelCase 把下划线转驼峰）。适合简单单表查询、列名和属性能对得上的情况。",
+   "resultMap 是显式映射规则：可以指定 column 与 property 的对应、类型处理器、构造器注入、鉴别器，以及 association（一对一）和 collection（一对多）嵌套映射。复杂查询、列名不规则、需要组装对象图时用 resultMap。",
+   "两者不能在同一语句同时使用。resultMap 还可以通过 id 元素声明主键，帮助 MyBatis 在嵌套结果中正确去重合并行，这在 JOIN 一对多映射里很重要；漏写 id 可能导致性能差或集合重复。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "简单查询：resultType=User；复杂一对多：resultMap 定义 id、association 或 collection 映射。"
+   "lang": "xml",
+   "code": "<!-- 简单查询：resultType + 驼峰映射 -->\n<select id=\"findUser\" resultType=\"com.demo.User\">\n  SELECT id, user_name, created_at FROM t_user WHERE id = #{id}\n</select>\n\n<!-- 一对多：resultMap + collection -->\n<resultMap id=\"OrderWithItems\" type=\"com.demo.Order\">\n  <id property=\"id\" column=\"order_id\"/>\n  <result property=\"totalAmount\" column=\"total_amount\"/>\n  <collection property=\"items\" ofType=\"com.demo.OrderItem\">\n    <id property=\"id\" column=\"item_id\"/>\n    <result property=\"skuId\" column=\"sku_id\"/>\n  </collection>\n</resultMap>"
   },
   "asks": [
-   "MyBatis 的 resultType 和 resultMap 有什么区别？",
-   "一对多映射是否总能避免 N+1？"
+   "resultType 和 resultMap 有什么区别？",
+   "什么情况必须用 resultMap？",
+   "resultMap 里的 id 元素有什么作用？",
+   "列名和属性名不一致怎么处理？"
   ],
   "followups": [
    {
-    "q": "一对多映射是否总能避免 N+1？",
-    "a": "不能；取决于采用嵌套结果还是嵌套查询以及加载方式。"
+    "q": "用 resultType 能做一对多吗？",
+    "a": "不能直接组装嵌套集合，需要 resultMap 的 collection，或者查出平铺结果后在代码里自己分组。"
+   },
+   {
+    "q": "不写 id 元素会怎样？",
+    "a": "MyBatis 会用所有列组合判断行是否相同，嵌套映射时性能变差，甚至出现集合元素重复或合并错误。"
+   },
+   {
+    "q": "只是列名不一致一定要 resultMap 吗？",
+    "a": "不一定，可以在 SQL 里起别名或开启驼峰映射；规则复杂或需复用时才值得写 resultMap。"
    }
   ],
   "answer": [
-   "核心思路：resultType 适合字段与属性能直接匹配的简单结果；resultMap 可显式定义列到属性的映射。",
-   "展开说明：复杂对象、关联对象及集合可使用 resultMap 的关联映射，但要注意关联加载的查询次数。",
-   "实践与边界：字段别名或下划线转驼峰可简化简单映射；实际结果以配置和类型处理器为准。"
+   "总：resultType 走自动映射适合简单查询，resultMap 是显式映射适合列名不规则和嵌套对象。",
+   "分：resultMap 支持 association、collection、构造器和类型处理器；id 元素帮助嵌套结果去重；简单不一致可用别名或驼峰配置。",
+   "实践：【结合你的项目】举一个订单带明细或用户带角色的 resultMap 例子，说明为何不用 resultType。",
+   "总结：能自动映射就别过度配置，有嵌套或复用需要时再用 resultMap，并记得写 id。"
   ],
   "pitfalls": [
-   "使用复杂关联时未检查 SQL 数量和分页结果。"
+   "在嵌套 resultMap 里漏写 id。",
+   "认为两者可以同时出现在一个 select 上。",
+   "加分：提到 JOIN 一对多分页会被明细行截断的问题。"
   ]
  },
  "pack-h26": {
   "principle": [
-   "可根据场景使用批量 SQL 或 BATCH 执行器，减少数据库往返；具体收益需结合驱动和数据库验证。",
-   "批量大小应控制内存和事务时长；执行与提交时机、异常定位和回滚策略需要测试。",
-   "自动生成主键的批量回填依赖数据库、驱动和具体写法，不能一概保证。"
+   "MyBatis 批量写常见三种方式：foreach 拼接一条多值 INSERT；ExecutorType.BATCH 复用 PreparedStatement 并 addBatch；循环单条插入（最慢）。foreach 拼接 SQL 简单，但 SQL 过长可能超过 max_allowed_packet，且参数过多时解析慢。",
+   "BATCH 执行器在 SqlSession 内累积语句，flushStatements 或 commit 时统一发送；MySQL 需要连接参数 rewriteBatchedStatements=true 才会被驱动改写成多值语句，否则仍是逐条发送。BATCH 模式下 update 返回的影响行数不可信（返回固定值），需要通过 flushStatements 的 BatchResult 获取。",
+   "注意事项：分批提交（如每 500~1000 条一批），控制事务大小避免长事务和大回滚；自增主键回填在批量模式下要确认驱动支持；失败时要知道哪一批失败、是否整体回滚；和 Spring 事务结合时 BATCH SqlSession 的作用域要清楚。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "按 500 条一批执行 → flush → 检查异常 → 按事务边界提交；批次大小需压测。"
+   "lang": "java",
+   "code": "// JDBC URL: jdbc:mysql://host/db?rewriteBatchedStatements=true\ntry (SqlSession session = sqlSessionFactory.openSession(ExecutorType.BATCH, false)) {\n    OrderMapper mapper = session.getMapper(OrderMapper.class);\n    for (int i = 0; i < orders.size(); i++) {\n        mapper.insert(orders.get(i));\n        if ((i + 1) % 500 == 0) {\n            session.flushStatements();   // 分批发送\n        }\n    }\n    session.commit();\n}\n\n<!-- foreach 方式：注意 SQL 长度 -->\n<insert id=\"batchInsert\">\n  INSERT INTO t_order(id, amount) VALUES\n  <foreach collection=\"list\" item=\"o\" separator=\",\">(#{o.id}, #{o.amount})</foreach>\n</insert>"
   },
   "asks": [
-   "MyBatis 批量执行有哪些注意点？",
-   "flush 和 commit 是一回事吗？"
+   "MyBatis 批量执行有哪些方式？",
+   "BATCH 执行器有什么注意点？",
+   "为什么要 rewriteBatchedStatements？",
+   "批量数据量很大怎么处理？"
   ],
   "followups": [
    {
-    "q": "flush 和 commit 是一回事吗？",
-    "a": "不是；flush 发送或执行待处理批次，事务是否提交取决于事务管理。"
+    "q": "foreach 拼一万条一次插入行不行？",
+    "a": "容易超过 max_allowed_packet 且解析慢、事务过大，应分批，每批几百到一千条比较稳。"
+   },
+   {
+    "q": "BATCH 模式下 update 返回值能用吗？",
+    "a": "不能直接用，单条返回的是占位值，需要从 flushStatements 返回的 BatchResult 里取 updateCounts。"
+   },
+   {
+    "q": "中间一批失败怎么办？",
+    "a": "取决于事务边界：同一事务则整体回滚；分批提交则要记录失败批次并支持幂等重跑。"
    }
   ],
   "answer": [
-   "核心思路：可根据场景使用批量 SQL 或 BATCH 执行器，减少数据库往返；具体收益需结合驱动和数据库验证。",
-   "展开说明：批量大小应控制内存和事务时长；执行与提交时机、异常定位和回滚策略需要测试。",
-   "实践与边界：自动生成主键的批量回填依赖数据库、驱动和具体写法，不能一概保证。"
+   "总：批量写优先用 BATCH 执行器加 rewriteBatchedStatements，或分批 foreach，核心是控制批次和事务大小。",
+   "分：foreach 有 SQL 长度限制；BATCH 需要 flush 且返回值特殊；分批提交避免长事务；失败重跑要幂等。",
+   "实践：【结合你的项目】说明一次数据导入的批大小、耗时优化前后对比，以及是否开启了驱动改写参数。",
+   "总结：批量性能来自减少网络往返和语句解析，正确性来自分批事务和可重跑设计。"
   ],
   "pitfalls": [
-   "假设所有驱动都能以相同方式回填批量主键。"
+   "开了 BATCH 却没配 rewriteBatchedStatements，性能没变化。",
+   "一次性插入几十万行放在一个事务里。",
+   "加分：提到 BatchResult 取影响行数。"
   ]
  },
  "pack-h27": {
   "principle": [
-   "控制器通常由 Spring 以单例作用域管理，同一实例可能并发处理多个请求。",
-   "不要把请求相关的可变状态保存在控制器实例字段中；使用局部变量或合适的请求作用域。",
-   "注入的依赖也可能共享可变状态，应分别检查其线程安全与连接资源管理。"
+   "Spring MVC 的 Controller 默认是单例 Bean，所有请求线程共享同一个实例。如果在 Controller（或 Service）里用成员变量保存请求相关的状态，比如当前用户、计数器、临时列表，多个线程会同时读写，产生数据串号或计数错乱。",
+   "正确做法是保持无状态：请求数据放在方法局部变量或参数里；确实需要的共享状态用线程安全结构（AtomicLong、ConcurrentHashMap）；请求上下文用 ThreadLocal 但必须在 finally 或拦截器 afterCompletion 中 remove，防止线程池复用导致上下文泄漏到下一个请求。",
+   "把 Controller 改成 @Scope(\"prototype\") 或 request 作用域能规避，但会增加对象创建开销，而且注入到单例里时要用代理，一般不推荐作为首选。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "两个请求并发进入同一个 Controller 实例；各自的局部变量独立，实例可变字段可能互相覆盖。"
+   "lang": "java",
+   "code": "@RestController\npublic class OrderController {\n    private int count = 0;                 // ❌ 多线程共享，count++ 非原子\n    private User currentUser;              // ❌ 请求之间串号\n\n    private final AtomicLong total = new AtomicLong(); // ✅ 线程安全计数\n\n    @GetMapping(\"/orders\")\n    public List<Order> list(@RequestParam long uid) {\n        User u = userService.get(uid);     // ✅ 局部变量，每个线程独立\n        total.incrementAndGet();\n        return orderService.list(u);\n    }\n}\n// ThreadLocal 用完清理：拦截器 afterCompletion 中 UserContext.clear()"
   },
   "asks": [
    "Spring MVC 控制器为什么要注意线程安全？",
-   "把字段声明为 final 就一定线程安全吗？"
+   "Controller 默认是单例还是多例？",
+   "怎么让 Controller 线程安全？",
+   "用 ThreadLocal 要注意什么？"
   ],
   "followups": [
    {
-    "q": "把字段声明为 final 就一定线程安全吗？",
-    "a": "不一定；final 只限制引用重新赋值，引用对象内部仍可能可变。"
+    "q": "把 Controller 改成 prototype 好不好？",
+    "a": "能避免共享成员变量，但每次请求创建对象有开销，且注入关系复杂；保持无状态才是正解。"
+   },
+   {
+    "q": "Service 和 DAO 也有同样问题吗？",
+    "a": "有，它们默认也是单例，只要持有可变成员状态就会有并发问题，注入的其他单例 Bean 引用本身是安全的。"
+   },
+   {
+    "q": "ThreadLocal 不 remove 会怎样？",
+    "a": "Tomcat 线程池复用线程，下一个请求可能读到上一个用户的信息，还会造成内存泄漏。"
    }
   ],
   "answer": [
-   "核心思路：控制器通常由 Spring 以单例作用域管理，同一实例可能并发处理多个请求。",
-   "展开说明：不要把请求相关的可变状态保存在控制器实例字段中；使用局部变量或合适的请求作用域。",
-   "实践与边界：注入的依赖也可能共享可变状态，应分别检查其线程安全与连接资源管理。"
+   "总：Controller 默认单例被所有请求线程共享，所以不能用成员变量保存请求状态。",
+   "分：保持无状态，用局部变量；共享计数用原子类或并发容器；ThreadLocal 必须在请求结束时清理；prototype 作用域是下策。",
+   "实践：【结合你的项目】可以说你们用拦截器 + ThreadLocal 传递登录用户，并在 afterCompletion 中清理。",
+   "总结：单例 Bean 的并发安全来自无状态设计，而不是加锁或改作用域。"
   ],
   "pitfalls": [
-   "把当前用户或请求参数放进单例控制器字段。"
+   "在 Controller 里用成员变量存当前用户。",
+   "ThreadLocal 用完不清理。",
+   "加分：解释线程池复用导致的上下文串号。"
   ]
  },
  "pack-h28": {
   "principle": [
-   "组成员变化、订阅变化等可能触发分区重新分配；具体机制取决于客户端配置及协议版本。",
-   "再均衡期间分区处理可能暂停或迁移；未安全提交的记录可能再次消费。",
-   "控制单次处理时长，妥善处理分区撤销时的任务与位点，并保证消费幂等。"
+   "Kafka 消费组再均衡（rebalance）是在成员加入、离开、崩溃或订阅分区数变化时，重新分配分区给消费者的过程。传统 eager 协议下，再均衡期间所有消费者都要放弃分区、停止消费，造成「stop the world」，积压上升。",
+   "再均衡会带来重复消费：如果某消费者处理完消息还没提交位点就失去分区，新的消费者会从上次提交位置重新消费。处理时间超过 max.poll.interval.ms 会被认为离组，触发再均衡，常见于单批处理太慢。",
+   "缓解手段：使用 CooperativeStickyAssignor 增量再均衡，只迁移必要分区；static membership（group.instance.id）让滚动重启不触发再均衡；调小 max.poll.records、合理设置 session.timeout.ms 和 max.poll.interval.ms；在 ConsumerRebalanceListener 的 onPartitionsRevoked 中同步提交位点；业务侧幂等兜底。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "消费者 A 离组 → 分区撤销并重新分配给 B → B 从已提交位置恢复处理。"
+   "lang": "java",
+   "code": "props.put(\"partition.assignment.strategy\",\n          \"org.apache.kafka.clients.consumer.CooperativeStickyAssignor\");\nprops.put(\"group.instance.id\", \"order-consumer-\" + podName); // 静态成员\nprops.put(\"max.poll.records\", 200);\nprops.put(\"max.poll.interval.ms\", 300000);\n\nconsumer.subscribe(List.of(\"orders\"), new ConsumerRebalanceListener() {\n    public void onPartitionsRevoked(Collection<TopicPartition> parts) {\n        consumer.commitSync(currentOffsets);   // 失去分区前提交已处理位点\n    }\n    public void onPartitionsAssigned(Collection<TopicPartition> parts) { }\n});"
   },
   "asks": [
    "Kafka 消费组再均衡会带来什么影响？",
-   "为什么再均衡可能引发重复消费？"
+   "什么情况会触发再均衡？",
+   "为什么会导致重复消费？",
+   "怎么减少再均衡的影响？"
   ],
   "followups": [
    {
-    "q": "为什么再均衡可能引发重复消费？",
-    "a": "已处理但未提交的消息可能被新消费者重新读取。"
+    "q": "处理慢为什么会触发再均衡？",
+    "a": "两次 poll 间隔超过 max.poll.interval.ms，协调者认为该消费者失效并将其移出组，从而重新分配分区。"
+   },
+   {
+    "q": "增量再均衡和传统再均衡区别？",
+    "a": "传统方式所有成员先撤销全部分区再重新分配；增量方式只撤销需要迁移的分区，其余分区可继续消费。"
+   },
+   {
+    "q": "发版滚动重启怎么避免反复再均衡？",
+    "a": "配置 group.instance.id 静态成员并让 session.timeout 覆盖重启时间，重启回来仍拿回原分区。"
    }
   ],
   "answer": [
-   "核心思路：组成员变化、订阅变化等可能触发分区重新分配；具体机制取决于客户端配置及协议版本。",
-   "展开说明：再均衡期间分区处理可能暂停或迁移；未安全提交的记录可能再次消费。",
-   "实践与边界：控制单次处理时长，妥善处理分区撤销时的任务与位点，并保证消费幂等。"
+   "总：再均衡会让消费暂停并可能造成重复消费，是 Kafka 消费端抖动的主要来源之一。",
+   "分：成员变化、处理超时、分区变化会触发；未提交位点导致重复；用增量分配、静态成员、合理超时与批量大小、撤销前提交位点来缓解。",
+   "实践：【结合你的项目】说明是否遇到过处理慢导致频繁再均衡、积压飙升，以及调整了哪些参数。",
+   "总结：减少再均衡靠配置和处理速度，正确性仍要靠业务幂等。"
   ],
   "pitfalls": [
-   "分区撤销后仍继续提交旧任务的位点。"
+   "只会说再均衡是重新分配分区，讲不出影响。",
+   "处理逻辑很慢却只调大超时。",
+   "加分：提到 CooperativeStickyAssignor 和静态成员。"
   ]
  },
  "pack-h29": {
   "principle": [
-   "可能原因包括执行耗时命令、处理大键、持久化相关开销以及 CPU 或网络资源不足；需结合版本和部署环境判断。",
-   "结合慢日志、延迟监控、命令统计及系统指标定位，再针对大键和高成本操作做治理。",
-   "避免直接在生产上运行可能加重负载的全量扫描；使用渐进扫描并控制速率。"
+   "Redis 命令执行是单线程的，任何一个慢操作都会阻塞后续所有请求。常见原因：O(N) 命令作用于大集合（KEYS *、HGETALL 大 Hash、SMEMBERS、LRANGE 0 -1、DEL 大 key）；Lua 脚本执行过久；fork 持久化时大内存实例的 fork 耗时与写时复制；AOF always 刷盘或磁盘慢；内存接近上限触发大量淘汰；swap；CPU 被抢占。",
+   "排查：SLOWLOG GET 看慢命令；--bigkeys / MEMORY USAGE 找大 key；INFO 里看 latest_fork_usec、aof_delayed_fsync、evicted_keys；LATENCY DOCTOR 汇总延迟事件；客户端看超时集中时间点与 Redis 侧对照；系统层看 swap 和 CPU。",
+   "治理：禁用 KEYS 改 SCAN；大 key 拆分，删除用 UNLINK 异步；Lua 保持短小；持久化放在从库或控制实例内存大小；关闭透明大页；监控慢日志并告警。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "先检查延迟与慢日志 → 观察大键、命令分布、CPU 和网络 → 小步治理并复测。"
+   "lang": "bash",
+   "code": "redis-cli SLOWLOG GET 10           # 最近慢命令\nredis-cli --bigkeys                # 抽样找大 key\nredis-cli MEMORY USAGE user:1001\nredis-cli INFO persistence | grep latest_fork_usec\nredis-cli LATENCY DOCTOR\n\n# 安全替代\nSCAN 0 MATCH order:* COUNT 100     # 代替 KEYS\nUNLINK big:hash                    # 异步删除大 key"
   },
   "asks": [
-   "Redis 为什么会出现阻塞，如何排查？",
-   "慢日志正常就能排除 Redis 问题吗？"
+   "Redis 为什么会出现阻塞？",
+   "怎么排查 Redis 阻塞？",
+   "大 key 有什么危害？",
+   "fork 为什么会造成延迟？"
   ],
   "followups": [
    {
-    "q": "慢日志正常就能排除 Redis 问题吗？",
-    "a": "不能；网络、排队或系统调度也可能造成延迟，应结合端到端指标。"
+    "q": "Redis 6 有多线程，为什么还会阻塞？",
+    "a": "多线程只用于网络 IO 读写，命令执行仍是单线程，慢命令依然阻塞其他请求。"
+   },
+   {
+    "q": "删除大 key 为什么危险？",
+    "a": "DEL 同步释放大量内存会阻塞主线程，应用 UNLINK 让后台线程释放，或分批删除元素。"
+   },
+   {
+    "q": "fork 延迟和什么有关？",
+    "a": "和实例内存大小、页表大小有关，内存越大复制页表越慢；开启透明大页还会放大写时复制开销。"
    }
   ],
   "answer": [
-   "核心思路：可能原因包括执行耗时命令、处理大键、持久化相关开销以及 CPU 或网络资源不足；需结合版本和部署环境判断。",
-   "展开说明：结合慢日志、延迟监控、命令统计及系统指标定位，再针对大键和高成本操作做治理。",
-   "实践与边界：避免直接在生产上运行可能加重负载的全量扫描；使用渐进扫描并控制速率。"
+   "总：Redis 单线程执行命令，大 key、O(N) 命令、长 Lua、fork 持久化和系统资源问题都会造成阻塞。",
+   "分：用慢日志、bigkeys、INFO 和 LATENCY 工具定位；KEYS 改 SCAN、大 key 拆分并 UNLINK、控制实例内存、关闭透明大页。",
+   "实践：【结合你的项目】讲一次超时抖动，最后定位到哪个大 key 或慢命令，以及怎么改的。",
+   "总结：Redis 的性能前提是每个命令都很快，任何 O(N) 操作都要先评估数据量。"
   ],
   "pitfalls": [
-   "生产高峰执行高开销全量命令进行排查。"
+   "线上执行 KEYS * 或 HGETALL 大 Hash。",
+   "以为 Redis 6 多线程后命令不会阻塞。",
+   "加分：结合 fork 和透明大页解释持久化抖动。"
   ]
  },
  "pack-h30": {
   "principle": [
-   "并发写入、事务回滚、插入失败或批量分配等都可能产生空洞，具体行为受版本和配置影响。",
-   "自增值用于生成标识，不应承担无缺口业务流水号的要求。",
-   "业务若要求严格连续编号，需要单独设计分配、作废和审计流程，并评估并发成本。"
+   "InnoDB 自增主键不保证连续，常见原因：事务回滚后已分配的自增值不会回收；INSERT 唯一键冲突失败也会消耗自增值；INSERT ... ON DUPLICATE KEY UPDATE 走更新分支时可能消耗值；批量插入（INSERT ... SELECT、LOAD DATA）时按批预分配，可能多分配；手动指定更大的 id 会把自增值跳过去。",
+   "innodb_autoinc_lock_mode 影响分配方式：0 传统表锁、1 连续模式（简单插入轻量锁）、2 交错模式（MySQL 8 默认，并发最好但批量插入的值可能不连续，需要 ROW 格式 binlog）。MySQL 8 之前自增值存在内存，重启会按 max(id)+1 重新计算，可能复用已删除的值；8.0 起持久化到 redo log。",
+   "业务上不要依赖自增连续性去判断数量或生成订单号，也不要暴露给外部（可被枚举）。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "事务 A 分配 ID 100 后回滚 → 后续事务可能使用 101 → 100 出现空洞。"
+   "lang": "sql",
+   "code": "CREATE TABLE t (id BIGINT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(20) UNIQUE);\nINSERT INTO t(code) VALUES ('A');   -- id=1\nINSERT INTO t(code) VALUES ('A');   -- 唯一键冲突失败，但自增值 2 已被消耗\nINSERT INTO t(code) VALUES ('B');   -- id=3\n\nBEGIN; INSERT INTO t(code) VALUES ('C'); ROLLBACK;  -- 自增值 4 不回收\nSHOW VARIABLES LIKE 'innodb_autoinc_lock_mode';     -- MySQL 8 默认 2"
   },
   "asks": [
    "MySQL 自增主键为什么可能不连续？",
-   "自增 ID 能否作为严格连续的发票号？"
+   "事务回滚会回收自增值吗？",
+   "innodb_autoinc_lock_mode 有什么影响？",
+   "业务能依赖自增连续吗？"
   ],
   "followups": [
    {
-    "q": "自增 ID 能否作为严格连续的发票号？",
-    "a": "不适合；严格编号需要独立的业务分配、作废记录和审计设计。"
+    "q": "为什么回滚不回收自增值？",
+    "a": "为了并发性能，自增值分配后立即对其他事务可见；若回收需要锁住等待事务结束，代价太大。"
+   },
+   {
+    "q": "MySQL 8 重启后自增值会变吗？",
+    "a": "8.0 起自增计数器持久化，不会再像旧版本那样按 max(id)+1 重置，因此不会复用已删除的高位值。"
+   },
+   {
+    "q": "自增主键对外暴露有什么风险？",
+    "a": "可以被枚举遍历数据量和资源，订单号等对外标识应使用雪花 ID 或随机号。"
    }
   ],
   "answer": [
-   "核心思路：并发写入、事务回滚、插入失败或批量分配等都可能产生空洞，具体行为受版本和配置影响。",
-   "展开说明：自增值用于生成标识，不应承担无缺口业务流水号的要求。",
-   "实践与边界：业务若要求严格连续编号，需要单独设计分配、作废和审计流程，并评估并发成本。"
+   "总：自增主键只保证递增唯一，不保证连续，回滚、冲突、批量预分配都会产生空洞。",
+   "分：分配后不回收是为了并发；锁模式 2 并发最好但批量值不连续；8.0 起持久化计数器；不要用自增值做业务计数或对外 ID。",
+   "实践：【结合你的项目】说明你们对外订单号用什么生成，主键是否仍用自增。",
+   "总结：把自增 ID 当内部物理主键用，业务语义交给专门的编号。"
   ],
   "pitfalls": [
-   "删除空洞或强行回填自增值。"
+   "用 max(id) 估算数据条数。",
+   "把自增 id 当订单号直接暴露。",
+   "加分：说出锁模式与 binlog 格式的关系。"
   ]
  },
  "pack-h31": {
   "principle": [
-   "死锁是多个执行单元互相等待而无法推进；活锁是在持续改变状态或重试，但仍没有有效进展。",
-   "饥饿是某些任务长期得不到所需资源或执行机会，不一定存在循环等待。",
-   "排查时结合线程转储、锁持有关系、队列等待时间和重试指标；应针对具体原因治理。"
+   "死锁：两个或多个线程互相持有对方需要的锁，都在阻塞等待，谁也无法推进，线程状态是 BLOCKED/WAITING，CPU 占用低。四个必要条件：互斥、持有并等待、不可剥夺、循环等待，破坏任意一个即可预防，最常用的是固定加锁顺序。",
+   "活锁：线程没有阻塞，一直在运行，但因为互相「礼让」或冲突后同步重试，总在重复同样的失败动作，任务无法推进，表现为 CPU 高但无进展。解决方式是引入随机退避，让重试时机错开。",
+   "饥饿：某些线程长期得不到资源（CPU、锁），例如非公平锁下一直被插队、低优先级线程、读写锁中写线程被源源不断的读线程压制。解决用公平锁、限制持锁时间、合理优先级。三者区别在于：死锁大家都停、活锁大家都在动但没进展、饥饿是部分线程得不到执行。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "死锁：A 等 B、B 等 A；活锁：双方不断退让重试；饥饿：低优先任务长期得不到资源。"
+   "lang": "java",
+   "code": "// 死锁：加锁顺序相反\nvoid transfer(Account a, Account b) {\n    synchronized (a) { synchronized (b) { /* ... */ } }\n}\n// 修复：按 id 排序固定加锁顺序\nvoid safeTransfer(Account a, Account b) {\n    Account first = a.id < b.id ? a : b, second = first == a ? b : a;\n    synchronized (first) { synchronized (second) { /* ... */ } }\n}\n// 活锁修复：tryLock 失败后随机退避\nif (!lock.tryLock()) { Thread.sleep(ThreadLocalRandom.current().nextInt(10, 50)); }"
   },
   "asks": [
    "死锁、活锁和线程饥饿有什么区别？",
-   "线程一直运行就能排除活锁吗？"
+   "死锁的四个必要条件是什么？",
+   "活锁怎么解决？",
+   "饥饿如何避免？"
   ],
   "followups": [
    {
-    "q": "线程一直运行就能排除活锁吗？",
-    "a": "不能；活锁可能不断执行但业务没有进展。"
+    "q": "怎么从线程 dump 上区分死锁和活锁？",
+    "a": "jstack 会直接报告 Found one Java-level deadlock，线程处于 BLOCKED；活锁的线程是 RUNNABLE 且 CPU 高，但业务没有进展。"
+   },
+   {
+    "q": "tryLock 能解决死锁吗？",
+    "a": "带超时的 tryLock 破坏了持有并等待，可避免永久死锁，但失败后要释放已持有的锁并退避，否则可能变成活锁。"
+   },
+   {
+    "q": "公平锁能彻底解决饥饿吗？",
+    "a": "能显著缓解锁层面的饥饿，但吞吐会下降，且 CPU 调度层面的饥饿还要看线程优先级与任务设计。"
    }
   ],
   "answer": [
-   "核心思路：死锁是多个执行单元互相等待而无法推进；活锁是在持续改变状态或重试，但仍没有有效进展。",
-   "展开说明：饥饿是某些任务长期得不到所需资源或执行机会，不一定存在循环等待。",
-   "实践与边界：排查时结合线程转储、锁持有关系、队列等待时间和重试指标；应针对具体原因治理。"
+   "总：死锁是互相等待都不动，活锁是都在动但没进展，饥饿是部分线程长期拿不到资源。",
+   "分：死锁破坏四个条件之一，常用固定加锁顺序或超时锁；活锁靠随机退避；饥饿靠公平策略和缩短持锁时间。",
+   "实践：【结合你的项目】可以讲转账或库存场景按 id 排序加锁，或者一次 jstack 发现死锁的排查经历。",
+   "总结：从线程状态和 CPU 表现就能区分这三种问题，再对应选择解决办法。"
   ],
   "pitfalls": [
-   "只看 CPU 使用率而不观察业务吞吐与等待关系。"
+   "把活锁和死锁混为一谈。",
+   "用 tryLock 但失败后不释放已持有的锁。",
+   "加分：能从 jstack 输出区分三种情况。"
   ]
  },
  "pack-h32": {
   "principle": [
-   "原子性要求事务整体提交或回滚；一致性指事务前后满足业务和数据库约束。",
-   "隔离性约束并发事务之间的影响；持久性要求已提交结果在系统故障后仍可恢复。",
-   "具体保障依赖存储引擎、日志、隔离级别和持久化配置，不能把一致性归因于数据库单一机制。"
+   "原子性（Atomicity）：事务内操作要么全部成功要么全部回滚，InnoDB 通过 undo log 实现回滚。一致性（Consistency）：事务前后数据满足约束和业务规则，是目标，由其他三个特性加上应用逻辑共同保证。",
+   "隔离性（Isolation）：并发事务互不干扰，InnoDB 用锁和 MVCC 实现，有读未提交、读已提交、可重复读（默认）、串行化四个级别，分别解决脏读、不可重复读、幻读问题。持久性（Durability）：提交后数据不丢，通过 redo log 先写日志（WAL）和崩溃恢复实现，配合 innodb_flush_log_at_trx_commit=1 每次提交刷盘。",
+   "面试常追问：binlog 与 redo log 的两阶段提交保证两份日志一致；一致性不能只靠数据库，比如余额不能为负需要应用或约束保证。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "转账事务中扣款和加款一起提交；余额约束由业务规则和数据库约束共同维护。"
+   "lang": "sql",
+   "code": "START TRANSACTION;\nUPDATE account SET balance = balance - 100 WHERE id = 1 AND balance >= 100;\nUPDATE account SET balance = balance + 100 WHERE id = 2;\nCOMMIT;   -- redo log 保证持久，失败则 undo 回滚\n\n-- 查看/设置隔离级别\nSELECT @@transaction_isolation;      -- REPEATABLE-READ\nSET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;\n-- 持久性相关\nSHOW VARIABLES LIKE 'innodb_flush_log_at_trx_commit';"
   },
   "asks": [
    "MySQL 事务的 ACID 分别指什么？",
-   "一致性与隔离性是同一个概念吗？"
+   "InnoDB 分别用什么机制实现？",
+   "一致性是怎么保证的？",
+   "四种隔离级别解决什么问题？"
   ],
   "followups": [
    {
-    "q": "一致性与隔离性是同一个概念吗？",
-    "a": "不是；一致性关注状态满足约束，隔离性关注并发执行的可见性和影响。"
+    "q": "redo log 和 undo log 有什么区别？",
+    "a": "redo 记录物理修改用于崩溃后重做保证持久性；undo 记录修改前的值用于回滚和 MVCC 读旧版本。"
+   },
+   {
+    "q": "innodb_flush_log_at_trx_commit 设为 2 有什么风险？",
+    "a": "提交时只写到操作系统缓存，MySQL 崩溃不丢但机器断电可能丢失约一秒的事务。"
+   },
+   {
+    "q": "为什么说一致性是目的？",
+    "a": "原子性、隔离性、持久性是手段，最终要达到数据满足约束和业务规则，这还需要应用逻辑正确。"
    }
   ],
   "answer": [
-   "核心思路：原子性要求事务整体提交或回滚；一致性指事务前后满足业务和数据库约束。",
-   "展开说明：隔离性约束并发事务之间的影响；持久性要求已提交结果在系统故障后仍可恢复。",
-   "实践与边界：具体保障依赖存储引擎、日志、隔离级别和持久化配置，不能把一致性归因于数据库单一机制。"
+   "总：ACID 是原子性、一致性、隔离性、持久性，InnoDB 分别用 undo log、锁与 MVCC、redo log 来实现，一致性是最终目标。",
+   "分：undo 支持回滚和 MVCC；隔离级别逐级解决脏读、不可重复读、幻读；redo 先写日志加刷盘策略保证持久；两阶段提交保证 redo 与 binlog 一致。",
+   "实践：【结合你的项目】举转账或扣库存的事务，说明条件更新怎样配合事务保证业务一致。",
+   "总结：讲 ACID 要落到具体日志和锁机制上，而不是只背四个名词。"
   ],
   "pitfalls": [
-   "认为开启事务就自动保证所有业务不变量。"
+   "把一致性说成是数据库单独保证的。",
+   "混淆 redo log 与 binlog 的作用。",
+   "加分：讲清两阶段提交和刷盘参数取舍。"
   ]
  },
  "pack-h33": {
   "principle": [
-   "客户端建立连接并发送 SQL，服务端进行解析、预处理和权限检查。",
-   "优化器选择执行计划，执行器调用存储引擎接口读取数据并返回结果。",
-   "实际路径受版本、缓存和查询类型影响；用 EXPLAIN 与运行指标验证，不应将旧版查询缓存当作通用步骤。"
+   "一条 SELECT 的典型路径：客户端通过连接器建立连接并做身份认证、权限获取；（MySQL 8.0 已移除查询缓存）进入分析器做词法与语法分析，生成解析树并检查表、列是否存在；优化器根据统计信息选择索引、决定 JOIN 顺序，生成执行计划；执行器检查权限后调用存储引擎接口逐行读取数据。",
+   "存储引擎层（InnoDB）先在 Buffer Pool 中找数据页，不在则从磁盘读入；可能用到索引下推（ICP）在引擎层过滤；回表时按主键查聚簇索引。执行器拿到行后在 Server 层做剩余过滤、排序（可能用 sort buffer 或磁盘临时文件）、分组，再返回结果集。",
+   "理解这条链路有助于排障：连接数满在连接器、语法错误在分析器、走错索引在优化器、慢在引擎读盘或回表、Using filesort 在执行器排序阶段。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "客户端 → 解析与优化 → 执行器 → InnoDB → 返回结果"
+   "lang": "sql",
+   "code": "EXPLAIN FORMAT=TREE\nSELECT o.id, o.amount FROM t_order o\nWHERE o.user_id = 1001 AND o.status = 'PAID'\nORDER BY o.created_at DESC LIMIT 20;\n\n-- 看优化器决策过程\nSET optimizer_trace = 'enabled=on';\nSELECT ...;\nSELECT * FROM information_schema.OPTIMIZER_TRACE;\n\nSHOW STATUS LIKE 'Innodb_buffer_pool_read%'; -- 内存命中 vs 磁盘读"
   },
   "asks": [
-   "MySQL 执行一条查询通常经过哪些环节？",
-   "为什么优化器没有选预期索引？"
+   "MySQL 执行一条查询经过哪些环节？",
+   "优化器做了什么？",
+   "Server 层和存储引擎层怎么分工？",
+   "MySQL 8 为什么去掉查询缓存？"
   ],
   "followups": [
    {
-    "q": "为什么优化器没有选预期索引？",
-    "a": "可能与统计信息、选择性、成本估计或 SQL 写法有关，应检查执行计划和实际数据。"
+    "q": "为什么去掉查询缓存？",
+    "a": "表上任何更新都会使该表所有缓存失效，写多场景命中率极低还带来锁竞争，收益不抵成本。"
+   },
+   {
+    "q": "优化器为什么有时选错索引？",
+    "a": "它基于统计信息估算代价，统计信息不准或数据分布倾斜时可能误判，可 ANALYZE TABLE 或用 FORCE INDEX。"
+   },
+   {
+    "q": "索引下推发生在哪一层？",
+    "a": "在存储引擎层，用索引中已有的列先过滤，减少回表和返回给 Server 层的行数。"
    }
   ],
   "answer": [
-   "核心思路：客户端建立连接并发送 SQL，服务端进行解析、预处理和权限检查。",
-   "展开说明：优化器选择执行计划，执行器调用存储引擎接口读取数据并返回结果。",
-   "实践与边界：实际路径受版本、缓存和查询类型影响；用 EXPLAIN 与运行指标验证，不应将旧版查询缓存当作通用步骤。"
+   "总：查询依次经过连接器、分析器、优化器、执行器，再由存储引擎从 Buffer Pool 或磁盘读取数据。",
+   "分：连接器认证、分析器解析、优化器基于统计选计划、执行器调引擎接口；引擎层有 Buffer Pool、索引下推和回表；排序分组在 Server 层。",
+   "实践：【结合你的项目】讲一次用 EXPLAIN 或 optimizer_trace 发现优化器选错索引并修复的经历。",
+   "总结：把查询链路分清楚，排查慢 SQL 时就能快速定位问题发生在哪一层。"
   ],
   "pitfalls": [
-   "把 MySQL 旧版查询缓存当作所有版本都具备的功能。"
+   "还说 MySQL 8 会先查查询缓存。",
+   "分不清优化器和执行器的职责。",
+   "加分：会用 optimizer_trace 分析索引选择。"
   ]
  },
  "pack-h34": {
   "principle": [
-   "金额需要明确精度和舍入规则，定点十进制类型适合避免二进制浮点表示误差。",
-   "字段精度和小数位应按币种、范围及业务规则设计，应用层计算与数据库转换要统一舍入。",
-   "DECIMAL 不能自动处理汇率、溢出或业务精度规则；必须覆盖边界测试。"
+   "金额需要精确的十进制计算。FLOAT/DOUBLE 是二进制浮点数，很多十进制小数（如 0.1）无法精确表示，累加、比较时会产生误差，例如 0.1+0.2 不等于 0.3。对账、分账、利息计算中，这种误差会累积成真实的资金差异。",
+   "DECIMAL(M,D) 以十进制精确存储，例如 DECIMAL(18,2) 可存到千万亿级、精确到分，适合金额。代价是计算比浮点慢一些、占用空间略大，但对金额来说准确性优先。另一种常见做法是用 BIGINT 存「分」为单位的整数，计算快、跨系统传输不易出错，但要统一约定单位并处理多币种精度。",
+   "Java 端对应用 BigDecimal，而且要用字符串构造（new BigDecimal(\"0.1\")）或 BigDecimal.valueOf，避免 new BigDecimal(0.1) 把浮点误差带进来；除法必须指定舍入模式和精度。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "DECIMAL(12,2) 适用于最多 10 位整数和 2 位小数的金额范围示例。"
+   "lang": "java",
+   "code": "System.out.println(0.1 + 0.2);                 // 0.30000000000000004\nnew BigDecimal(0.1);                            // 0.1000000000000000055511...\nBigDecimal a = new BigDecimal(\"0.1\");           // 精确\nBigDecimal total = a.add(new BigDecimal(\"0.2\")); // 0.3\nBigDecimal share = total.divide(new BigDecimal(\"3\"), 2, RoundingMode.HALF_UP);\ntotal.compareTo(new BigDecimal(\"0.30\")) == 0;   // 比较用 compareTo，不用 equals\n\n-- 表结构\n-- amount DECIMAL(18,2) NOT NULL  或  amount_cent BIGINT NOT NULL"
   },
   "asks": [
-   "数据库金额为什么通常使用 DECIMAL？",
-   "用整数存最小货币单位可以吗？"
+   "数据库金额为什么用 DECIMAL？",
+   "FLOAT/DOUBLE 有什么问题？",
+   "用 BIGINT 存分可以吗？",
+   "Java 里怎么正确处理金额？"
   ],
   "followups": [
    {
-    "q": "用整数存最小货币单位可以吗？",
-    "a": "可以，但需明确币种单位、范围和换算舍入规则。"
+    "q": "BigDecimal 为什么不用 equals 比较？",
+    "a": "equals 会比较精度，0.3 和 0.30 不相等；比较数值大小应使用 compareTo。"
+   },
+   {
+    "q": "BIGINT 存分有什么坑？",
+    "a": "要全系统统一单位，展示时换算；多币种小数位不同（如日元无小数），需要按币种处理精度。"
+   },
+   {
+    "q": "除不尽的分账怎么处理？",
+    "a": "指定舍入模式，并把尾差分配到最后一笔或某个固定账户，保证总额对平。"
    }
   ],
   "answer": [
-   "核心思路：金额需要明确精度和舍入规则，定点十进制类型适合避免二进制浮点表示误差。",
-   "展开说明：字段精度和小数位应按币种、范围及业务规则设计，应用层计算与数据库转换要统一舍入。",
-   "实践与边界：DECIMAL 不能自动处理汇率、溢出或业务精度规则；必须覆盖边界测试。"
+   "总：金额要精确十进制，浮点数有二进制表示误差，所以数据库用 DECIMAL 或以分为单位的 BIGINT。",
+   "分：DECIMAL 精确但略慢；BIGINT 存分高效但要统一单位；Java 用字符串构造 BigDecimal，除法指定舍入，比较用 compareTo。",
+   "实践：【结合你的项目】说明你们金额字段类型、单位约定以及分账尾差处理方式。",
+   "总结：金额处理的原则是全链路精确、舍入规则明确、总额能对平。"
   ],
   "pitfalls": [
-   "以为 DECIMAL 自动解决所有精度与舍入问题。"
+   "用 double 存储或计算金额。",
+   "new BigDecimal(0.1) 直接传浮点。",
+   "加分：提到尾差分配和多币种精度。"
   ]
  },
  "pack-h35": {
   "principle": [
-   "MULTI 将命令入队，EXEC 顺序执行队列中的命令；WATCH 可用于乐观并发控制。",
-   "Redis 不提供关系型数据库式的执行时错误回滚：队列中个别命令执行失败不会自动撤销已执行命令。",
-   "网络断开可能使客户端不确定事务是否执行，需要结合业务幂等和结果查询。"
+   "Redis 事务用 MULTI 开始、命令入队、EXEC 批量执行，保证这批命令按顺序连续执行，中间不会插入其他客户端的命令。但它没有回滚：入队时语法错误会导致整个事务不执行；执行期间某条命令运行时出错（如对字符串做 INCR），其他命令仍会执行成功。",
+   "Redis 事务也没有关系型数据库的隔离级别概念，因为执行本身是串行的；但从 MULTI 到 EXEC 之间读到的值可能被别人修改，所以要配合 WATCH 实现乐观锁：EXEC 时如果被 WATCH 的 key 变了，事务放弃执行，返回 nil，由客户端重试。",
+   "持久性取决于 RDB/AOF 配置，不像 InnoDB 有 redo log 保证。需要「读-判断-写」的原子逻辑时，Lua 脚本通常比 MULTI/WATCH 更简单可靠。集群模式下事务内的 key 必须在同一个 slot。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "WATCH stock → 读取并计算 → MULTI → SET stock → EXEC；被监视键变化时 EXEC 不执行事务。"
+   "lang": "text",
+   "code": "WATCH stock:1001\nGET stock:1001            -- 读到 5\nMULTI\nDECRBY stock:1001 1\nLPUSH orders:1001 o-88\nEXEC                      -- 若 stock:1001 被他人修改，返回 nil，需重试\n\n-- 运行时错误不回滚\nMULTI\nSET a 1\nINCR somestring           -- 执行时报错\nSET b 2\nEXEC                      -- a、b 都已设置成功"
   },
   "asks": [
    "Redis 事务和关系型数据库事务有何不同？",
-   "事务执行中一条命令类型错误会全部回滚吗？"
+   "Redis 事务能回滚吗？",
+   "WATCH 有什么作用？",
+   "什么时候用 Lua 代替事务？"
   ],
   "followups": [
    {
-    "q": "事务执行中一条命令类型错误会全部回滚吗？",
-    "a": "不会自动回滚已执行的命令；应区分入队错误与执行期错误。"
+    "q": "为什么 Redis 不支持回滚？",
+    "a": "设计上认为运行时错误多是编程错误，应在开发阶段发现；不做回滚让实现更简单、性能更高。"
+   },
+   {
+    "q": "入队时出错和执行时出错有什么区别？",
+    "a": "入队时语法错误会让 EXEC 拒绝执行整个事务；执行时错误只影响那一条，其余命令照常生效。"
+   },
+   {
+    "q": "集群模式下能用事务吗？",
+    "a": "可以，但所有 key 必须落在同一个 slot，通常用 hash tag 如 {order1001} 保证。"
    }
   ],
   "answer": [
-   "核心思路：MULTI 将命令入队，EXEC 顺序执行队列中的命令；WATCH 可用于乐观并发控制。",
-   "展开说明：Redis 不提供关系型数据库式的执行时错误回滚：队列中个别命令执行失败不会自动撤销已执行命令。",
-   "实践与边界：网络断开可能使客户端不确定事务是否执行，需要结合业务幂等和结果查询。"
+   "总：Redis 事务只保证命令批量、顺序、不被插队执行，不支持回滚，也没有数据库那样的隔离级别和持久化保证。",
+   "分：运行时错误不影响其他命令；WATCH 提供乐观锁；读-判断-写更推荐 Lua；集群要求同一 slot。",
+   "实践：【结合你的项目】说明扣库存或限流时你们用的是 Lua 还是 WATCH，以及为什么。",
+   "总结：别把 Redis 事务当成 ACID 事务，原子的复合逻辑优先用 Lua 脚本。"
   ],
   "pitfalls": [
-   "将 Redis 事务视作完整的关系数据库 ACID 事务。"
+   "认为 Redis 事务失败会自动回滚。",
+   "在 MULTI 中读取值并基于它做判断。",
+   "加分：对比 WATCH 与 Lua 的适用场景。"
   ]
  },
  "pack-h36": {
   "principle": [
-   "生产确认让发布方获知 broker 对消息的确认或拒绝；无法路由的消息还需配置并处理返回机制。",
-   "消费者确认表明应用已处理该投递；自动确认与手动确认的失败风险不同。",
-   "队列类型、持久化、复制、确认时机和失败重试共同影响可靠性，仍需业务幂等。"
+   "RabbitMQ 的可靠性分段保证。生产者确认（publisher confirm）：Broker 收到消息并处理（持久化消息写入磁盘或投递到镜像/仲裁队列）后回 ack，生产者据此知道消息已安全到达 Broker；配合 mandatory + ReturnCallback 能发现消息无法路由到任何队列。",
+   "消费者确认（consumer ack）：消费者处理完成后手动 basicAck，Broker 才删除消息；处理失败可 basicNack/Reject 并选择是否重新入队，或进入死信队列；如果消费者断开且未确认，消息会重新投递给其他消费者。自动 ack 模式下消息一推送就被删除，消费者崩溃会丢消息。",
+   "端到端可靠还需要：交换机、队列声明为持久化，消息设置 deliveryMode=2；生产端对未确认消息重发（因此可能重复）；消费端幂等。确认解决的是「各环节是否收到」，而不是「业务只执行一次」。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "发布 → broker 确认 → 队列投递 → 业务处理 → 消费者确认"
+   "lang": "java",
+   "code": "// 生产者确认 + 不可路由回退\nrabbitTemplate.setConfirmCallback((cd, ack, cause) -> {\n    if (!ack) retryStore.markForResend(cd.getId(), cause);\n});\nrabbitTemplate.setMandatory(true);\nrabbitTemplate.setReturnsCallback(r -> log.warn(\"unroutable: {}\", r.getMessage()));\n\n// 消费者手动确认\n@RabbitListener(queues = \"order.q\", ackMode = \"MANUAL\")\npublic void onMsg(Message m, Channel ch) throws IOException {\n    long tag = m.getMessageProperties().getDeliveryTag();\n    try { handleIdempotent(m); ch.basicAck(tag, false); }\n    catch (Exception e) { ch.basicNack(tag, false, false); } // 不重入队，进死信\n}"
   },
   "asks": [
    "RabbitMQ 生产确认和消费者确认各保证什么？",
-   "生产确认是否等于消息已被消费者处理？"
+   "自动 ack 有什么风险？",
+   "消息无法路由怎么发现？",
+   "确认机制能保证不重复吗？"
   ],
   "followups": [
    {
-    "q": "生产确认是否等于消息已被消费者处理？",
-    "a": "不等于；它们是两个不同阶段的确认。"
+    "q": "publisher confirm 和事务模式怎么选？",
+    "a": "事务模式同步阻塞、吞吐很低；confirm 异步批量确认，性能好，生产上基本都用 confirm。"
+   },
+   {
+    "q": "nack 时 requeue=true 有什么风险？",
+    "a": "处理必然失败的毒消息会被反复投递形成死循环，应限制重试次数后转入死信队列。"
+   },
+   {
+    "q": "为什么确认后还可能重复消费？",
+    "a": "生产者未收到 ack 会重发，消费者处理完 ack 前崩溃也会重投，所以消费端必须幂等。"
    }
   ],
   "answer": [
-   "核心思路：生产确认让发布方获知 broker 对消息的确认或拒绝；无法路由的消息还需配置并处理返回机制。",
-   "展开说明：消费者确认表明应用已处理该投递；自动确认与手动确认的失败风险不同。",
-   "实践与边界：队列类型、持久化、复制、确认时机和失败重试共同影响可靠性，仍需业务幂等。"
+   "总：生产确认保证消息到达 Broker，消费确认保证消息被成功处理后才删除，二者分段覆盖不同环节。",
+   "分：mandatory 发现不可路由；持久化交换机、队列和消息防 Broker 重启丢失；手动 ack 加死信处理失败；重发与重投都会导致重复，需幂等。",
+   "实践：【结合你的项目】说明你们 ack 模式、重试次数和死信处理流程。",
+   "总结：可靠投递是确认、持久化、重发和幂等的组合，没有哪一个开关能单独做到。"
   ],
   "pitfalls": [
-   "只配置生产确认就声称消息绝不会丢失。"
+   "用自动 ack 还以为消息不会丢。",
+   "失败消息无限 requeue。",
+   "加分：讲清 confirm 与 return 回调的区别。"
   ]
  },
  "pack-h37": {
   "principle": [
-   "分区数影响并行消费能力和数据分布；组内同一分区同一时刻由一个消费者负责。",
-   "分区过多也会增加元数据、文件句柄和协调等开销；结合吞吐、消息大小与集群容量压测。",
-   "扩容分区可能改变基于 key 的分配结果，影响跨扩容边界的顺序假设。"
+   "Kafka 分区是并行度和顺序的基本单位：同一消费组内一个分区只能被一个消费者消费，所以分区数决定了消费并行上限；分区内有序、分区间无序。",
+   "选择分区数可以按吞吐估算：目标吞吐 / 单分区生产吞吐 和 目标吞吐 / 单分区消费吞吐 取较大值，再留增长余量。分区更多带来更高并行，但也有代价：每个分区有日志文件与索引，占用文件句柄和内存；副本复制和 leader 选举更多，故障恢复时间更长；端到端延迟可能增加；生产者每个分区一个批次缓冲，内存占用增加。",
+   "分区数只能增加不能减少，增加会改变 key 到分区的映射，破坏按 key 的顺序语义。因此要在初期合理规划，按 key 有序的 Topic 扩分区前要评估影响。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "预计并行消费需要 12 个任务 → 评估至少 12 个分区，并结合 broker 容量压测。"
+   "lang": "bash",
+   "code": "# 创建：按估算吞吐给分区和副本\nkafka-topics.sh --create --topic orders --partitions 12 --replication-factor 3   --bootstrap-server kafka:9092\n\n# 估算：目标 120MB/s，单分区生产 20MB/s、消费 10MB/s\n# max(120/20, 120/10) = 12 个分区，再预留增长\n\n# 只能增加，且会改变 key->partition 映射\nkafka-topics.sh --alter --topic orders --partitions 24 --bootstrap-server kafka:9092"
   },
   "asks": [
-   "Kafka 如何选择分区数，有什么取舍？",
-   "消费者数超过分区数会怎样？"
+   "Kafka 如何选择分区数？",
+   "分区越多越好吗？",
+   "分区数能减少吗？",
+   "扩分区对顺序有什么影响？"
   ],
   "followups": [
    {
-    "q": "消费者数超过分区数会怎样？",
-    "a": "同一消费组内可能有消费者没有分区可处理。"
+    "q": "消费者数量多于分区数会怎样？",
+    "a": "多出来的消费者分不到分区处于空闲，所以扩消费能力要先看分区数是否足够。"
+   },
+   {
+    "q": "分区过多为什么会影响可用性？",
+    "a": "Broker 宕机时要为大量分区重新选举 leader，元数据和恢复时间变长，期间这些分区不可写。"
+   },
+   {
+    "q": "想保证同一用户消息有序怎么办？",
+    "a": "用用户 id 作为 key 路由到同一分区，并且不要随意扩分区，或在扩分区时做好迁移过渡。"
    }
   ],
   "answer": [
-   "核心思路：分区数影响并行消费能力和数据分布；组内同一分区同一时刻由一个消费者负责。",
-   "展开说明：分区过多也会增加元数据、文件句柄和协调等开销；结合吞吐、消息大小与集群容量压测。",
-   "实践与边界：扩容分区可能改变基于 key 的分配结果，影响跨扩容边界的顺序假设。"
+   "总：分区数决定消费并行度和顺序范围，要按目标吞吐估算并预留余量，而不是越多越好。",
+   "分：分区多提高并行但增加文件句柄、内存、复制和恢复开销；分区只能增不能减；扩分区改变 key 映射影响顺序。",
+   "实践：【结合你的项目】说明一个 Topic 的分区数是怎么定的，有没有遇到消费者多于分区的情况。",
+   "总结：分区规划是吞吐、顺序和运维成本的折中，最好在建 Topic 时一次想清楚。"
   ],
   "pitfalls": [
-   "认为分区越多越好，或扩容后 key 的历史顺序必然保持。"
+   "认为分区越多性能越好。",
+   "按 key 有序的 Topic 随意扩分区。",
+   "加分：能给出按吞吐估算分区数的方法。"
   ]
  },
  "pack-h38": {
   "principle": [
-   "调用 Thread.start() 会请求启动新线程，随后由新线程执行其 run 方法。",
-   "直接调用 run() 是普通方法调用，在当前线程同步执行，不会创建新的执行线程。",
-   "同一个 Thread 对象不能重复 start；任务生命周期应由线程池或明确的管理策略控制。"
+   "start() 会让 JVM 创建一个新的操作系统线程，线程进入就绪状态，等待调度后在新线程中回调 run()。直接调用 run() 只是在当前线程里执行一个普通方法，没有任何并发，调用方会同步等它执行完。",
+   "同一个 Thread 对象只能 start 一次，第二次调用会抛 IllegalThreadStateException，因为线程状态已不是 NEW。run() 则可以随便调多次，因为它只是普通方法。",
+   "实际开发中很少直接 new Thread().start()，而是把任务交给线程池，由池复用线程执行 Runnable/Callable，避免频繁创建销毁线程的开销，也便于控制并发量和处理异常。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "new Thread(task).start()：新线程执行；new Thread(task).run()：当前线程执行。"
+   "lang": "java",
+   "code": "Runnable task = () -> System.out.println(Thread.currentThread().getName());\n\nThread t = new Thread(task, \"worker-1\");\nt.run();    // 打印 main：在当前线程同步执行\nt.start();  // 打印 worker-1：新线程异步执行\n// t.start(); // 再次调用抛 IllegalThreadStateException\n\n// 推荐：交给线程池\nExecutorService pool = Executors.newFixedThreadPool(4);\npool.submit(task);"
   },
   "asks": [
    "start() 和直接调用 run() 有什么区别？",
-   "同一个 Thread 能多次 start 吗？"
+   "为什么一个线程不能 start 两次？",
+   "start 之后线程马上执行吗？",
+   "实际开发中怎么启动任务？"
   ],
   "followups": [
    {
-    "q": "同一个 Thread 能多次 start 吗？",
-    "a": "不能，重复启动会抛出 IllegalThreadStateException。"
+    "q": "start 之后 run 一定立刻执行吗？",
+    "a": "不一定，线程只是进入就绪状态，何时执行由操作系统调度决定。"
+   },
+   {
+    "q": "start 的底层做了什么？",
+    "a": "调用 native 方法 start0，由 JVM 创建并启动对应的操作系统线程，再在新线程上调用 run。"
+   },
+   {
+    "q": "为什么推荐线程池而不是 new Thread？",
+    "a": "线程创建销毁成本高且数量不受控，线程池可以复用线程、限制并发、排队和统一处理拒绝与异常。"
    }
   ],
   "answer": [
-   "核心思路：调用 Thread.start() 会请求启动新线程，随后由新线程执行其 run 方法。",
-   "展开说明：直接调用 run() 是普通方法调用，在当前线程同步执行，不会创建新的执行线程。",
-   "实践与边界：同一个 Thread 对象不能重复 start；任务生命周期应由线程池或明确的管理策略控制。"
+   "总：start() 创建新线程并由新线程执行 run()，直接调 run() 只是在当前线程同步执行普通方法。",
+   "分：线程只能 start 一次，状态从 NEW 进入 RUNNABLE；执行时机由调度决定；生产中用线程池提交任务。",
+   "实践：【结合你的项目】可以提到你们统一用自定义线程池提交异步任务，并给线程命名方便排查。",
+   "总结：区别的本质是有没有创建新线程，这也是理解并发入门的第一步。"
   ],
   "pitfalls": [
-   "把直接调用 run 当成异步执行。"
+   "以为调用 run() 也会异步执行。",
+   "重复 start 同一个 Thread 对象。",
+   "加分：说明线程池相比 new Thread 的优势。"
   ]
  },
  "pack-h39": {
