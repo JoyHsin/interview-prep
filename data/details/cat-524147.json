@@ -41,5 +41,133 @@
    "先召回再做权限过滤（可能泄露）。",
    "加分：有评测数据和 bad case 分析。"
   ]
+ },
+ "a-r2": {
+  "principle": [
+   "分块（Chunking）决定了检索的基本单元，是 RAG 效果的上限之一。块太大：一个块包含多个主题，向量被稀释，检索不准，还浪费上下文；块太小：语义不完整，丢失上下文，答案需要的信息被切散。",
+   "常见策略：① 固定长度切分（按 token 数，如 300–800）+ 重叠（10%–20%），简单通用；② 递归字符切分：按段落 → 句子 → 字符的优先级切，尽量不切断句子；③ 按文档结构切分：Markdown 标题、HTML 标签、PDF 章节，保留标题路径作为元数据；④ 语义切分：根据相邻句子向量相似度变化找主题边界；⑤ 特殊内容：表格整体保留或转成文本行，代码按函数切，FAQ 按问答对切。",
+   "增强技巧：给每个块附上文档标题、章节路径等上下文（或让模型生成摘要），提升可检索性；父子块（小块检索、返回其所属的大块给模型）；保留元数据（来源、页码、权限、更新时间）。",
+   "没有万能参数，要用评测集对比不同块大小和策略的召回率来选择。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// Spring AI：按 token 切分（参数依版本可通过 builder 设置）\nTokenTextSplitter splitter = TokenTextSplitter.builder()\n        .withChunkSize(500)          // 目标块大小（token）\n        .withMinChunkSizeChars(200)\n        .build();\nList<Document> chunks = splitter.apply(docs);\n\n// 为每个块补充上下文，提升检索效果\nfor (Document c : chunks) {\n    String title = (String) c.getMetadata().getOrDefault(\"title\", \"\");\n    c.getMetadata().put(\"section_path\", title);\n}\n// 注：TokenTextSplitter 的 builder 方法名在不同 1.x 版本略有差异，以所用版本的 API 为准"
+  },
+  "asks": [
+   "RAG 分块策略怎么选？",
+   "块大小和重叠怎么确定？",
+   "表格和代码怎么切？",
+   "父子块（Small-to-Big）是什么？"
+  ],
+  "followups": [
+   {
+    "q": "块大小怎么定？",
+    "a": "结合 Embedding 模型的最佳输入长度、文档类型和问题类型，在评测集上对比 Hit@K，选效果最好的。"
+   },
+   {
+    "q": "为什么要重叠？",
+    "a": "防止关键信息正好被切在边界上，导致两边都不完整。"
+   },
+   {
+    "q": "父子块解决什么问题？",
+    "a": "小块检索精准、大块提供完整上下文，兼顾召回精度和回答完整性。"
+   }
+  ],
+  "answer": [
+   "总：分块是在“检索精度”和“语义完整”之间取平衡。",
+   "分：常用固定长度加重叠、递归切分、按标题结构切分和语义切分；表格、代码、FAQ 单独处理；每块带标题路径和元数据，可用父子块。参数通过评测集确定。",
+   "实践：【结合你的项目】我们的知识库文档【待填：类型】，最初固定 1000 字切分导致表格被切碎，改为按标题切分并单独处理表格后，召回率【待填】。",
+   "总结：分块要贴合文档结构，用数据选参数。"
+  ],
+  "pitfalls": [
+   "说有固定最佳块大小。",
+   "不处理表格。",
+   "加分：父子块和上下文增强。"
+  ]
+ },
+ "a-r3": {
+  "principle": [
+   "向量检索擅长语义相似（“怎么请假”能找到“休假申请流程”），但对精确词（产品型号、错误码、人名、缩写）不敏感；关键词检索（BM25）正好相反，精确匹配强、理解同义词弱。混合检索就是两路同时召回再融合，互补短板。",
+   "融合方法：常用 RRF（倒数排名融合），score = Σ 1/(k + rank_i)，k 常取 60，只依赖排名、无需统一分数尺度；也可以加权分数融合，但两种分数需要归一化。",
+   "Rerank（重排）：召回阶段用双塔（Bi-Encoder）模型，问题和文档分别编码，速度快但交互浅；重排阶段用 Cross-Encoder，把问题和每个候选拼接后一起输入模型打相关性分，精度更高但计算量大，所以只对召回的前几十个候选重排，取前 3–5 个给大模型。",
+   "典型参数：向量 Top20 + BM25 Top20 → 融合去重 → Rerank → Top5。实现上 Elasticsearch/OpenSearch 同时支持 BM25 和向量，Milvus、PGvector 可结合全文检索实现；重排模型如 bge-reranker 或云厂商的 rerank API。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 混合检索 + RRF 融合（示意）\nList<Doc> vec  = vectorSearch(query, 20);\nList<Doc> bm25 = keywordSearch(query, 20);\n\nMap<String, Double> score = new HashMap<>();\nMap<String, Doc> byId = new HashMap<>();\nint k = 60;\nfor (List<Doc> list : List.of(vec, bm25)) {\n    for (int i = 0; i < list.size(); i++) {\n        Doc d = list.get(i);\n        byId.put(d.id(), d);\n        score.merge(d.id(), 1.0 / (k + i + 1), Double::sum);\n    }\n}\nList<Doc> fused = score.entrySet().stream()\n        .sorted(Map.Entry.<String, Double>comparingByValue().reversed())\n        .limit(30).map(e -> byId.get(e.getKey())).toList();\n\nList<Doc> top5 = reranker.rerank(query, fused, 5);   // Cross-Encoder 精排"
+  },
+  "asks": [
+   "什么是混合检索？为什么需要？",
+   "Rerank 的作用是什么？",
+   "Bi-Encoder 和 Cross-Encoder 的区别？",
+   "RRF 是怎么融合的？"
+  ],
+  "followups": [
+   {
+    "q": "为什么不全部用 Cross-Encoder？",
+    "a": "需要对每个文档和问题一起计算，候选量大时太慢；只能用于少量候选的精排。"
+   },
+   {
+    "q": "RRF 的好处？",
+    "a": "只看排名，不用处理不同检索器分数尺度不一致的问题，简单稳定。"
+   },
+   {
+    "q": "加了 Rerank 延迟增加怎么办？",
+    "a": "控制候选数量、使用轻量重排模型、对热门问题缓存。"
+   }
+  ],
+  "answer": [
+   "总：混合检索提升召回，Rerank 提升精度，形成“粗召回 + 精排”两阶段。",
+   "分：向量检索懂语义，BM25 抓精确词，两路召回用 RRF 融合；再用 Cross-Encoder 对几十个候选精排取前几条。Bi-Encoder 快但浅，Cross-Encoder 准但慢。",
+   "实践：【结合你的项目】我们的文档含大量【待填：产品型号/错误码】，纯向量检索找不到，加入 BM25 和重排后 Hit@5 从【待填】提升到【待填】。",
+   "总结：召回要全，排序要准。"
+  ],
+  "pitfalls": [
+   "只说“用向量库检索”。",
+   "把 Rerank 说成重新生成答案。"
+  ]
+ },
+ "a-r4": {
+  "principle": [
+   "RAG 评估要把检索和生成分开看，否则无法定位问题。",
+   "检索评估：准备标注集（问题 + 应该命中的文档/片段），指标有 Hit@K / Recall@K（正确片段是否出现在前 K 个）、MRR（第一个正确结果排名的倒数的平均值，衡量排得是否靠前）、Precision@K、NDCG（考虑多级相关性和位置）。",
+   "生成评估：忠实度（答案是否都能在检索内容中找到依据，衡量幻觉）、答案相关性（是否回答了问题）、正确性（与标准答案比较）、引用准确性、拒答是否恰当。可以用人工评分，也可以用 LLM 作为评委（LLM-as-a-Judge）批量评估，再人工抽检校准；开源工具如 RAGAS 提供这类指标。",
+   "坏 case 归因：正确内容没有入库或解析失败 → 修复数据处理；入库了但没召回 → 调分块、Embedding 模型、查询改写、混合检索；召回了但排在后面 → 加 Rerank；召回正确但答错 → 优化 Prompt、上下文顺序、模型；权限过滤误伤 → 检查元数据。",
+   "线上：收集点赞/点踩和用户追问，抽样复盘，把坏 case 加入评测集，每次改动跑回归。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 计算 Hit@K 与 MRR（示意）\nrecord Case(String question, Set<String> goldChunkIds) {}\n\ndouble hit = 0, mrr = 0;\nfor (Case c : evalSet) {\n    List<String> ids = retriever.retrieve(c.question(), 10).stream().map(Doc::id).toList();\n    for (int i = 0; i < ids.size(); i++) {\n        if (c.goldChunkIds().contains(ids.get(i))) {\n            if (i < 5) hit++;          // Hit@5\n            mrr += 1.0 / (i + 1);\n            break;\n        }\n    }\n}\nSystem.out.printf(\"Hit@5=%.2f MRR=%.2f%n\", hit / evalSet.size(), mrr / evalSet.size());"
+  },
+  "asks": [
+   "怎么评估 RAG 的效果？",
+   "召回率怎么衡量？",
+   "RAG 回答错了怎么定位问题？",
+   "什么是 LLM-as-a-Judge？有什么风险？"
+  ],
+  "followups": [
+   {
+    "q": "评测集怎么来？",
+    "a": "从真实用户问题抽样 + 业务专家标注；也可以让模型根据文档生成问题，再人工审核。"
+   },
+   {
+    "q": "LLM 当评委的风险？",
+    "a": "可能偏好长答案、与自身风格相近的答案；需要明确评分标准，并与人工评分对比校准。"
+   },
+   {
+    "q": "多少条评测数据够？",
+    "a": "起步几十到上百条覆盖主要场景，逐步积累坏 case 扩充。"
+   }
+  ],
+  "answer": [
+   "总：检索和生成分开评估，用坏 case 驱动优化。",
+   "分：检索看 Hit@K、MRR、NDCG；生成看忠实度、相关性、正确性和引用；用人工加 LLM 评委；坏 case 按“未入库、未召回、排序靠后、生成错误”分类处理；线上收集反馈持续扩充评测集。",
+   "实践：【结合你的项目】我们建了【待填】条评测集，每次改分块或 Prompt 都跑一遍，Hit@5 从【待填】到【待填】。",
+   "总结：没有评测的 RAG 优化都是猜。"
+  ],
+  "pitfalls": [
+   "只看最终答案对不对，不拆分检索与生成。",
+   "没有回归测试。"
+  ]
  }
 }

@@ -91,5 +91,214 @@
    "把 MCP 说成一个模型或框架。",
    "不知道 Tools 与 Resources 的区别（有无副作用、谁来决定调用）。"
   ]
+ },
+ "a-a1": {
+  "principle": [
+   "Agent（智能体）是以大模型为“大脑”，能自主规划、调用工具、观察结果并循环迭代，直到完成目标的系统。常见组成：模型（推理决策）+ 规划（拆解任务、决定下一步）+ 工具（搜索、数据库、代码执行、业务 API）+ 记忆（短期对话与长期知识）+ 循环控制（停止条件、错误处理）。",
+   "与单次 Chat 的区别：Chat 是一问一答，模型只生成文本；Agent 是多步执行，模型决定行动，环境返回观察，再决定下一步，可以完成“查资料 → 计算 → 写报告 → 发邮件”这类任务。",
+   "和 Workflow 的区别：Workflow 的步骤由开发者预先编排（确定、可控、成本低）；Agent 的步骤由模型动态决定（灵活、能处理开放问题，但不可预测、成本高、可能出错）。实践中常用“Workflow 为主、局部 Agent”的混合方式。",
+   "落地挑战：可靠性（多步误差累积）、成本与延迟、安全（工具权限、提示注入）、可观测性（追踪每一步）、评估困难。所以要有最大步数、人工确认、日志追踪和评测。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "用户：帮我查一下上周华南区销售额最高的 3 个商品，并给销售经理发邮件汇报\n\nAgent 循环：\n1. 思考：需要先查询销售数据 → 调用工具 sql_query(region='华南', range='上周')\n2. 观察：返回 120 行数据\n3. 思考：排序取前 3 → 调用工具 python_exec(排序代码)\n4. 观察：商品 A/B/C 及金额\n5. 思考：发邮件属于敏感操作 → 生成草稿，请求人工确认\n6. 用户确认 → 调用 send_email(to=经理, body=...)\n7. 结束：返回执行摘要\n\n控制：最大步数 10、单次工具超时 30s、总超时 3min、写操作需确认"
+  },
+  "asks": [
+   "什么是 Agent？和普通 Chat 有什么区别？",
+   "Agent 由哪些部分组成？",
+   "Agent 和 Workflow 怎么选？",
+   "Agent 落地的难点是什么？"
+  ],
+  "followups": [
+   {
+    "q": "什么时候不该用 Agent？",
+    "a": "流程固定、要求高确定性、低延迟的场景用 Workflow 或普通代码更好。"
+   },
+   {
+    "q": "怎么提升 Agent 可靠性？",
+    "a": "缩小工具集、清晰工具描述、步数上限、关键步骤校验与人工确认、完整追踪日志和评测集。"
+   },
+   {
+    "q": "多 Agent 有必要吗？",
+    "a": "任务可以明显分工（研究、编码、审核）时有价值，但会增加成本和协调复杂度，先从单 Agent 做起。"
+   }
+  ],
+  "answer": [
+   "总：Agent = 模型 + 规划 + 工具 + 记忆 + 循环。",
+   "分：Chat 只生成文本，Agent 能多步执行并根据观察调整；Workflow 由人编排、可控，Agent 由模型决策、灵活；落地难点是可靠性、成本、安全和评估，需要步数上限、权限控制、人工确认和追踪。",
+   "实践：【结合你的项目】我在 DeerFlow/Dify 里【待填：做了什么 Agent，几个工具，效果】。",
+   "总结：能用 Workflow 就不用 Agent，必要时把 Agent 限制在小范围。"
+  ],
+  "pitfalls": [
+   "把 Agent 说成“更强的聊天机器人”。",
+   "忽视可控性和成本。"
+  ]
+ },
+ "a-a2": {
+  "principle": [
+   "ReAct（Reasoning + Acting）是让模型交替进行“推理”和“行动”的范式：每一步模型先输出 Thought（分析当前情况、决定做什么），再输出 Action（调用哪个工具、参数），系统执行工具后把结果作为 Observation 返回，模型据此进入下一轮，直到给出 Final Answer。",
+   "好处：推理让行动有依据，观察让推理基于真实数据，减少凭空编造；过程可解释，便于调试。",
+   "现代实现：早期靠 Prompt 约定 Thought/Action/Observation 文本格式再解析；现在多直接使用模型原生的 Function Calling，推理过程在模型内部或单独字段中，框架负责循环。",
+   "问题与对策：① 死循环或重复调用 → 最大步数、重复动作检测；② 每步都调用模型，成本和延迟高 → 简单任务用 Workflow，或先规划后执行（Plan-and-Execute）减少决策次数；③ 错误累积 → 工具返回结构化错误、关键步骤校验；④ 上下文膨胀 → 裁剪工具结果。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 简化的 ReAct 循环（基于原生工具调用）\nList<Message> msgs = new ArrayList<>(List.of(new SystemMessage(SYS), new UserMessage(question)));\nfor (int step = 1; step <= MAX_STEPS; step++) {\n    AssistantMessage reply = llm.call(msgs, tools);          // 模型：思考并决定行动\n    msgs.add(reply);\n    if (!reply.hasToolCalls()) return reply.getText();       // Final Answer\n    for (ToolCall call : reply.getToolCalls()) {\n        if (seen.add(call.name() + call.arguments()) == false) {\n            msgs.add(toolResult(call, \"错误：重复调用，请换一种方法\"));\n            continue;\n        }\n        String obs = toolExecutor.run(call, Duration.ofSeconds(30)); // 行动 → 观察\n        msgs.add(toolResult(call, truncate(obs, 4000)));\n    }\n}\nreturn \"超过最大步数，已停止，请人工处理\";"
+  },
+  "asks": [
+   "ReAct 是什么？",
+   "ReAct 和 Function Calling 是什么关系？",
+   "ReAct 有什么缺点？",
+   "Plan-and-Execute 和 ReAct 的区别？"
+  ],
+  "followups": [
+   {
+    "q": "和 Plan-and-Execute 区别？",
+    "a": "ReAct 边想边做，每步决策，灵活但调用次数多；Plan-and-Execute 先生成整体计划再执行，必要时重新规划，适合步骤较明确的长任务。"
+   },
+   {
+    "q": "怎么防止死循环？",
+    "a": "最大步数、总超时、相同工具相同参数重复检测、无进展检测。"
+   },
+   {
+    "q": "观察结果太长怎么办？",
+    "a": "截断、摘要或只返回需要的字段。"
+   }
+  ],
+  "answer": [
+   "总：ReAct 就是“想一步、做一步、看结果、再想”的循环。",
+   "分：每轮 Thought 决定行动，Action 调工具，Observation 回传；现在多用原生 Function Calling 实现。优点是可解释、基于事实；缺点是调用多、成本高、可能循环，需要步数上限和重复检测，长任务可用 Plan-and-Execute。",
+   "实践：【结合你的项目】【待填：在哪个 Agent 中使用了 ReAct，设置了多少步上限，遇到过什么循环问题】。",
+   "总结：ReAct 是 Agent 的基础范式，工程重点是控制循环。"
+  ],
+  "pitfalls": [
+   "只背缩写不讲循环。",
+   "不设上限。"
+  ]
+ },
+ "a-a4": {
+  "principle": [
+   "大模型本身无状态，每次请求都要把需要的信息带进上下文，“记忆”是应用层实现的。",
+   "短期记忆：当前会话的对话历史，直接放进上下文。问题是会越来越长，超出窗口且成本上升。策略：滑动窗口（保留最近 N 轮）、按 token 截断、摘要压缩（把早期对话总结成一段摘要保留）、只保留关键信息（如已确认的订单号）。存储可以用内存、Redis 或数据库，以会话 ID 区分。",
+   "长期记忆：跨会话保留的信息，如用户偏好、画像、历史结论、过往任务经验。实现方式：结构化存储（数据库字段，如“偏好语言=中文”）、向量化存储后按相关性检索（类似 RAG）、由模型抽取“值得记住的事实”后写入。",
+   "关键问题：写什么（避免把噪声和敏感信息都记下来）、何时检索、过期与更新冲突（用户偏好变化）、隐私合规（用户可查看和删除）、多用户隔离。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// Spring AI：基于会话 ID 的短期记忆（窗口最多 20 条消息）\nChatMemory chatMemory = MessageWindowChatMemory.builder()\n        .maxMessages(20)\n        .build();                                  // 生产可配置 JDBC/Redis 等 ChatMemoryRepository\n\nChatClient client = ChatClient.builder(chatModel)\n        .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())\n        .build();\n\nString reply = client.prompt()\n        .user(\"我刚才说的订单号是多少？\")\n        .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))\n        .call()\n        .content();\n\n// 长期记忆（示意）：抽取事实写入向量库，后续按用户过滤检索\nvectorStore.add(List.of(new Document(\"用户偏好：回复使用简体中文、喜欢简洁\",\n        Map.of(\"userId\", userId, \"type\", \"preference\"))));"
+  },
+  "asks": [
+   "Agent 的短期记忆和长期记忆有什么区别？",
+   "对话历史太长怎么办？",
+   "长期记忆怎么实现？",
+   "记忆中的隐私问题怎么处理？"
+  ],
+  "followups": [
+   {
+    "q": "摘要压缩有什么风险？",
+    "a": "可能丢失细节或产生错误摘要；关键实体（订单号、金额）应单独结构化保存。"
+   },
+   {
+    "q": "记忆冲突怎么办？",
+    "a": "带时间戳和来源，新信息覆盖旧信息，必要时向用户确认。"
+   },
+   {
+    "q": "多用户怎么隔离？",
+    "a": "按用户 ID / 会话 ID 分区存储，检索时强制过滤。"
+   }
+  ],
+  "answer": [
+   "总：短期记忆管理当前会话上下文，长期记忆跨会话保存用户和知识信息。",
+   "分：短期用滑动窗口、截断和摘要压缩，存在 Redis 或数据库；长期用结构化字段或向量检索，由模型抽取事实写入；要处理写入筛选、更新冲突、隐私和隔离。Spring AI 用 ChatMemory + MessageChatMemoryAdvisor 加会话 ID 实现短期记忆。",
+   "实践：【结合你的项目】我们客服机器人保存最近【待填】轮，超过则摘要，订单号单独存储。",
+   "总结：记忆的关键是“记什么、怎么取、如何更新和删除”。"
+  ],
+  "pitfalls": [
+   "以为模型自己会记住历史。",
+   "把所有历史无限追加。"
+  ]
+ },
+ "r-a1": {
+  "principle": [
+   "MCP Server 可以暴露三类原语，区别在于“谁来决定使用”和“是否有副作用”：",
+   "Tools（工具）：由模型决定调用（model-controlled），可以执行动作并产生副作用，如查询数据库、调用 API、创建工单、发送消息。每个工具有名称、描述和输入 JSON Schema。因为可能有副作用，客户端应向用户展示调用并在敏感操作前请求确认。",
+   "Resources（资源）：由应用决定读取（application-controlled），提供只读的上下文数据，通过 URI 标识，如文件内容、数据库表结构、配置、日志。应用可以让用户选择附加某些资源，或根据规则自动加入上下文；也可以订阅资源变化。",
+   "Prompts（提示模板）：由用户选择使用（user-controlled），是服务端提供的可复用、带参数的模板或工作流，例如“代码评审”“总结这个文件”，在客户端常以斜杠命令等形式出现。",
+   "设计原则：有副作用或需要计算的操作做成 Tool；静态或只读的上下文做成 Resource；常用的任务模板做成 Prompt。此外客户端也可以向服务端提供能力（如 Sampling 让服务端借用客户端的模型），具体以当前规范版本为准。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// Spring AI MCP Server（示意）：Tool 有副作用，Resource 只读\n@Service\npublic class TicketMcp {\n    @Tool(description = \"创建售后工单，返回工单号\")\n    public String createTicket(@ToolParam(description = \"订单号\") String orderNo,\n                               @ToolParam(description = \"问题描述\") String issue) {\n        return ticketService.create(orderNo, issue);           // 写操作：需要鉴权和幂等\n    }\n}\n// Resource 示例：URI = \"db://schema/orders\"，内容为订单表结构（只读）\n// Prompt 示例：名称 \"triage-ticket\"，参数 orderNo，生成“请根据订单信息判断工单优先级……”"
+  },
+  "asks": [
+   "MCP 的 Tools、Resources、Prompts 有什么区别？",
+   "什么能力应该做成 Tool，什么做成 Resource？",
+   "MCP Prompts 有什么用？",
+   "为什么说 Tools 是模型控制的？"
+  ],
+  "followups": [
+   {
+    "q": "为什么区分谁来控制？",
+    "a": "决定了安全模型：模型自主调用的 Tool 需要权限和确认；Resource 由应用控制，更可预测；Prompt 由用户显式选择。"
+   },
+   {
+    "q": "能把只读查询做成 Tool 吗？",
+    "a": "可以，需要模型根据对话动态决定查询时就做成 Tool；固定上下文更适合 Resource。"
+   },
+   {
+    "q": "客户端实际支持情况？",
+    "a": "不同客户端对 Resources 和 Prompts 的支持程度不同，Tools 支持最广泛。"
+   }
+  ],
+  "answer": [
+   "总：Tools 是模型调用的动作，Resources 是应用提供的只读上下文，Prompts 是用户选择的模板。",
+   "分：Tool 有 Schema、可能有副作用，需要确认和鉴权；Resource 用 URI 标识，只读可订阅；Prompt 是参数化的可复用模板，常以斜杠命令出现。",
+   "实践：【结合你的项目】如果我把订单系统做成 MCP Server：查询和创建工单是 Tools，表结构和 FAQ 是 Resources，“工单分级”是 Prompt。",
+   "总结：按控制方和副作用来划分。"
+  ],
+  "pitfalls": [
+   "把 Resources 说成可写。",
+   "不知道三者的控制方不同。"
+  ]
+ },
+ "r-a2": {
+  "principle": [
+   "Agentic Loop 是“模型决策 → 执行工具 → 观察 → 再决策”的循环。有害循环的典型形式：反复调用同一工具同一参数；在两个工具之间来回切换无进展；工具失败后不断重试；多个 Agent 互相委派；工具结果触发新的任务无限扩展。后果是成本暴涨、延迟过长、甚至重复执行副作用（重复发邮件、重复下单）。",
+   "防护措施（多层组合）：① 硬性上限：最大步数、最大工具调用次数、总超时、token/费用预算，超出就停止并返回部分结果或转人工；② 重复检测：记录（工具名 + 参数哈希），同样调用超过阈值则拦截，并以错误信息告知模型换策略；③ 进展检测：连续几步状态无变化或输出高度相似则终止；④ 工具设计：返回结构化的明确错误（如“订单不存在，不要重试”），区分可重试和不可重试；副作用工具幂等；⑤ 多 Agent：限制委派深度、禁止循环委派；⑥ 人工介入：达到阈值或高风险操作时暂停等待确认；⑦ 可观测：记录每一步追踪，对异常循环告警。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class LoopGuard {\n    private final int maxSteps = 15, maxSameCall = 2;\n    private final long deadline = System.currentTimeMillis() + 180_000;   // 总超时 3 分钟\n    private final long tokenBudget = 50_000;\n    private final Map<String, Integer> calls = new HashMap<>();\n    private int steps; private long tokens;\n\n    /** 每次工具调用前检查，返回 null 表示放行，否则返回给模型的错误说明 */\n    public String check(String tool, String argsJson, long usedTokens) {\n        tokens += usedTokens;\n        if (++steps > maxSteps) throw new LoopAbort(\"超过最大步数\");\n        if (System.currentTimeMillis() > deadline) throw new LoopAbort(\"超过总时长\");\n        if (tokens > tokenBudget) throw new LoopAbort(\"超过 token 预算\");\n        String key = tool + \":\" + DigestUtils.sha256Hex(argsJson);\n        if (calls.merge(key, 1, Integer::sum) > maxSameCall) {\n            return \"错误：已用相同参数调用过 \" + tool + \"，结果不会改变，请换一种方法或直接给出结论。\";\n        }\n        return null;\n    }\n}"
+  },
+  "asks": [
+   "Agent 陷入死循环怎么办？",
+   "怎么限制 Agent 的成本？",
+   "多 Agent 互相调用怎么防止循环？",
+   "工具调用失败时 Agent 应该怎么处理？"
+  ],
+  "followups": [
+   {
+    "q": "达到上限后返回什么？",
+    "a": "返回已完成的部分结果和原因，提示用户或转人工，不要静默失败。"
+   },
+   {
+    "q": "怎么判断“没有进展”？",
+    "a": "状态或关键变量多步不变、输出与之前高度相似、重复同样的计划。"
+   },
+   {
+    "q": "副作用工具被重复调用怎么办？",
+    "a": "工具层面幂等（请求 ID 去重），并对写操作设置更严格的次数限制或人工确认。"
+   }
+  ],
+  "answer": [
+   "总：用硬上限 + 重复与进展检测 + 良好的工具设计 + 人工介入多层防护。",
+   "分：设最大步数、总超时、token 预算；按工具名加参数检测重复调用；无进展时终止；工具返回明确的错误和是否可重试；副作用工具幂等；多 Agent 限制委派深度；全链路追踪告警。",
+   "实践：【结合你的项目】我们遇到过 Agent 搜索不到结果时反复用同样关键词搜索，加了重复检测和提示后【待填：效果】。",
+   "总结：循环一定要有出口，并且出口要对用户友好。"
+  ],
+  "pitfalls": [
+   "只设最大步数，忽略重复副作用。",
+   "失败后静默。"
+  ]
  }
 }

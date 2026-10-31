@@ -45,5 +45,172 @@
    "沿用 M 版本旧 API 写法。",
    "权限过滤字符串直接拼用户输入（表达式注入风险）。"
   ]
+ },
+ "a-f1": {
+  "principle": [
+   "Spring AI 用 Spring 风格的可移植抽象屏蔽不同模型厂商的差异，核心抽象：",
+   "① ChatModel：底层对话模型接口（OpenAI、Anthropic、Ollama、通义等都有实现），输入 Prompt，输出 ChatResponse；StreamingChatModel 支持流式。② ChatClient：面向应用的流式 API（类似 WebClient），链式设置 system、user、options、advisors、tools，call() 同步或 stream() 流式，结果可取 content()、chatResponse() 或 entity(Class) 转为对象。③ Advisor：围绕调用的拦截器链，用于 RAG（QuestionAnswerAdvisor）、对话记忆（MessageChatMemoryAdvisor）、日志（SimpleLoggerAdvisor）、安全过滤等。④ EmbeddingModel：文本向量化。⑤ VectorStore：统一的向量存储接口，支持 PGvector、Milvus、Redis、Elasticsearch 等，带可移植过滤表达式。⑥ Tool Calling：@Tool 注解方法、ToolCallback。⑦ 结构化输出：entity() 与转换器。⑧ ETL：DocumentReader / Transformer / Writer。⑨ MCP 客户端与服务端 Starter。还有 ChatMemory、可观测性（Micrometer 指标与追踪）、评估器等。",
+   "优势：与 Spring Boot 自动配置、依赖注入、可观测性一致，切换模型或向量库多数只需改依赖和配置。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Configuration\nclass AiConfig {\n    @Bean\n    ChatClient chatClient(ChatClient.Builder builder) {          // Boot 自动配置提供 Builder\n        return builder\n                .defaultSystem(\"你是 Java 面试助手，回答简洁准确。\")\n                .defaultAdvisors(new SimpleLoggerAdvisor())\n                .build();\n    }\n}\n\n@Service\n@RequiredArgsConstructor\nclass InterviewService {\n    private final ChatClient chatClient;\n    record Qa(String question, String answer) {}\n\n    Qa ask(String topic) {\n        return chatClient.prompt()\n                .user(u -> u.text(\"出一道关于 {topic} 的面试题并给出答案\").param(\"topic\", topic))\n                .call()\n                .entity(Qa.class);                               // 结构化输出\n    }\n}\n// application.yml 例：spring.ai.openai.api-key / spring.ai.openai.chat.options.model"
+  },
+  "asks": [
+   "Spring AI 的核心抽象有哪些？",
+   "ChatModel 和 ChatClient 有什么区别？",
+   "Advisor 的作用？",
+   "Spring AI 怎么切换模型厂商？"
+  ],
+  "followups": [
+   {
+    "q": "ChatModel 和 ChatClient 区别？",
+    "a": "ChatModel 是底层模型接口；ChatClient 是上层流式 API，组合了提示模板、Advisor、工具和结构化输出，应用一般用 ChatClient。"
+   },
+   {
+    "q": "多模型怎么共存？",
+    "a": "禁用默认自动配置的单一 ChatClient，为不同 ChatModel 分别构建 ChatClient Bean 并按名称注入。"
+   },
+   {
+    "q": "可观测性怎么做？",
+    "a": "Spring AI 集成 Micrometer，提供调用耗时、token 用量指标和链路追踪。"
+   }
+  ],
+  "answer": [
+   "总：Spring AI 把模型、向量库、工具等能力抽象成 Spring 风格的统一接口。",
+   "分：底层是 ChatModel、EmbeddingModel，上层是 ChatClient 链式 API；Advisor 实现 RAG、记忆、日志；VectorStore 统一向量库；@Tool 支持工具调用；entity() 做结构化输出；还有 ETL、MCP、可观测性。",
+   "实践：【结合你的项目】我用 Spring AI 搭了【待填】，从 OpenAI 切到【待填】只改了依赖和配置。",
+   "总结：对 Java 团队来说，Spring AI 是最顺手的 AI 应用框架。"
+  ],
+  "pitfalls": [
+   "混淆 ChatModel 与 ChatClient。",
+   "用 M 版本的旧 API。"
+  ]
+ },
+ "a-f3": {
+  "principle": [
+   "两者都是 Java 生态的 LLM 应用框架，概念大致可对应：模型接口（ChatModel 对 ChatModel）、对话记忆（ChatMemory 对 ChatMemory）、工具（两者都有 @Tool 注解，包名不同）、RAG（Advisor/RetrievalAugmentationAdvisor 对 RetrievalAugmentor/ContentRetriever）、向量库（VectorStore 对 EmbeddingStore）。",
+   "Spring AI：Spring 官方项目，深度集成 Spring Boot 自动配置、依赖注入、Micrometer 可观测性，API 风格是 ChatClient 链式调用 + Advisor，适合已有 Spring 技术栈、希望统一治理的团队。",
+   "LangChain4j：独立社区项目，不依赖 Spring（也提供 Spring Boot 和 Quarkus 集成），特色是 AI Services——定义一个 Java 接口，框架生成实现，声明式地组合记忆、工具、RAG；集成的模型和存储种类多，Agent 与工作流相关能力也在持续发展。",
+   "选型建议：已有 Spring Boot 项目、看重与现有体系一致 → Spring AI；非 Spring 项目、喜欢声明式 AI Services、需要更多现成集成 → LangChain4j。两者都在快速迭代，选型前核对当前版本对所需模型和向量库的支持。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// LangChain4j：AI Services 声明式写法\ninterface Assistant {\n    @SystemMessage(\"你是订单客服，只能通过工具查询订单。\")\n    String chat(@MemoryId String sessionId, @UserMessage String msg);\n}\n\nclass OrderTools {\n    @dev.langchain4j.agent.tool.Tool(\"根据订单号查询订单状态\")\n    String queryOrder(String orderNo) { return \"已发货\"; }\n}\n\nAssistant assistant = AiServices.builder(Assistant.class)\n        .chatModel(chatModel)\n        .chatMemoryProvider(id -> MessageWindowChatMemory.withMaxMessages(20))\n        .tools(new OrderTools())\n        .build();\nString r = assistant.chat(\"u-1\", \"订单 O123 到哪了？\");\n\n// Spring AI 等价：chatClient.prompt().user(msg).tools(new OrderTools())\n//   .advisors(MessageChatMemoryAdvisor.builder(memory).build()).call().content();"
+  },
+  "asks": [
+   "Spring AI 和 LangChain4j 有什么区别？怎么选？",
+   "LangChain4j 的 AI Services 是什么？",
+   "两者概念怎么对应？",
+   "你为什么选了其中一个？"
+  ],
+  "followups": [
+   {
+    "q": "AI Services 原理？",
+    "a": "基于动态代理，根据接口方法上的注解和参数构造 Prompt，调用模型并把结果转换成方法返回类型。"
+   },
+   {
+    "q": "能混用吗？",
+    "a": "技术上可以，但会造成两套抽象和配置，一般选一个为主。"
+   },
+   {
+    "q": "和 Python 的 LangChain 关系？",
+    "a": "LangChain4j 受其启发但是独立的 Java 项目，API 不同。"
+   }
+  ],
+  "answer": [
+   "总：两者能力相近，选型主要看技术栈和编程风格。",
+   "分：Spring AI 是 Spring 官方，ChatClient + Advisor，与 Boot、可观测性深度集成；LangChain4j 独立，AI Services 声明式接口，集成丰富，也支持 Spring Boot。概念基本一一对应。",
+   "实践：【结合你的项目】我们后端是 Spring Boot，所以选 Spring AI【或待填】；我也用 LangChain4j 写过【待填】做对比。",
+   "总结：有 Spring 用 Spring AI，要声明式和更多集成可选 LangChain4j。"
+  ],
+  "pitfalls": [
+   "贬低其中一个。",
+   "不了解 AI Services。"
+  ]
+ },
+ "a-f4": {
+  "principle": [
+   "LangChain（Python/JS）提供模型调用、Prompt、检索、工具等组件和链式组合（LCEL），适合线性的“输入 → 处理 → 输出”流程，如简单 RAG。",
+   "LangGraph 是同一团队推出的 Agent 编排框架，把流程建模成图：State（共享状态，通常是带类型的字典或对象）、Node（函数或 Agent，读取并更新状态）、Edge（固定边或条件边，根据状态决定下一步）。支持循环（Agent 的思考-行动循环）、分支、并行、子图。",
+   "关键能力：Checkpointer 持久化每一步状态，因此支持中断恢复、人工介入审批（human-in-the-loop，在某个节点前暂停等待确认）、时间回溯调试、长时间运行任务；可观测性可结合 LangSmith。",
+   "选择：简单链和 RAG 用 LangChain 组件即可；需要循环、多分支、多 Agent 协作、人工审批、可恢复的复杂 Agent 用 LangGraph。Java 侧类似需求可以看 LangChain4j 的 Agent/工作流能力或 Spring AI 加自定义状态机。"
+  ],
+  "example": {
+   "lang": "python",
+   "code": "from typing import TypedDict\nfrom langgraph.graph import StateGraph, START, END\n\nclass State(TypedDict):\n    question: str\n    docs: list\n    answer: str\n\ndef retrieve(state: State):\n    return {\"docs\": search(state[\"question\"])}\n\ndef generate(state: State):\n    return {\"answer\": llm_answer(state[\"question\"], state[\"docs\"])}\n\ndef need_more(state: State):\n    return \"retrieve\" if not state[\"docs\"] else \"generate\"\n\ng = StateGraph(State)\ng.add_node(\"retrieve\", retrieve)\ng.add_node(\"generate\", generate)\ng.add_edge(START, \"retrieve\")\ng.add_conditional_edges(\"retrieve\", need_more)   # 条件边：没找到就再检索（需加次数上限）\ng.add_edge(\"generate\", END)\napp = g.compile()                                  # 可传 checkpointer 实现持久化与人工介入\nprint(app.invoke({\"question\": \"年假怎么算？\", \"docs\": [], \"answer\": \"\"}))"
+  },
+  "asks": [
+   "LangChain 和 LangGraph 有什么区别？",
+   "LangGraph 的核心概念？",
+   "为什么 Agent 编排需要图结构？",
+   "human-in-the-loop 怎么实现？"
+  ],
+  "followups": [
+   {
+    "q": "为什么需要图？",
+    "a": "Agent 需要循环和根据结果走不同分支，线性链难以表达；图能显式表达状态和流转，更可控。"
+   },
+   {
+    "q": "Checkpointer 有什么用？",
+    "a": "保存每步状态，实现断点续跑、人工审批后继续、回溯调试。"
+   },
+   {
+    "q": "和 Dify 工作流区别？",
+    "a": "Dify 是可视化低代码平台；LangGraph 是代码框架，灵活度和可测试性更高。"
+   }
+  ],
+  "answer": [
+   "总：LangChain 偏组件和线性链，LangGraph 偏有状态的图编排。",
+   "分：LangGraph 用 State、Node、Edge 建模，支持条件分支、循环、并行和子图；Checkpointer 支持持久化、人工介入和恢复。简单流程用链，复杂 Agent 用图。",
+   "实践：【结合你的项目】DeerFlow 底层【待填：是否基于 LangGraph，我是如何配置或扩展的】。",
+   "总结：Agent 越复杂，越需要显式的状态和流程控制。"
+  ],
+  "pitfalls": [
+   "把 LangGraph 说成图数据库。",
+   "条件循环不设上限。"
+  ]
+ },
+ "a-f5": {
+  "principle": [
+   "Dify 是开源的 LLM 应用开发平台，提供可视化编排：聊天助手、Agent、Workflow / Chatflow（节点式工作流：LLM、知识检索、条件分支、代码、HTTP 请求、迭代等节点）、知识库（上传文档自动分块向量化，支持混合检索和重排）、模型管理（接入多家模型和本地模型）、插件与工具、日志与标注、发布为 Web 应用或 API。可私有化部署（Docker Compose / Kubernetes），适合数据不出内网的企业。",
+   "适合：快速搭建原型和内部工具、知识库问答、客服、表单类自动化，让产品和业务人员也能参与 Prompt 和流程调整。",
+   "局限：复杂业务逻辑、细粒度权限、复杂状态管理用可视化表达困难；版本管理、代码评审、单元测试不如纯代码；深度定制要改源码或写插件；高并发和多租户场景需要自行评估性能与运维；平台升级可能带来迁移成本。",
+   "常见架构：Dify 负责 AI 编排，Java 后端负责账户、权限、业务数据和交易，通过 Dify API 调用应用，或让 Dify 通过 HTTP 工具调用 Java 接口（做好鉴权与幂等）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// Java 后端调用 Dify 应用 API（阻塞模式，示意）\n@Service\n@RequiredArgsConstructor\npublic class DifyClient {\n    private final RestClient rest = RestClient.builder()\n            .baseUrl(\"https://dify.internal/v1\").build();\n    @Value(\"${dify.api-key}\") private String apiKey;          // 放配置中心，勿写死\n\n    public String chat(String userId, String query, String conversationId) {\n        Map<String, Object> body = Map.of(\n                \"inputs\", Map.of(),\n                \"query\", query,\n                \"response_mode\", \"blocking\",                   // 流式用 streaming（SSE）\n                \"conversation_id\", conversationId == null ? \"\" : conversationId,\n                \"user\", userId);\n        JsonNode resp = rest.post().uri(\"/chat-messages\")\n                .header(\"Authorization\", \"Bearer \" + apiKey)\n                .body(body).retrieve().body(JsonNode.class);\n        return resp.path(\"answer\").asText();\n    }\n}"
+  },
+  "asks": [
+   "Dify 适合什么场景？有什么局限？",
+   "你们为什么用 Dify？",
+   "Dify 和 Java 后端怎么配合？",
+   "什么情况下不用 Dify 改用代码框架？"
+  ],
+  "followups": [
+   {
+    "q": "什么时候改用代码？",
+    "a": "业务逻辑复杂、需要严格测试和版本管理、需要深度定制性能或权限时。"
+   },
+   {
+    "q": "Dify 知识库效果不好怎么办？",
+    "a": "调整分块方式、启用混合检索和重排、清洗文档；仍不足时用外部知识库通过 API 接入。"
+   },
+   {
+    "q": "安全怎么保证？",
+    "a": "私有化部署、API Key 管理、Java 侧做用户鉴权与数据权限、Dify 工具调用的接口做鉴权和限流。"
+   }
+  ],
+  "answer": [
+   "总：Dify 是可视化、可私有化的 LLM 应用平台，擅长快速落地。",
+   "分：提供工作流、Agent、知识库、模型管理和 API 发布；适合原型、知识库问答、内部工具；局限在复杂逻辑、测试与版本管理、深度定制和大规模性能。通常与 Java 后端配合，Java 负责业务与权限。",
+   "实践：【结合你的项目】我用 Dify 搭了【待填：应用】，Java 后端通过 API 调用并做鉴权，上线后【待填：效果】。",
+   "总结：快速验证用 Dify，核心复杂逻辑留在代码里。"
+  ],
+  "pitfalls": [
+   "把 Dify 说得无所不能。",
+   "不提和后端的分工。"
+  ]
  }
 }

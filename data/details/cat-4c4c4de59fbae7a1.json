@@ -1,0 +1,127 @@
+{
+ "a-l1": {
+  "principle": [
+   "Token 是模型处理文本的基本单位，由分词器（如 BPE）把文本切成子词片段。英文大约 1 个 token ≈ 0.75 个单词，中文一个汉字通常对应约 1–2 个 token，具体取决于模型的分词器。计费、速度、长度限制都以 token 计算，输入和输出 token 往往单价不同（输出更贵）。",
+   "上下文窗口是模型单次请求能处理的最大 token 数，包括系统提示、历史对话、检索资料、工具定义、工具结果以及模型的输出。超过窗口会报错或被截断；另外 max_tokens（最大输出）也占用窗口预算。",
+   "长上下文不等于“全都能用好”：内容越长成本越高、延迟越大，模型对中间部分信息的利用可能变差（lost in the middle）。因此工程上要做上下文管理：历史对话滑动窗口或摘要压缩、RAG 只放最相关的片段、工具结果裁剪，并在调用前用分词器估算 token 数。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 调用前粗略估算并裁剪历史，避免超出窗口（示意）\nint budget = 128_000 - 4_000;              // 窗口 - 预留输出\nList<Message> history = memory.get(convId);\nwhile (tokenCounter.count(system, history, question) > budget && history.size() > 2) {\n    history = history.subList(2, history.size());   // 丢弃最早一轮（或先做摘要）\n}\n\n// Spring AI 中可从响应元数据读取用量，用于计费与监控\nChatResponse resp = chatClient.prompt().user(question).call().chatResponse();\nUsage usage = resp.getMetadata().getUsage();\nlog.info(\"prompt={} completion={} total={}\",\n        usage.getPromptTokens(), usage.getCompletionTokens(), usage.getTotalTokens());"
+  },
+  "asks": [
+   "什么是 Token？中文和英文的 token 有什么区别？",
+   "上下文窗口是什么？超了怎么办？",
+   "长上下文模型是不是就不需要 RAG 了？",
+   "你们怎么统计和控制 token 消耗？"
+  ],
+  "followups": [
+   {
+    "q": "有了长上下文还要 RAG 吗？",
+    "a": "要。全部塞入成本高、延迟大，且模型对中间信息利用变差；RAG 选最相关内容更省更准，还能做权限控制。"
+   },
+   {
+    "q": "输出 token 为什么更贵？",
+    "a": "输出需要逐个自回归生成，计算成本高于并行处理的输入。"
+   },
+   {
+    "q": "怎么准确计算 token？",
+    "a": "用对应模型的分词器（如 tiktoken 或厂商提供的计数接口），不同模型的分词结果不同。"
+   }
+  ],
+  "answer": [
+   "总：Token 是计费和长度单位，上下文窗口是单次请求的 token 上限。",
+   "分：输入（系统提示、历史、资料、工具）和输出都占窗口；超出会报错或截断。工程上做滑动窗口、摘要压缩、RAG 精选内容、裁剪工具结果，并监控每次调用的用量。",
+   "实践：【结合你的项目】我们按会话记录 prompt/completion token，发现【待填：如历史过长】后用摘要压缩，成本下降【待填】。",
+   "总结：上下文是稀缺资源，要像管理内存一样管理它。"
+  ],
+  "pitfalls": [
+   "以为窗口只算输入。",
+   "认为长上下文能替代 RAG。"
+  ]
+ },
+ "a-l2": {
+  "principle": [
+   "模型每一步会对候选 token 给出概率分布，采样参数决定如何从中选：",
+   "temperature：对 logits 做缩放后再 softmax。温度低（如 0–0.3）分布更尖锐，倾向选概率最高的词，输出更稳定、可复现；温度高（0.8 以上）分布更平坦，更有创造性但更容易跑题或出错。温度为 0 时接近贪心解码，但很多服务仍不保证完全确定。",
+   "top_p（核采样）：只在累计概率达到 p 的最小候选集合中采样，例如 0.9 表示截掉尾部低概率词。top_k：只在概率最高的 k 个词中采样。一般建议只调 temperature 或 top_p 之一。",
+   "经验：工具调用、结构化 JSON 输出、分类、信息抽取、RAG 问答用低温度（0–0.3）；文案、头脑风暴用较高温度。评测和回归测试时固定参数（甚至固定 seed）才能比较版本。部分推理模型不支持或忽略这些参数，以厂商文档为准。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// Spring AI：按场景设置不同参数（以 OpenAI 兼容接口为例）\nString json = chatClient.prompt()\n        .user(\"从这段文本抽取姓名、电话，输出 JSON：\" + text)\n        .options(OpenAiChatOptions.builder().temperature(0.0).build())   // 抽取：稳定\n        .call()\n        .content();\n\nString slogan = chatClient.prompt()\n        .user(\"为新品咖啡写 5 条广告语\")\n        .options(OpenAiChatOptions.builder().temperature(0.9).topP(0.95).build()) // 创意：发散\n        .call()\n        .content();"
+  },
+  "asks": [
+   "temperature 和 top_p 是什么？怎么调？",
+   "为什么工具调用建议低温度？",
+   "同样的问题模型回答不一致怎么办？",
+   "temperature 设为 0 结果就一定一样吗？"
+  ],
+  "followups": [
+   {
+    "q": "temperature=0 一定确定吗？",
+    "a": "不一定。并行计算的浮点误差、服务端批处理等可能造成细微差异；需要可复现时还可以设置 seed（若支持）并做结果校验。"
+   },
+   {
+    "q": "top_p 和 top_k 区别？",
+    "a": "top_k 固定候选数量，top_p 按累计概率动态决定候选集合，更自适应。"
+   },
+   {
+    "q": "回答不稳定怎么治？",
+    "a": "降低温度、明确输出格式（JSON Schema/结构化输出）、给示例、对输出做校验和重试。"
+   }
+  ],
+  "answer": [
+   "总：采样参数控制输出的确定性与多样性。",
+   "分：temperature 缩放概率分布，低温稳定、高温发散；top_p 只在累计概率前 p 的词中采样；通常只调一个。工具调用、抽取、RAG 用低温，创意任务用高温；评测时固定参数。",
+   "实践：【结合你的项目】我们的【待填：Agent/客服】把温度设为【待填】，工具调用错误率明显下降。",
+   "总结：按任务选参数，并用评测验证。"
+  ],
+  "pitfalls": [
+   "temperature 和 top_p 同时大幅调整。",
+   "认为温度 0 绝对确定。"
+  ]
+ },
+ "a-l3": {
+  "principle": [
+   "Prompt 工程是通过设计输入让模型稳定输出期望结果。基本结构可以记为“角色 + 任务 + 上下文 + 约束 + 输出格式 + 示例”：",
+   "① 角色与目标：说明模型扮演什么角色、为谁服务；② 任务描述：具体、可执行，复杂任务拆分成步骤；③ 上下文：提供资料并用分隔符（如 XML 标签、三引号）与指令区分，也有助于防注入；④ 约束：不知道就说不知道、只依据资料、字数、语气、禁止事项；⑤ 输出格式：指定 JSON Schema 或模板，便于程序解析（支持结构化输出的模型优先用原生能力）；⑥ 少样本示例：给 1–3 个输入输出示例，比冗长描述更有效。",
+   "进阶：让模型先列出推理步骤或在内部思考再给答案（推理模型已内置）；提示链（把大任务拆成多个调用）；自我检查。",
+   "工程化：Prompt 当作代码管理——模板化、版本控制、用评测集做回归测试，改动后对比指标再上线。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "record Ticket(String category, String priority, String summary) {}\n\nString system = \"\"\"\n        你是电商售后工单分类助手。\n        任务：阅读<工单>，判断类别和优先级，并用一句话总结。\n        约束：\n        - 类别只能是 退款 / 物流 / 质量 / 其他\n        - 涉及金额超过 1000 元或用户提到投诉，优先级为 高\n        - 信息不足时 summary 写“信息不足”\n        示例：\n        <工单>快递三天没动了</工单> -> {\"category\":\"物流\",\"priority\":\"中\",\"summary\":\"物流停滞三天\"}\n        \"\"\";\n\nTicket t = chatClient.prompt()\n        .system(system)\n        .user(\"<工单>\" + content + \"</工单>\")\n        .call()\n        .entity(Ticket.class);       // Spring AI 结构化输出：自动附加格式说明并解析为对象"
+  },
+  "asks": [
+   "Prompt 工程有哪些方法？",
+   "怎么让模型稳定输出 JSON？",
+   "少样本提示是什么？什么时候用？",
+   "你们怎么管理和迭代 Prompt？"
+  ],
+  "followups": [
+   {
+    "q": "怎么保证输出可解析？",
+    "a": "优先使用模型的结构化输出/JSON Schema 能力或框架的 entity() 转换；解析失败时带错误信息重试一次；关键字段做业务校验。"
+   },
+   {
+    "q": "Prompt 越长越好吗？",
+    "a": "不是。冗余信息会稀释重点、增加成本；用清晰结构和示例代替长篇描述。"
+   },
+   {
+    "q": "怎么评估 Prompt 改动？",
+    "a": "准备标注测试集，比较准确率、格式合规率、成本，再灰度上线。"
+   }
+  ],
+  "answer": [
+   "总：好的 Prompt = 清晰的角色任务 + 充分上下文 + 明确约束 + 固定格式 + 示例。",
+   "分：用分隔符区分指令和资料，复杂任务拆步骤，用 JSON Schema 或结构化输出保证可解析，少样本示例提升稳定性；Prompt 版本化并用评测集回归。",
+   "实践：【结合你的项目】我在【待填：Dify/项目】里写过分类/抽取 Prompt，通过加示例和格式约束把格式错误率从【待填】降到【待填】。",
+   "总结：Prompt 是工程资产，要可测试、可迭代。"
+  ],
+  "pitfalls": [
+   "只说“写清楚一点”，没有结构。",
+   "没有评测，凭感觉改。"
+  ]
+ }
+}
