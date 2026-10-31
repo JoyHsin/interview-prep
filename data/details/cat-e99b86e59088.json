@@ -131,5 +131,87 @@
    "把初始容量直接设为 n（会因 0.75 再扩容一次）。",
    "说负载因子越小越好。"
   ]
+ },
+ "j-col3": {
+  "principle": [
+   "ArrayList：Object[] 数组，随机访问 O(1)，尾部添加均摊 O(1)，中间插入删除要搬移 O(n)。默认空数组，首次添加扩到 10，之后 1.5 倍扩容（old + old>>1）。遍历快（连续内存缓存友好）。",
+   "LinkedList：双向链表，头尾插入删除 O(1)，按索引访问 O(n)，每个节点有前后指针，内存开销大，缓存不友好。实现了 Deque，可当队列/栈。",
+   "实际业务几乎总是 ArrayList：随机访问、遍历、序列化都更优；只有频繁头插且几乎不随机访问时才考虑 LinkedList，即便如此 ArrayDeque 作队列通常更好。CopyOnWriteArrayList 适合读多写极少。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "List<String> a = new ArrayList<>(1000);       // 预估容量避免扩容\na.add(\"x\");                                   // 尾部快\na.add(0, \"y\");                                // 中间慢，搬移\n\nDeque<String> q = new ArrayDeque<>();         // 队列/栈优先于 LinkedList\nq.offerLast(\"a\"); q.pollFirst();\n\nList<String> cow = new CopyOnWriteArrayList<>(); // 读多写少，写时复制"
+  },
+  "asks": [
+   "ArrayList 和 LinkedList 区别？",
+   "ArrayList 怎么扩容？",
+   "什么时候用 LinkedList？",
+   "为什么业务多用 ArrayList？"
+  ],
+  "followups": [
+   {
+    "q": "扩容倍数？",
+    "a": "1.5 倍（newCapacity = oldCapacity + (oldCapacity >> 1)）。"
+   },
+   {
+    "q": "RandomAccess？",
+    "a": "ArrayList 实现该标记接口，算法可据此选索引遍历而非迭代器。"
+   },
+   {
+    "q": "线程安全？",
+    "a": "都不是；并发用 CopyOnWriteArrayList 或 Collections.synchronizedList。"
+   }
+  ],
+  "answer": [
+   "总：ArrayList 数组随机访问快，LinkedList 链表头尾改快但整体更慢。",
+   "分：ArrayList 1.5 倍扩容；LinkedList 实现 Deque 但队列更推荐 ArrayDeque；业务默认 ArrayList。",
+   "实践：【结合你的项目】列表几乎全用 ArrayList，队列用 ArrayDeque。",
+   "总结：别因为“插入快”就选 LinkedList。"
+  ],
+  "pitfalls": [
+   "默认选 LinkedList。",
+   "说 ArrayList 扩容 2 倍（那是 HashMap）。"
+  ]
+ },
+ "j-col4": {
+  "principle": [
+   "契约：① equals 相等 ⇒ hashCode 必须相等；② hashCode 相等 ≠ equals 一定相等；③ 同一对象在 equals 所用字段不变时 hashCode 应稳定。",
+   "原因：HashMap/HashSet 先按 hashCode 定位桶，再用 equals 比内容。只改 equals 不改 hashCode，相等对象进不同桶，Set 会“重复”、Map 用等价 key 取不到。",
+   "实践：用业务主键字段生成两者；作为 key 后不要改这些字段；可用 Objects.equals/hash 或 record 自动生成。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "final class User {\n    private final String id;\n    User(String id) { this.id = id; }\n    @Override public boolean equals(Object o) {\n        return o instanceof User u && id.equals(u.id);\n    }\n    @Override public int hashCode() { return id.hashCode(); }\n}\nrecord Point(int x, int y) {}   // 自动 equals/hashCode"
+  },
+  "asks": [
+   "equals 和 hashCode 契约？",
+   "为什么要一起重写？",
+   "Integer 缓存对 == 的影响？",
+   "record 有什么便利？"
+  ],
+  "followups": [
+   {
+    "q": "只重写 hashCode？",
+    "a": "仍按地址 equals，集合行为仍错。"
+   },
+   {
+    "q": "可变 key？",
+    "a": "改字段后 hash 变了，可能丢在错误桶里。"
+   },
+   {
+    "q": "String 呢？",
+    "a": "已正确重写，内容相等则 hash 相同。"
+   }
+  ],
+  "answer": [
+   "总：相等必须同 hash，作哈希键必须成对重写且稳定。",
+   "分：哈希集合先 hash 后 equals；用业务主键；record 可自动生成。",
+   "实践：【结合你的项目】实体去重、缓存 key 按业务 ID 重写。",
+   "总结：成对、稳定、不可变字段最好。"
+  ],
+  "pitfalls": [
+   "只重写 equals。",
+   "用 == 比包装类。"
+  ]
  }
 }

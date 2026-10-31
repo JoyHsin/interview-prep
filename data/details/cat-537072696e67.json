@@ -175,5 +175,88 @@
    "说单例 Bean 天然线程安全。",
    "单例中直接注入 prototype 期待每次不同。"
   ]
+ },
+ "j-s4": {
+  "principle": [
+   "Spring AOP 默认：有接口 → JDK 动态代理（Proxy + InvocationHandler）；无接口 → CGLIB 子类代理（继承目标类，重写方法）。Spring Boot 2.x 起 spring.aop.proxy-target-class=true 默认，倾向 CGLIB。",
+   "限制：① final 类/方法 CGLIB 无法代理；② 静态、私有方法无法被代理；③ 自调用不走代理（同类 this.xxx）。@EnableAspectJAutoProxy(proxyTargetClass=true) 强制 CGLIB；exposeProxy=true 可 AopContext.currentProxy()。",
+   "JDK 代理只能拦接口方法；CGLIB 拦类的方法。事务、@Async、自定义切面都走这套代理机制。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Service\npublic class OrderService implements OrderApi {          // 有接口\n    @Transactional\n    public void place() { /* ... */ }\n}\n// Boot 默认 CGLIB：即便有接口也可能代理类；查看：\nAopUtils.isAopProxy(bean);\nAopUtils.isJdkDynamicProxy(bean);\nAopUtils.isCglibProxy(bean);\n\n@EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)\n// 自调用：((OrderApi) AopContext.currentProxy()).place();"
+  },
+  "asks": [
+   "JDK 动态代理和 CGLIB 区别？",
+   "Spring 默认用哪个？",
+   "什么方法切不到？",
+   "怎么强制 CGLIB？"
+  ],
+  "followups": [
+   {
+    "q": "final 方法？",
+    "a": "CGLIB 无法重写，切面不生效。"
+   },
+   {
+    "q": "接口代理的优点？",
+    "a": "不依赖字节码生成库历史包袱；但只能拦接口方法。"
+   },
+   {
+    "q": "和 AspectJ 编译织入？",
+    "a": "AspectJ 可织入更多场景（含自调用），Spring 默认运行时代理更轻。"
+   }
+  ],
+  "answer": [
+   "总：接口可用 JDK 代理，类用 CGLIB 子类；Boot 默认偏 CGLIB。",
+   "分：final/private/static/自调用切不到；可用 proxy-target-class 和 exposeProxy。",
+   "实践：【结合你的项目】事务失效多因自调用或 final，拆 Bean 或注入自身代理。",
+   "总结：理解代理机制才能排 AOP 失效。"
+  ],
+  "pitfalls": [
+   "说有接口就一定 JDK（Boot 默认可能 CGLIB）。",
+   "不知 final 限制。"
+  ]
+ },
+ "j-s5": {
+  "principle": [
+   "REQUIRED（默认）：有事务就加入，没有就新建。一个事务里所有操作同生共死，内部抛异常（默认 RuntimeException）会导致整个事务回滚。",
+   "REQUIRES_NEW：挂起当前事务，新开一个独立事务，执行完提交/回滚后再恢复外层。内层成功提交不会因外层回滚而撤销；内层回滚默认不强制外层回滚（除非异常传到外层未处理）。",
+   "典型用途：审计日志、操作流水——无论主业务成败都要留下记录。注意：必须通过代理调用（另一个 Bean 或自注入），否则传播行为不生效；会多占一个数据库连接。",
+   "其他常用：NESTED（嵌套，依赖 JDBC 保存点）、NOT_SUPPORTED（以非事务运行）、SUPPORTS（有则加入无则非事务）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Service @RequiredArgsConstructor\nclass OrderService {\n    private final AuditService audit;\n    @Transactional\n    public void place(Order o) {\n        orderMapper.insert(o);\n        audit.log(\"PLACE\", o.getId());   // REQUIRES_NEW：主事务失败日志仍在\n        if (o.bad()) throw new RuntimeException(\"fail\");\n    }\n}\n@Service\nclass AuditService {\n    @Transactional(propagation = Propagation.REQUIRES_NEW)\n    public void log(String action, long id) {\n        auditMapper.insert(action, id);\n    }\n}"
+  },
+  "asks": [
+   "REQUIRED 和 REQUIRES_NEW 区别？",
+   "审计日志用哪个？",
+   "NESTED 呢？",
+   "传播失效的原因？"
+  ],
+  "followups": [
+   {
+    "q": "内层异常对外层？",
+    "a": "REQUIRES_NEW 内层已提交/回滚独立；若异常抛出到外层且未捕获，外层仍会回滚。"
+   },
+   {
+    "q": "NESTED 区别？",
+    "a": "同一物理事务用保存点，外层回滚则嵌套也回滚；REQUIRES_NEW 是两个物理事务。"
+   },
+   {
+    "q": "连接？",
+    "a": "REQUIRES_NEW 需要再拿一个连接，池太小可能耗尽。"
+   }
+  ],
+  "answer": [
+   "总：REQUIRED 加入或新建，REQUIRES_NEW 挂起并新开。",
+   "分：默认 REQUIRED 同生共死；日志审计用 REQUIRES_NEW 独立提交；须走代理；注意连接占用。",
+   "实践：【结合你的项目】操作日志、消息发送记录用 REQUIRES_NEW。",
+   "总结：按“要不要和主业务同命运”选型。"
+  ],
+  "pitfalls": [
+   "同类自调用导致传播失效。",
+   "混淆 NESTED 与 REQUIRES_NEW。"
+  ]
  }
 }

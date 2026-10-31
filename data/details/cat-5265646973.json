@@ -171,5 +171,87 @@
    "只列方法不讲代价。",
    "忽略本地缓存一致性。"
   ]
+ },
+ "j-r4": {
+  "principle": [
+   "RDB：按间隔 fork 子进程生成内存快照文件。恢复快，文件紧凑；但可能丢最后一个快照后的数据，fork 时大数据集有内存和延迟影响。",
+   "AOF：记录写命令，按 always/everysec/no 刷盘。everysec 折中，最多丢约 1 秒。文件更大，恢复要重放；有重写（rewrite）压缩。",
+   "混合持久化（RDB+AOF，4.0+ 常见默认思路）：AOF 重写时写入 RDB 格式的全量 + 增量 AOF 命令，恢复更快也更安全。",
+   "选型：可丢几分钟用 RDB；要少丢数据开 AOF everysec 或混合；主从 + 哨兵/集群保证高可用，持久化是防宕机丢数据。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "# redis.conf 要点\nsave 900 1\nsave 300 10\nappendonly yes\nappendfsync everysec\naof-use-rdb-preamble yes          # 混合\n\n# 手动\nredis-cli BGSAVE\nredis-cli BGREWRITEAOF\nredis-cli INFO persistence"
+  },
+  "asks": [
+   "RDB 和 AOF 区别？",
+   "混合持久化？",
+   "会丢多少数据？",
+   "fork 有什么影响？"
+  ],
+  "followups": [
+   {
+    "q": "always？",
+    "a": "每条写都 fsync，最安全最慢，生产少用。"
+   },
+   {
+    "q": "重写时机？",
+    "a": "体积相对增长到阈值触发，或手动 BGREWRITEAOF。"
+   },
+   {
+    "q": "主从还要持久化吗？",
+    "a": "要，防全挂；从库可关或只作备份策略之一。"
+   }
+  ],
+  "answer": [
+   "总：RDB 快照恢复快，AOF 更安全，混合兼得。",
+   "分：RDB 可能丢间隔内数据；AOF everysec 约 1 秒；混合重写用 RDB 前缀；配合高可用。",
+   "实践：【结合你的项目】我们 Redis【待填：混合/AOF】，并有定期 RDB 备份到对象存储。",
+   "总结：持久化策略按可接受丢数来定。"
+  ],
+  "pitfalls": [
+   "只开 RDB 以为永不丢数据。",
+   "忽视 fork 对延迟的影响。"
+  ]
+ },
+ "j-r5": {
+  "principle": [
+   "String：缓存对象 JSON、计数器 INCR、分布式锁、会话；SET EX 设过期。Hash：对象多字段（用户资料）部分更新，省内存看场景。List：消息队列、最新动态（LPUSH+LRANGE），注意阻塞弹出 BLPOP。Set：去重、共同关注（交集）。ZSet：排行榜、延时队列（score=时间戳）。Bitmap：签到、布尔统计。HyperLogLog：基数估算。Stream：更完整的消息队列语义。Geo：附近的人。",
+   "选型看访问模式：整存整取用 String；常改单字段用 Hash；要排序取 TopN 用 ZSet。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "SET user:1:token xxx EX 3600\nHSET user:1 name Alice age 20\nLPUSH feed:1 '{...}' ; LTRIM feed:1 0 99\nZADD rank:game 1000 u1 950 u2 ; ZREVRANGE rank:game 0 9 WITHSCORES\nSETBIT sign:20261031 42 1\nPFADD uv:page1 u1 u2 ; PFCOUNT uv:page1\nXADD orders * id 1 amount 100"
+  },
+  "asks": [
+   "Redis 有哪些数据结构？各自场景？",
+   "排行榜怎么做？",
+   "为什么有时不用 Hash 存对象？",
+   "Stream 和 List 队列区别？"
+  ],
+  "followups": [
+   {
+    "q": "Hash vs String JSON？",
+    "a": "字段多且常改局部用 Hash；整对象读写、要压缩序列化用 String。"
+   },
+   {
+    "q": "延时队列？",
+    "a": "ZSet score=执行时间，轮询 ZRANGEBYSCORE；或 Stream/专业延时组件。"
+   },
+   {
+    "q": "大 key？",
+    "a": "避免单个 key 过大，拆分、监控 MEMORY USAGE。"
+   }
+  ],
+  "answer": [
+   "总：按访问模式选结构——计数 String、对象 Hash、排行 ZSet、队列 List/Stream。",
+   "分：再加 Bitmap/HLL/Geo；注意大 key 和过期。",
+   "实践：【结合你的项目】【待填：用过的结构和场景】。",
+   "总结：结构选对事半功倍。"
+  ],
+  "pitfalls": [
+   "所有对象都塞 String。",
+   "忽视大 key。"
+  ]
  }
 }

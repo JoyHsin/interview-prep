@@ -214,5 +214,84 @@
    "把成本选择说成“失效”。",
    "滥用 FORCE INDEX。"
   ]
+ },
+ "j-m4": {
+  "principle": [
+   "EXPLAIN 重点看：① type：访问类型，优劣约 const > eq_ref > ref > range > index > ALL。ALL 是全表，index 是全索引扫描。② key：实际用的索引；key=NULL 要警惕。③ rows：估算扫描行数。④ Extra：Using index=覆盖索引；Using filesort=需额外排序；Using temporary=用到临时表；Using where=存储引擎返回后服务层过滤；Using index condition=索引下推。",
+   "优化目标：尽量让 type 到 ref/range，rows 小，Extra 有 Using index、没有 filesort/temporary。还要看 filtered、possible_keys。MySQL 8.0 可用 EXPLAIN ANALYZE 看真实耗时。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "EXPLAIN SELECT id, name FROM t_user WHERE email = 'a@b.com';\n-- 理想：type=ref, key=idx_email, Extra=Using index（覆盖）\n\nEXPLAIN ANALYZE SELECT * FROM t_order\n WHERE user_id=42 AND create_time > '2026-01-01'\n ORDER BY create_time DESC LIMIT 20;\n-- 关注实际时间、是否 filesort、rows 估得准不准"
+  },
+  "asks": [
+   "EXPLAIN 关注哪些字段？",
+   "type 有哪些？",
+   "Using filesort 怎么消？",
+   "EXPLAIN ANALYZE 有什么用？"
+  ],
+  "followups": [
+   {
+    "q": "filesort？",
+    "a": "排序字段无合适索引时出现；给 ORDER BY 建联合索引可避免。"
+   },
+   {
+    "q": "eq_ref？",
+    "a": "唯一索引或主键等值连接，一行最多一条。"
+   },
+   {
+    "q": "rows 不准？",
+    "a": "ANALYZE TABLE 更新统计信息。"
+   }
+  ],
+  "answer": [
+   "总：看 type、key、rows、Extra，目标是少扫行、走对索引、少临时排序。",
+   "分：避免 ALL/filesort/temporary；覆盖索引最好；8.0 用 EXPLAIN ANALYZE 验证。",
+   "实践：【结合你的项目】慢 SQL 先 EXPLAIN，再改索引或改写。",
+   "总结：优化前后都用执行计划说话。"
+  ],
+  "pitfalls": [
+   "只看有没有用到索引，不看 rows/Extra。"
+  ]
+ },
+ "j-m5": {
+  "principle": [
+   "思路：① 定位：慢查询日志、Performance Schema、EXPLAIN ANALYZE。② 索引：该走的联合索引、覆盖索引，消除函数/隐式转换。③ 改写：避免 SELECT *；拆大 SQL；OR 改 UNION；深分页用游标或延迟关联（先查主键再回表）。④ 架构：读写分离、缓存热点、汇总表、ES 搜复杂条件。⑤ 事务：避免长事务占锁；批量提交。⑥ 库表：分区、归档历史。",
+   "深分页：LIMIT 1000000,20 会扫很多行 → WHERE id > last_id LIMIT 20，或子查询先取 id 再 JOIN。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "-- 深分页优化\nSELECT o.* FROM t_order o\nJOIN (SELECT id FROM t_order WHERE user_id=42 ORDER BY id LIMIT 100000, 20) t\nON o.id = t.id;\n\n-- 游标分页\nSELECT * FROM t_order WHERE user_id=42 AND id > #{lastId} ORDER BY id LIMIT 20;\n\n-- 避免列上函数\n-- ❌ DATE(create_time)='2026-10-01'\nSELECT * FROM t_order WHERE create_time >= '2026-10-01' AND create_time < '2026-10-02';"
+  },
+  "asks": [
+   "慢 SQL 怎么优化？",
+   "深分页怎么优化？",
+   "为什么不要 SELECT *？",
+   "长事务有什么危害？"
+  ],
+  "followups": [
+   {
+    "q": "SELECT * 问题？",
+    "a": "回表更多、无法覆盖索引、网络传输大、列变更易出问题。"
+   },
+   {
+    "q": "批量插入？",
+    "a": "多值 INSERT、rewriteBatchedStatements、控制每批大小。"
+   },
+   {
+    "q": "读写分离延迟？",
+    "a": "写后读可能读到从库旧数据，关键读走主库。"
+   }
+  ],
+  "answer": [
+   "总：定位 → 索引/改写 → 缓存与架构 → 控制事务。",
+   "分：EXPLAIN 驱动；深分页用游标/延迟关联；避免 * 和大事务；热点走缓存或汇总。",
+   "实践：【结合你的项目】【待填：一次慢 SQL 从 X 秒到 Y 毫秒】。",
+   "总结：先计划再改，改完再测。"
+  ],
+  "pitfalls": [
+   "一上来加索引不看计划。",
+   "深分页只加大 LIMIT。"
+  ]
  }
 }

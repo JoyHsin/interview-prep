@@ -215,5 +215,88 @@
    "说复制算法浪费一半空间（HotSpot 只浪费 10%）。",
    "说老年代也用复制。"
   ]
+ },
+ "j-v5": {
+  "principle": [
+   "类加载过程：加载（读字节码建 Class 对象）→ 验证（格式、字节码、符号引用）→ 准备（静态字段赋零值）→ 解析（符号引用转直接引用，可延迟到使用时）→ 初始化（执行 <clinit>，赋真正的静态初值和静态块）。使用时才初始化（主动使用触发）。",
+   "双亲委派：加载器收到请求先交给父加载器，父无法再自己加载。层次：Bootstrap（核心 rt.jar）→ Extension/Platform → Application → 自定义。目的：保证核心类唯一、安全（不能自定义 java.lang.String 替换核心类）。",
+   "打破场景：① SPI（JDBC、JNDI）：核心类要加载应用层实现，用线程上下文类加载器；② 热部署、OSGi、Tomcat 隔离 Web 应用：子加载器优先或平行委托；③ JDK 9 模块化后类加载有所调整。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 查看类由谁加载\nSystem.out.println(String.class.getClassLoader());           // null = Bootstrap\nSystem.out.println(App.class.getClassLoader());              // AppClassLoader\n\n// SPI：DriverManager 用 TCCL 加载 jdbc 驱动\nThread.currentThread().setContextClassLoader(appLoader);\nClass.forName(\"com.mysql.cj.jdbc.Driver\");\n\n// 自定义打破委派：先自己加载再委派（热部署简化示意）\nclass HotLoader extends ClassLoader {\n    @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {\n        if (name.startsWith(\"com.example.hot.\")) {\n            byte[] b = readBytes(name);\n            return defineClass(name, b, 0, b.length);\n        }\n        return super.loadClass(name, resolve);\n    }\n}"
+  },
+  "asks": [
+   "类加载过程？",
+   "什么是双亲委派？为什么？",
+   "什么场景会打破？",
+   "Tomcat 类加载有什么特点？"
+  ],
+  "followups": [
+   {
+    "q": "准备和初始化区别？",
+    "a": "准备赋零值；初始化执行 <clinit> 赋真实值。"
+   },
+   {
+    "q": "SPI 怎么打破？",
+    "a": "核心代码用 Thread.currentThread().getContextClassLoader() 加载应用实现。"
+   },
+   {
+    "q": "JDK 9 模块化影响？",
+    "a": "部分扩展机制变化，平台加载器替代扩展加载器，模块边界更严格。"
+   }
+  ],
+  "answer": [
+   "总：五步加载验证准备解析初始化，双亲委派保核心类安全。",
+   "分：自底向上委派；SPI、热部署、容器隔离会打破；准备是零值，初始化才跑静态块。",
+   "实践：【结合你的项目】排查过 ClassNotFound / NoClassDefFound，区分编译期有运行时无。",
+   "总结：理解委派才能排查类冲突。"
+  ],
+  "pitfalls": [
+   "把准备当成初始化。",
+   "说双亲委派永远不能打破。"
+  ]
+ },
+ "j-v6": {
+  "principle": [
+   "三色标记用于并发标记：白色=未访问（可能是垃圾），灰色=已访问但引用未扫描完，黑色=已访问且引用扫描完。标记从 GC Roots 出发，灰→扫引用→黑，结束时白色可回收。",
+   "并发标记时用户线程还在改引用，可能漏标：① 黑对象新指向白对象，② 灰到白的原引用被删除。漏标会导致存活对象被回收。",
+   "解决方案靠写屏障：CMS 用增量更新（Incremental Update）——黑指向白时把黑重新标灰；G1/Shenandoah 用 SATB（Snapshot At The Beginning）——删除灰→白引用时把旧引用记录下来继续扫。G1 还有记忆集处理跨 Region 引用。",
+   "浮动垃圾：并发期间新产生的垃圾可能本次扫不到，留给下次，可接受。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "漏标条件（同时满足才危险）：\n1. 黑色对象新增了对白色对象的引用\n2. 灰色对象到该白色对象的所有引用被断开\n\nCMS：写屏障记录“黑→白”新增（增量更新）\nG1：写屏障记录被删除的旧引用（SATB）+ RSet 记跨 Region 引用\n\n相关：-XX:+UseG1GC 默认 SATB；并发标记阶段 CPU 会升高"
+  },
+  "asks": [
+   "三色标记是什么？",
+   "什么是漏标？怎么解决？",
+   "增量更新和 SATB 区别？",
+   "浮动垃圾是什么？"
+  ],
+  "followups": [
+   {
+    "q": "为什么 G1 选 SATB？",
+    "a": "与 Region、Mixed GC 配合更好，停顿更可控；漏标对象可能多留一轮（浮动垃圾）。"
+   },
+   {
+    "q": "写屏障开销？",
+    "a": "每次引用字段写入多一次记录，换来并发标记正确性。"
+   },
+   {
+    "q": "和 STW 标记比？",
+    "a": "STW 无漏标问题但停顿长；并发标记要写屏障。"
+   }
+  ],
+  "answer": [
+   "总：三色标记 + 写屏障解决并发漏标。",
+   "分：白灰黑表示扫描进度；漏标=黑指向白且灰到白断开；CMS 增量更新，G1 SATB；浮动垃圾可留到下次。",
+   "实践：【结合你的项目】调 G1 时关注并发标记 CPU 和 Mixed GC。",
+   "总结：正确性靠写屏障，停顿靠并发。"
+  ],
+  "pitfalls": [
+   "说三色只是概念与实现无关。",
+   "混淆增量更新和 SATB。"
+  ]
  }
 }

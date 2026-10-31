@@ -129,5 +129,87 @@
    "不知道 jstack 能直接检测死锁。",
    "只说重启不讲预防。"
   ]
+ },
+ "j-t3": {
+  "principle": [
+   "频繁 Young GC：分配速率过高——短命对象太多（一次性大 List、JSON 反序列化、日志拼接）。处理：减分配（复用缓冲、流式处理）、加大新生代、看是否误用大对象。",
+   "频繁 Full GC / Old 涨：晋升过快、内存泄漏、大对象直接进老年代、Metaspace 满。看 GC 日志：Full 后 Old 是否降得下来；降不下来就 dump 查泄漏。调大堆只是暂缓。",
+   "工具：-Xlog:gc*、jstat、MAT、异步 profiler 看分配热点。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "jstat -gcutil <pid> 1000\n# 看 YGC/FGC 频率、E/O 占比、FGC 后 O 是否回落\njmap -histo:live <pid> | head\n# 或 jcmd GC.heap_dump"
+  },
+  "asks": [
+   "频繁 Young/Full GC 怎么查？",
+   "分配速率怎么降？",
+   "怎么判断泄漏？",
+   "大对象怎么办？"
+  ],
+  "followups": [
+   {
+    "q": "Full 后降得下？",
+    "a": "能降→容量或晋升问题；不降→泄漏。"
+   },
+   {
+    "q": "日志关键字段？",
+    "a": "停顿时间、回收前后各代大小、触发原因。"
+   },
+   {
+    "q": "G1 Mixed？",
+    "a": "老年代回收跟不上也会最终 Full。"
+   }
+  ],
+  "answer": [
+   "总：Young 看分配，Full 看晋升与泄漏。",
+   "分：减分配、调代大小、dump 查泄漏、避免大对象。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：日志 + dump，别只加堆。"
+  ],
+  "pitfalls": [
+   "只加大 -Xmx。",
+   "不留 dump 就重启。"
+  ]
+ },
+ "j-t4": {
+  "principle": [
+   "连接池打满表现：获取连接超时、线程阻塞在 getConnection、RT 飙升。原因：慢 SQL/长事务占连接、连接泄漏（未 close）、池过小、下游锁等待、一次请求拿多个连接（事务+独立查询）。",
+   "排查：监控活跃连接、等待线程；查 DB 当前连接与长事务；代码 try-with-resources；对一下池大小与 DB max_connections、下游超时。",
+   "处理：杀慢查询/限流止血；修泄漏；调大池要同步评估 DB；超时要小于事务可接受时间；避免事务中调远程。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// HikariCP 监控\nspring.datasource.hikari.maximum-pool-size=20\nspring.datasource.hikari.leak-detection-threshold=30000\n\ntry (Connection c = ds.getConnection()) { /* 自动归还 */ }\n// 事务中不要调用 HTTP；缩小事务边界"
+  },
+  "asks": [
+   "连接池打满怎么查？",
+   "如何发现泄漏？",
+   "池应该设多大？",
+   "事务中调远程的问题？"
+  ],
+  "followups": [
+   {
+    "q": "池大小？",
+    "a": "经验 (核心数*2)+盘数 只是起点，按并发与 SQL 耗时压测；不能超过 DB 承受。"
+   },
+   {
+    "q": "泄漏检测？",
+    "a": "Hikari leak-detection-threshold；定期看未归还。"
+   },
+   {
+    "q": "一请求多连接？",
+    "a": "注意事务同步与独立 DataSource 使用。"
+   }
+  ],
+  "answer": [
+   "总：慢 SQL、泄漏、池配置与超时不匹配是主因。",
+   "分：监控+杀慢查询止血；try-with-resources；池与 DB、超时联动；缩小事务。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：连接是稀缺资源。"
+  ],
+  "pitfalls": [
+   "盲目调大池。",
+   "事务里调外部 HTTP。"
+  ]
  }
 }

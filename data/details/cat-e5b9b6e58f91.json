@@ -343,5 +343,130 @@
    "背一个固定公式不讲压测。",
    "忽略下游连接池限制。"
   ]
+ },
+ "j-c6": {
+  "principle": [
+   "volatile 保证两件事：① 可见性——一个线程写 volatile 变量后，其他线程立刻看到最新值；② 有序性——禁止该变量读写与周围指令的部分重排序。它不保证复合操作的原子性（如 i++ 仍可能丢更新）。",
+   "底层靠内存屏障：写 volatile 前插入 StoreStore，写后插入 StoreLoad；读前插入 LoadLoad/LoadStore。这保证写之前的操作不会被排到写之后，读之后的操作不会被排到读之前，也就是“happens-before”。",
+   "与 synchronized 对比：synchronized 同时提供互斥（原子性）和可见性、有序性，代价是加锁；volatile 更轻量，适合“一写多读”的状态标志、双重检查锁定中的实例引用。DCL 单例必须用 volatile，否则半初始化对象可能被其他线程看到。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class Flag {\n    private volatile boolean stopped;          // 状态标志：一写多读\n    public void stop() { stopped = true; }\n    public void run() { while (!stopped) { /* work */ } }\n\n    private static volatile Flag INSTANCE;     // DCL 必须 volatile\n    public static Flag get() {\n        if (INSTANCE == null) {\n            synchronized (Flag.class) {\n                if (INSTANCE == null) INSTANCE = new Flag();\n            }\n        }\n        return INSTANCE;\n    }\n}\n// ❌ volatile int count; count++;  // 非原子，高并发丢更新 → AtomicInteger"
+  },
+  "asks": [
+   "volatile 有什么作用？",
+   "volatile 能保证原子性吗？",
+   "DCL 单例为什么要用 volatile？",
+   "volatile 和 synchronized 怎么选？"
+  ],
+  "followups": [
+   {
+    "q": "内存屏障具体做什么？",
+    "a": "限制指令重排序并刷新缓存，使写对其他 CPU 可见。"
+   },
+   {
+    "q": "long/double 的读写？",
+    "a": "Java 规范里非 volatile 的 long/double 读写可能不是原子的；加 volatile 后读写原子。"
+   },
+   {
+    "q": "happens-before 关系？",
+    "a": "volatile 写 happens-before 后续对该变量的读；配合程序次序、锁、线程 start/join 等构成可见性基础。"
+   }
+  ],
+  "answer": [
+   "总：volatile = 可见性 + 有序性，没有原子性。",
+   "分：底层靠内存屏障禁止部分重排序并刷新缓存；适合状态标志和 DCL；i++ 这类复合操作要用 Atomic 或加锁。",
+   "实践：【结合你的项目】优雅停机标志、配置热更新开关用 volatile；计数用 Atomic/LongAdder。",
+   "总结：轻量可见性用 volatile，互斥用锁。"
+  ],
+  "pitfalls": [
+   "以为 volatile 能保证 i++ 原子。",
+   "DCL 忘了 volatile。"
+  ]
+ },
+ "j-c7": {
+  "principle": [
+   "三者都基于 AQS 共享模式，用途不同：",
+   "CountDownLatch：一次性“开门”。构造时指定计数 N，await 阻塞直到 countDown 把计数减到 0，之后不能重置。适合“主线程等 N 个工人完成初始化”或“多个服务同时启动后一起开跑”。",
+   "CyclicBarrier：可复用的“栅栏”。N 个线程都调用 await 后一起继续，可指定 barrierAction，reset 后可再用。适合分阶段并行计算（每阶段所有线程到齐再进入下一阶段）。有人中断会导致 BrokenBarrierException。",
+   "Semaphore：许可证限流。acquire 拿许可，release 归还；构造时可公平。适合限制同时访问下游的并发数（如数据库连接、LLM 调用），虚拟线程场景也常用 Semaphore 限流而不是池化。",
+   "对比：Latch 是“一个人放行多人等”，Barrier 是“多人互相等”，Semaphore 是“限流池”。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "int n = 5;\nCountDownLatch ready = new CountDownLatch(n);\nfor (int i = 0; i < n; i++) {\n    Thread.startVirtualThread(() -> { init(); ready.countDown(); });\n}\nready.await();                                       // 等全部初始化完\n\nCyclicBarrier barrier = new CyclicBarrier(4, () -> System.out.println(\"本阶段完成\"));\n// 每阶段 4 个线程 await，可循环多轮\n\nSemaphore lim = new Semaphore(50);                   // 限制对 LLM 的并发\nlim.acquire();\ntry { callLlm(); } finally { lim.release(); }"
+  },
+  "asks": [
+   "CountDownLatch、CyclicBarrier、Semaphore 区别？",
+   "CyclicBarrier 能复用吗？",
+   "Semaphore 公平和非公平？",
+   "虚拟线程场景怎么限流？"
+  ],
+  "followups": [
+   {
+    "q": "Latch 能重置吗？",
+    "a": "不能，要用新的实例；需要复用选 CyclicBarrier 或 Phaser。"
+   },
+   {
+    "q": "Barrier 有人中断？",
+    "a": "栅栏进入 broken 状态，其他等待线程抛 BrokenBarrierException。"
+   },
+   {
+    "q": "Phaser？",
+    "a": "更灵活的多阶段同步，支持动态注册/注销参与者。"
+   }
+  ],
+  "answer": [
+   "总：Latch 一次性开门，Barrier 可复用互相等，Semaphore 限流。",
+   "分：都基于 AQS 共享；Latch 减到 0 放行不可重置；Barrier N 人到齐可循环；Semaphore 控制并发许可。",
+   "实践：【结合你的项目】批量任务用 Latch 等完成；调用下游用 Semaphore 限并发。",
+   "总结：按“等完成 / 分阶段 / 限流”选型。"
+  ],
+  "pitfalls": [
+   "三者用途说混。",
+   "Barrier 当 Latch 用完不 reset。"
+  ]
+ },
+ "j-c8": {
+  "principle": [
+   "排查死锁：① jstack <pid> 或 jcmd <pid> Thread.print，看末尾是否有 “Found one Java-level deadlock”，会列出互相等待的线程和锁；② JConsole/VisualVM “检测死锁”；③ Arthas thread -b；④ 代码里 ThreadMXBean.findDeadlockedThreads 定期检测告警。",
+   "预防：固定加锁顺序（如按账户 ID 排序）；tryLock 超时失败则释放已持有锁并重试；缩小锁粒度、缩短持锁时间；避免持锁调用外部方法；数据库按相同顺序访问行并监控死锁日志。",
+   "注意：ReentrantLock 死锁在 jstack 里显示为 waiting for ownable synchronizer，同样能被检测。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 固定顺序防死锁\nvoid transfer(Account a, Account b, long amt) {\n    Account first = a.id() < b.id() ? a : b, second = first == a ? b : a;\n    synchronized (first) { synchronized (second) { a.debit(amt); b.credit(amt); } }\n}\n// tryLock 超时\nif (lock1.tryLock(200, TimeUnit.MILLISECONDS)) {\n    try {\n        if (lock2.tryLock(200, TimeUnit.MILLISECONDS)) {\n            try { /* ... */ } finally { lock2.unlock(); }\n        }\n    } finally { lock1.unlock(); }\n}"
+  },
+  "asks": [
+   "怎么排查死锁？",
+   "死锁四个必要条件？",
+   "怎么预防？",
+   "数据库死锁怎么查？"
+  ],
+  "followups": [
+   {
+    "q": "线上死锁怎么止血？",
+    "a": "Java 死锁无法自动解开，通常重启实例；先保存 jstack。"
+   },
+   {
+    "q": "InnoDB 死锁？",
+    "a": "SHOW ENGINE INNODB STATUS 看 LATEST DETECTED DEADLOCK，InnoDB 会回滚其中一个事务。"
+   },
+   {
+    "q": "条件？",
+    "a": "互斥、持有并等待、不可剥夺、循环等待。"
+   }
+  ],
+  "answer": [
+   "总：jstack 找死锁环，预防靠固定顺序和超时锁。",
+   "分：Found Java-level deadlock 给出等待图；用 tryLock、统一顺序、缩小锁范围预防；DB 看 InnoDB STATUS。",
+   "实践：【结合你的项目】【待填：遇到的死锁场景和修复】。",
+   "总结：先留现场再修代码。"
+  ],
+  "pitfalls": [
+   "只说重启。",
+   "不知道 jstack 能直接检测。"
+  ]
  }
 }
