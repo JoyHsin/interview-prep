@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>题目详解 · 面试备考</title>
+<link rel="stylesheet" href="./css/style.css"/>
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="./index.html">求职<span> · 面试备考</span></a>
+  <div class="links">
+    <a href="./index.html">首页</a>
+    <a href="./questions.html">题库</a>
+    <a href="./practice.html">刷题</a>
+    <a href="./progress.html">进度</a>
+    <a href="./knowledge.html">知识体系</a>
+    <a href="./guide/timeline.html">时间线</a>
+    <a href="./guide/projects.html">项目 STAR</a>
+    <a href="./guide/system-design.html">系统设计</a>
+    <a href="./guide/study-path.html">学习路径</a>
+    <a href="./guide/resume.html">简历/学历</a>
+    <a href="./guide/job-market.html">广州行情</a>
+  </div>
+  <div class="tools"><button type="button" class="ghost" id="themeBtn">主题</button></div>
+</nav>
+<main class="wrap detail">
+<div class="d-top"><a id="dBack" href="./questions.html">← 返回题库</a><span id="dPos" class="muted"></span></div>
+<div id="dMeta"></div>
+<h1 id="dTitle">加载中…</h1>
+<div class="card"><b>要点速记</b><ul class="points" id="dPoints"></ul></div>
+<div id="dBody"></div>
+<div class="card">
+  <div class="seg" id="dMastery"></div>
+  <textarea class="note" id="dNote" placeholder="个人笔记…"></textarea>
+  <div id="dRef" class="ext-link"></div>
+</div>
+<div class="d-nav"><a id="dPrev" class="btn">← 上一题</a><a id="dNext" class="btn">下一题 →</a></div>
+</main>
+<div class="footer wrap">
+  <p>个人面试备考站 · 进度保存在本机浏览器 localStorage，可用导入/导出迁移。</p>
+  <p>知识外链：<a href="https://pdai.tech/" target="_blank" rel="noopener">pdai.tech</a>；本站不收录其正文。</p>
+</div>
+
+<script src="./data/questions.js"></script>
+<script src="./data/details-index.js"></script>
+<script src="./data/guide.js"></script>
+<script src="./data/knowledge.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/detail.js"></script>
+<script>
+document.getElementById('themeBtn')?.addEventListener('click', () => {
+  const cur = AppCommon.state.settings.theme || 'system';
+  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
+  AppCommon.setTheme(next);
+  AppCommon.toast('主题：' + ({light:'浅色',dark:'深色',system:'跟随系统'})[next]);
+});
+</script>
+</body>
+</html>

@@ -20,6 +20,12 @@
 
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+  function detailLink(id){
+    const f = {section:'fSection',category:'fCat',priority:'fPri',source:'fSrc',mastery:'fMastery',q:'qSearch'};
+    const u = new URLSearchParams({id});
+    Object.entries(f).forEach(([k,el]) => { const v=document.getElementById(el).value.trim(); if (v) u.set(k,v); });
+    return './q.html?' + u.toString();
+  }
   function render() {
     const s = document.getElementById('fSection').value;
     const c = document.getElementById('fCat').value;
@@ -47,7 +53,8 @@
       const ext = ref ? `<div class="ext-link">可选 · <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">原文参考</a>（外链，非必读）</div>` : '';
       return `<article class="card q-item" data-id="${q.id}">
         <div><span class="tag p-${q.priority}">${q.priority}</span><span class="tag">${escapeHtml(q.category)}</span><span class="tag">${escapeHtml(q.section)}</span></div>
-        <div class="q-title">${escapeHtml(q.question)}</div>
+        <div class="q-title"><a href="${detailLink(q.id)}">${escapeHtml(q.question)}</a>${(window.DETAIL_INDEX||{})[q.id]?'<span class="d-badge">● 有详解</span>':''}</div>
+        <a class="small" href="${detailLink(q.id)}">查看详解（原理 / 示例 / 问法 / 答法）→</a>
         <ul class="points ${showPoints.checked?'':'hidden'}">${points || '<li>暂无要点</li>'}</ul>
         ${ext}
         <div class="q-actions">

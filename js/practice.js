@@ -44,7 +44,8 @@
     const q = deck[idx]; if (!q) return;
     const el = document.getElementById('fPoints');
     if (!revealed) {
-      el.innerHTML = '<ul class="points">'+(q.keyPoints||[]).map(t=>'<li>'+t+'</li>').join('')+'</ul>';
+      el.innerHTML = '<ul class="points">'+(q.keyPoints||[]).map(t=>'<li>'+t+'</li>').join('')+'</ul>'
+        + '<p><a href="./q.html?id='+encodeURIComponent(q.id)+'">查看详解：原理 / 示例 / 问法 / 参考答法 →</a></p>';
       el.classList.remove('hidden'); revealed = true;
       document.getElementById('fReveal').textContent='隐藏要点';
     } else {

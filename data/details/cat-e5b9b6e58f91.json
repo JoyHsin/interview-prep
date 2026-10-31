@@ -1,0 +1,177 @@
+{
+ "j-c1": {
+  "principle": [
+   "ThreadPoolExecutor 的核心是“线程 + 队列”两级缓冲。提交任务时 execute() 按固定顺序决策：",
+   "① 运行线程数 < corePoolSize：直接 addWorker 新建核心线程执行该任务（即使有空闲核心线程也会新建，直到达到 core）。",
+   "② 否则尝试 workQueue.offer 入队；入队成功后会复查线程池状态：若已非 RUNNING 则移除任务并拒绝；若工作线程数为 0 则补一个非核心线程，防止队列有任务却没人消费。",
+   "③ 入队失败（队列满）：尝试新建非核心线程，总数不超过 maximumPoolSize。",
+   "④ 仍失败：执行 RejectedExecutionHandler。",
+   "所以 maximumPoolSize 只有在“有界队列满了”之后才起作用；用无界 LinkedBlockingQueue 时 max 形同虚设。keepAliveTime 控制非核心线程空闲多久回收，allowCoreThreadTimeOut(true) 时核心线程也会回收。",
+   "四种内置拒绝策略：AbortPolicy（默认，抛 RejectedExecutionException）、CallerRunsPolicy（由提交线程自己执行，天然降速）、DiscardPolicy（静默丢弃）、DiscardOldestPolicy（丢弃队头最老任务再重试提交）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.concurrent.*;\nimport java.util.concurrent.atomic.AtomicInteger;\n\npublic class PoolDemo {\n    public static void main(String[] args) {\n        AtomicInteger seq = new AtomicInteger();\n        ThreadPoolExecutor pool = new ThreadPoolExecutor(\n                4, 8, 60, TimeUnit.SECONDS,\n                new ArrayBlockingQueue<>(200),                 // 有界队列，防 OOM\n                r -> new Thread(r, \"order-pool-\" + seq.incrementAndGet()),\n                new ThreadPoolExecutor.CallerRunsPolicy());    // 满了让调用方降速\n        for (int i = 0; i < 10; i++) {\n            int n = i;\n            pool.execute(() -> System.out.println(Thread.currentThread().getName() + \" -> \" + n));\n        }\n        pool.shutdown();\n    }\n}"
+  },
+  "asks": [
+   "说说线程池的核心参数？",
+   "线程池提交一个任务后的执行流程是怎样的？",
+   "你们项目线程池是怎么配置的？为什么这么配？",
+   "为什么阿里规范不让用 Executors 创建线程池？"
+  ],
+  "followups": [
+   {
+    "q": "核心线程会被回收吗？",
+    "a": "默认不会；调用 allowCoreThreadTimeOut(true) 后空闲超过 keepAliveTime 也会回收。"
+   },
+   {
+    "q": "为什么不建议 Executors？",
+    "a": "newFixedThreadPool/newSingleThreadExecutor 用无界队列，堆积可致 OOM；newCachedThreadPool 最大线程数是 Integer.MAX_VALUE，可能创建海量线程。"
+   },
+   {
+    "q": "线程池里任务抛异常会怎样？",
+    "a": "execute 提交的异常会让该工作线程终止并被替换，异常打印到 UncaughtExceptionHandler；submit 提交的异常被封装进 Future，get() 时才抛出，不 get 就“吞掉”了。"
+   }
+  ],
+  "answer": [
+   "总：线程池通过 7 个参数控制“核心线程、队列、最大线程、拒绝”四级处理。",
+   "分：7 个参数是 corePoolSize、maximumPoolSize、keepAliveTime、unit、workQueue、threadFactory、handler。提交时先建核心线程，满了进队列，队列满再扩到最大线程，再满走拒绝策略。所以只有有界队列时最大线程数才有意义。拒绝策略有抛异常、调用方执行、丢弃、丢最老四种。",
+   "实践：【结合你的项目】比如调用下游/大模型接口属于 IO 密集，我会用有界队列 + 自定义线程名 + CallerRunsPolicy 或自定义拒绝记日志告警，并通过监控 activeCount、queue size 调参，不用 Executors。",
+   "总结：配置要基于任务类型和压测，关键是有界、可观测、有拒绝兜底。"
+  ],
+  "pitfalls": [
+   "误以为先扩到最大线程再入队，顺序反了。",
+   "用 submit 却不 get，异常被吞。",
+   "加分：说出 execute 入队后的二次检查，以及 CallerRuns 天然限流。"
+  ]
+ },
+ "j-c2": {
+  "principle": [
+   "synchronized 是 JVM 层面的内置锁：同步代码块编译为 monitorenter/monitorexit 字节码，同步方法通过 ACC_SYNCHRONIZED 标志实现，锁状态记录在对象头 Mark Word。HotSpot 历史上有锁升级：偏向锁 → 轻量级锁（CAS 自旋）→ 重量级锁（ObjectMonitor，线程阻塞）。注意 JDK 15 起偏向锁默认关闭并被废弃，现在主要是轻量级/重量级。",
+   "ReentrantLock 是 JDK 层面基于 AQS 的实现：用 volatile int state 表示重入次数，抢锁失败的线程进入 AQS 等待队列并被 LockSupport.park 挂起。",
+   "能力差异：ReentrantLock 支持 lockInterruptibly 可中断、tryLock 超时、公平锁（构造参数 true）、多个 Condition 精确唤醒；synchronized 只有一个隐式条件队列（wait/notify），但写法简单、异常自动释放锁。两者都可重入、都保证可见性。",
+   "性能上 JDK 6 优化后差距不大，选择主要看是否需要高级能力。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.concurrent.TimeUnit;\nimport java.util.concurrent.locks.*;\n\npublic class LockDemo {\n    private final ReentrantLock lock = new ReentrantLock();      // 非公平\n    private final Condition notEmpty = lock.newCondition();\n    private int stock = 0;\n\n    public boolean tryDeduct() throws InterruptedException {\n        if (!lock.tryLock(200, TimeUnit.MILLISECONDS)) return false; // 超时放弃\n        try {\n            while (stock == 0) notEmpty.await();\n            stock--;\n            return true;\n        } finally {\n            lock.unlock();                                       // 必须在 finally\n        }\n    }\n\n    public synchronized void simpleAdd() { stock++; }            // 异常时自动释放\n}"
+  },
+  "asks": [
+   "synchronized 和 ReentrantLock 有什么区别？",
+   "synchronized 的锁升级过程讲一下？",
+   "什么场景你会用 ReentrantLock？",
+   "公平锁和非公平锁区别？"
+  ],
+  "followups": [
+   {
+    "q": "为什么默认非公平？",
+    "a": "非公平允许新来的线程直接 CAS 抢锁，减少线程切换，吞吐更高；代价是可能饥饿。"
+   },
+   {
+    "q": "锁能降级吗？",
+    "a": "HotSpot 的重量级锁在 GC 安全点可能被回收清理，但一般说“锁只升级不降级”指运行中不主动降级。"
+   },
+   {
+    "q": "synchronized 锁的是什么？",
+    "a": "实例方法锁 this，静态方法锁 Class 对象，代码块锁括号里的对象。"
+   }
+  ],
+  "answer": [
+   "总：一个是 JVM 关键字，一个是基于 AQS 的 API。",
+   "分：实现上 synchronized 靠 monitor 和对象头，有锁升级；ReentrantLock 靠 AQS 的 state 和等待队列。功能上 ReentrantLock 多了可中断、超时、公平锁、多条件变量，但必须 finally 手动 unlock。",
+   "实践：【结合你的项目】普通互斥我用 synchronized；比如库存扣减需要超时放弃、避免线程长时间阻塞时用 tryLock。",
+   "总结：优先 synchronized，需要高级特性才用 Lock。"
+  ],
+  "pitfalls": [
+   "忘记 unlock 或 unlock 不在 finally。",
+   "还说偏向锁是默认开启（JDK 15 后已默认关闭）。",
+   "加分：能讲 Condition 精确唤醒和 tryLock 防死锁。"
+  ]
+ },
+ "j-c3": {
+  "principle": [
+   "AQS（AbstractQueuedSynchronizer）是 JUC 同步器的骨架，核心三件事：",
+   "① state：volatile int，含义由子类定义——ReentrantLock 里是重入次数，Semaphore 里是剩余许可，CountDownLatch 里是剩余计数。通过 CAS（compareAndSetState）修改。",
+   "② 等待队列：CLH 变体的 FIFO 双向链表，抢不到资源的线程封装成 Node 入队尾（CAS 设置 tail），然后自旋检查前驱是否 head，若不是或再次失败就 LockSupport.park 挂起。",
+   "③ 模板方法：AQS 写好排队、阻塞、唤醒，子类只需实现 tryAcquire/tryRelease（独占）或 tryAcquireShared/tryReleaseShared（共享）。",
+   "释放时 tryRelease 成功后唤醒 head 的后继节点（unpark）。公平锁在 tryAcquire 里先判断 hasQueuedPredecessors，非公平锁直接 CAS 抢。Condition 则另有一条条件队列，await 时从同步队列移到条件队列，signal 时再移回。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.concurrent.locks.AbstractQueuedSynchronizer;\n\n/** 一个不可重入的互斥锁，演示 AQS 模板方法 */\npublic class SimpleMutex {\n    private static class Sync extends AbstractQueuedSynchronizer {\n        @Override protected boolean tryAcquire(int arg) {\n            if (compareAndSetState(0, 1)) {\n                setExclusiveOwnerThread(Thread.currentThread());\n                return true;\n            }\n            return false;\n        }\n        @Override protected boolean tryRelease(int arg) {\n            if (getState() == 0) throw new IllegalMonitorStateException();\n            setExclusiveOwnerThread(null);\n            setState(0);\n            return true;\n        }\n    }\n    private final Sync sync = new Sync();\n    public void lock()   { sync.acquire(1); }\n    public void unlock() { sync.release(1); }\n}"
+  },
+  "asks": [
+   "AQS 原理说一下？",
+   "ReentrantLock 底层怎么实现的？",
+   "CountDownLatch 怎么基于 AQS 实现？",
+   "AQS 为什么用双向链表？"
+  ],
+  "followups": [
+   {
+    "q": "为什么要双向？",
+    "a": "取消节点、找有效前驱时需要向前遍历；唤醒时从 tail 往前找也依赖 prev 指针。"
+   },
+   {
+    "q": "CountDownLatch 怎么做的？",
+    "a": "初始化 state=N，countDown 做共享释放让 state 减 1，await 共享获取在 state==0 时成功，否则排队等待。"
+   },
+   {
+    "q": "park 和 wait 区别？",
+    "a": "park 不需要持有锁，可以先 unpark 再 park 不丢信号；wait 必须在 synchronized 内。"
+   }
+  ],
+  "answer": [
+   "总：AQS = 一个 volatile state + 一个 CLH 等待队列 + 模板方法。",
+   "分：子类用 CAS 改 state 定义抢锁规则；失败线程入队并 park；释放时唤醒后继。独占和共享两种模式，ReentrantLock、Semaphore、CountDownLatch、读写锁都基于它。公平与非公平差在是否先看队列里有没有人。",
+   "实践：【结合你的项目】排查线程卡住时，jstack 看到大量 WAITING 在 AbstractQueuedSynchronizer.acquire，就知道是锁竞争。",
+   "总结：理解 AQS 就理解了 JUC 大部分锁。"
+  ],
+  "pitfalls": [
+   "只背“state+队列”，说不出模板方法和共享/独占。",
+   "加分：能讲 Condition 队列与同步队列的转移。"
+  ]
+ },
+ "j-c5": {
+  "principle": [
+   "每个 Thread 对象内部有一个 ThreadLocalMap 字段，ThreadLocal 本身不存值，只是作为 key 去当前线程的 map 里取值，所以天然线程隔离。",
+   "ThreadLocalMap 的 Entry 继承 WeakReference<ThreadLocal<?>>：key 是弱引用，value 是强引用。当外部不再持有 ThreadLocal 对象时，key 会被 GC 回收变成 null，但 value 仍被 Entry 强引用着。",
+   "如果线程一直存活（线程池复用），这些 key 为 null 的 value 就一直无法回收，形成内存泄漏；更常见的是“脏数据”：上一个请求设置的用户信息被下一个请求读到。",
+   "ThreadLocalMap 在 get/set/remove 时会顺带清理部分 stale entry，但不保证及时，所以必须用完 remove()。",
+   "父子线程传值用 InheritableThreadLocal（创建子线程时拷贝），线程池场景要用阿里的 TransmittableThreadLocal。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public final class UserContext {\n    private static final ThreadLocal<Long> USER_ID = new ThreadLocal<>();\n    public static void set(Long id) { USER_ID.set(id); }\n    public static Long get()        { return USER_ID.get(); }\n    public static void clear()      { USER_ID.remove(); }\n}\n\n// Spring MVC 拦截器中使用\n@Component\npublic class UserInterceptor implements HandlerInterceptor {\n    @Override\n    public boolean preHandle(HttpServletRequest req, HttpServletResponse resp, Object h) {\n        UserContext.set(Long.valueOf(req.getHeader(\"X-User-Id\")));\n        return true;\n    }\n    @Override\n    public void afterCompletion(HttpServletRequest req, HttpServletResponse resp, Object h, Exception ex) {\n        UserContext.clear();   // 线程池复用，必须清理\n    }\n}"
+  },
+  "asks": [
+   "ThreadLocal 的原理？",
+   "ThreadLocal 为什么会内存泄漏？",
+   "key 为什么设计成弱引用？",
+   "线程池里用 ThreadLocal 要注意什么？"
+  ],
+  "followups": [
+   {
+    "q": "为什么 key 用弱引用？",
+    "a": "若 key 是强引用，ThreadLocal 对象永远无法回收；弱引用至少让 key 能回收，配合清理逻辑减少泄漏。"
+   },
+   {
+    "q": "value 为什么不也弱引用？",
+    "a": "value 只被 Entry 引用，弱引用会被随时回收导致取不到值。"
+   },
+   {
+    "q": "线程池怎么传递上下文？",
+    "a": "用 TransmittableThreadLocal 或在提交任务时手动包装（捕获-回放-恢复）。"
+   }
+  ],
+  "answer": [
+   "总：ThreadLocal 是用线程自己的 map 存数据，实现线程隔离。",
+   "分：数据在 Thread.threadLocals 里，key 是 ThreadLocal 的弱引用，value 是强引用。线程池复用时如果不 remove，value 无法回收导致泄漏，还会串数据。",
+   "实践：【结合你的项目】我们在拦截器里存用户/租户 ID，afterCompletion 里统一 remove；异步线程池用 TTL 传递 traceId。",
+   "总结：用 ThreadLocal 一定配 try-finally remove。"
+  ],
+  "pitfalls": [
+   "说“弱引用导致泄漏”——其实是 value 强引用 + 线程长存导致。",
+   "加分：提到串数据（安全问题）比泄漏更危险。"
+  ]
+ }
+}

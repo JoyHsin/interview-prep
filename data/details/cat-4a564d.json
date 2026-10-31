@@ -1,0 +1,91 @@
+{
+ "j-v1": {
+  "principle": [
+   "按 JVM 规范，运行时数据区分为：",
+   "线程私有：程序计数器（当前字节码行号，唯一不会 OOM 的区域）；虚拟机栈（每次方法调用一个栈帧，含局部变量表、操作数栈、动态链接、返回地址，过深递归抛 StackOverflowError）；本地方法栈（native 方法）。",
+   "线程共享：堆（对象实例和数组，GC 主战场，分新生代 Eden/S0/S1 和老年代）；方法区（类元信息、常量、静态变量的规范概念）。",
+   "实现变化：JDK 7 把字符串常量池和静态变量移到堆；JDK 8 去掉永久代，用本地内存的元空间（Metaspace）实现方法区，默认上限只受物理内存限制，可用 -XX:MaxMetaspaceSize 限制。",
+   "另外直接内存（DirectByteBuffer、Netty）不属于运行时数据区，但也会 OOM（Direct buffer memory）。",
+   "注意区分 JVM 内存区域和 JMM（Java 内存模型，讲的是主内存与工作内存、可见性和 happens-before）。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "# 常见 OOM 与对应区域\njava.lang.OutOfMemoryError: Java heap space           -> 堆\njava.lang.OutOfMemoryError: Metaspace                 -> 元空间（类太多/动态代理泄漏）\njava.lang.OutOfMemoryError: Direct buffer memory      -> 直接内存\njava.lang.OutOfMemoryError: unable to create native thread -> 线程过多\njava.lang.StackOverflowError                          -> 虚拟机栈（递归过深）\n\n# 常用参数\n-Xms4g -Xmx4g -Xss1m -XX:MaxMetaspaceSize=512m -XX:MaxDirectMemorySize=1g\n-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/dump"
+  },
+  "asks": [
+   "JVM 内存区域有哪些？",
+   "哪些区域是线程私有的？",
+   "JDK 8 为什么用元空间替代永久代？",
+   "哪些区域会 OOM？"
+  ],
+  "followups": [
+   {
+    "q": "为什么去掉永久代？",
+    "a": "永久代大小难调、易 OOM，且 HotSpot 与 JRockit 合并需要；元空间放本地内存更灵活。"
+   },
+   {
+    "q": "对象一定分配在堆上吗？",
+    "a": "开启逃逸分析后，未逃逸对象可能标量替换，不在堆上分配。"
+   },
+   {
+    "q": "字符串常量池在哪？",
+    "a": "JDK 7 起在堆中。"
+   }
+  ],
+  "answer": [
+   "总：分线程私有和共享两类。",
+   "分：私有的是程序计数器、虚拟机栈、本地方法栈；共享的是堆和方法区。JDK 8 方法区由元空间实现，放本地内存；字符串常量池在堆。除程序计数器外都可能 OOM，栈过深是 StackOverflowError。",
+   "实践：【结合你的项目】线上我们会配 HeapDumpOnOutOfMemoryError，出过 Metaspace OOM 是因为动态生成代理类太多。",
+   "总结：区分清楚区域和 OOM 类型，排查才有方向。"
+  ],
+  "pitfalls": [
+   "把 JVM 内存区域和 JMM 混为一谈。",
+   "说元空间在堆里。"
+  ]
+ },
+ "j-v4": {
+  "principle": [
+   "Full GC 频繁的本质是老年代（或元空间）空间持续不足，常见原因：",
+   "① 内存泄漏：对象被静态集合、缓存、ThreadLocal 长期引用，老年代越来越满，Full GC 后也回收不掉；",
+   "② 大对象或短期大量对象：大数组直接进老年代，或 Survivor 放不下导致过早晋升；",
+   "③ 元空间不足：动态代理、Groovy 脚本生成大量类；",
+   "④ 显式 System.gc()；⑤ G1 下 Humongous 对象过多或回收跟不上触发 Full GC。",
+   "排查路径：先看监控（GC 次数、老年代使用率、Full GC 后能降多少）→ jstat -gcutil 观察 → 看 GC 日志 → 回收后仍居高不下就 dump 堆 → MAT 看 Dominator Tree 和 Leak Suspects 找大对象及其 GC Roots 引用链 → 定位代码。止血可以先扩容/重启/摘流量，但要保留 dump。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "# 1. 每秒看一次 GC 情况（O 列=老年代使用率，FGC=Full GC 次数）\njstat -gcutil <pid> 1000 10\n\n# 2. JDK 9+ 开启统一 GC 日志\njava -Xlog:gc*:file=/data/logs/gc.log:time,uptime:filecount=5,filesize=50m -jar app.jar\n\n# 3. 导出堆（live 会先触发一次 Full GC，生产谨慎）\njcmd <pid> GC.heap_dump /data/dump/heap.hprof\n# 或 jmap -dump:live,format=b,file=/data/dump/heap.hprof <pid>\n\n# 4. 看对象直方图快速定位\njmap -histo:live <pid> | head -20"
+  },
+  "asks": [
+   "线上 Full GC 频繁你怎么排查？",
+   "有没有处理过 OOM 或内存泄漏？",
+   "怎么判断是内存泄漏还是内存不够？",
+   "MAT 你怎么用？"
+  ],
+  "followups": [
+   {
+    "q": "怎么区分泄漏和容量不足？",
+    "a": "Full GC 后老年代能大幅下降说明是正常压力，需扩容或调参；回收后仍居高不下且持续上涨，基本是泄漏。"
+   },
+   {
+    "q": "dump 很大影响线上怎么办？",
+    "a": "先摘流量或在副本节点 dump，dump 期间会 STW。"
+   },
+   {
+    "q": "怎么避免？",
+    "a": "缓存设上限和过期，ThreadLocal 及时 remove，大查询分页，监控告警 Full GC 次数。"
+   }
+  ],
+  "answer": [
+   "总：先定性是泄漏还是容量问题，再用工具定位到对象和代码。",
+   "分：先看监控和 jstat，确认 Full GC 频率和回收效果；看 GC 日志判断触发原因；回收不掉就 dump 堆，用 MAT 看支配树、找引用链；常见是缓存无上限、静态集合、ThreadLocal、大查询一次加载太多数据。",
+   "实践：【结合你的项目】讲一次真实排查：现象→指标→dump 发现什么对象→代码原因→修复→效果【待填】。",
+   "总结：保留现场、数据说话、修复后看指标回落。"
+  ],
+  "pitfalls": [
+   "上来就调大堆，不找根因。",
+   "忘记先保留 dump 就重启。",
+   "加分：有真实案例和前后指标。"
+  ]
+ }
+}

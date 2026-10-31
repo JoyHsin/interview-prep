@@ -194,3 +194,20 @@ html.dark .seg button.on-掌握 { background: #064e3b; }
 @media (max-width: 360px) {
   .topic-grid { grid-template-columns: 1fr; }
 }
+
+/* detail page */
+.detail h1{font-size:1.35rem;line-height:1.5}
+.d-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.d-sec h2{font-size:1.1rem;margin:0 0 8px}
+.d-sec p{line-height:1.8;margin:6px 0}
+.d-sec details{margin:6px 0;padding:6px 10px;border-radius:8px;background:rgba(127,127,127,.08)}
+.d-sec summary{cursor:pointer;font-weight:600}
+pre.code{overflow-x:auto;padding:12px;border-radius:8px;background:#0f172a;color:#e2e8f0;font-size:13px;line-height:1.5;-webkit-overflow-scrolling:touch}
+.d-nav{display:flex;justify-content:space-between;gap:12px;margin:16px 0 40px}
+.d-nav .btn{padding:10px 16px;border-radius:8px;border:1px solid rgba(127,127,127,.4);text-decoration:none}
+.d-nav .btn.disabled{opacity:.35;pointer-events:none}
+.q-title a{color:inherit;text-decoration:none}
+.q-title a:hover{text-decoration:underline}
+.d-badge{font-size:12px;margin-left:6px;color:#16a34a}
+.small{font-size:12px}
+@media (max-width:480px){.detail h1{font-size:1.15rem}pre.code{font-size:12px}}

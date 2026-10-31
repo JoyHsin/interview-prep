@@ -1,0 +1,48 @@
+{
+ "j-s2": {
+  "principle": [
+   "@Transactional 靠 Spring AOP 代理实现：调用代理对象的方法时，TransactionInterceptor 开启事务、执行目标方法、根据异常决定提交或回滚。所以凡是“没经过代理”或“异常没被代理看到”的情况都会失效：",
+   "① 同类内部自调用：this.b() 调的是目标对象本身，不经代理；",
+   "② 方法不可被代理：private、final、static 方法不行。Spring 6 之前要求 public；Spring 6 起基于类的 CGLIB 代理也支持 protected / 包可见方法，但 private 依旧不行；",
+   "③ 异常被 catch 吞掉没抛出；",
+   "④ 默认只对 RuntimeException 和 Error 回滚，抛受检异常不回滚，需要 rollbackFor = Exception.class；",
+   "⑤ 类不是 Spring Bean（自己 new 的）；",
+   "⑥ 传播行为配置为 NOT_SUPPORTED / NEVER 等，或在新线程里执行（事务绑定在 ThreadLocal 上，跨线程不共享）；",
+   "⑦ 数据库引擎不支持事务（如 MyISAM）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Service\n@RequiredArgsConstructor\npublic class OrderService {\n    private final OrderMapper orderMapper;\n    private final OrderService self;        // 注入自身代理（或拆到另一个 Bean）\n\n    public void placeOrder(Order o) {\n        // this.save(o);  // ❌ 自调用，不走代理，事务失效\n        self.save(o);     // ✅ 走代理\n    }\n\n    @Transactional(rollbackFor = Exception.class)\n    public void save(Order o) throws Exception {\n        orderMapper.insert(o);\n        if (o.getAmount() == null) {\n            throw new Exception(\"金额为空\");  // 受检异常，配了 rollbackFor 才回滚\n        }\n    }\n}\n// 注：注入自身需 @Lazy 或允许循环引用；更推荐把事务方法拆到独立 Bean。"
+  },
+  "asks": [
+   "@Transactional 什么情况下会失效？",
+   "Spring 事务是怎么实现的？",
+   "同一个类里方法互相调用事务怎么生效？",
+   "事务传播行为有哪些？"
+  ],
+  "followups": [
+   {
+    "q": "自调用怎么解决？",
+    "a": "拆到另一个 Bean；或注入自身代理；或 AopContext.currentProxy()（需开启 exposeProxy）。"
+   },
+   {
+    "q": "REQUIRES_NEW 用在哪？",
+    "a": "记录操作日志、审计这类不管主事务成败都要提交的场景。"
+   },
+   {
+    "q": "大事务有什么问题？",
+    "a": "长时间持有连接和锁，容易连接池耗尽、死锁；应缩小范围，远程调用/MQ 放事务外。"
+   }
+  ],
+  "answer": [
+   "总：事务基于 AOP 代理，没经过代理或异常没传给代理就会失效。",
+   "分：常见场景有自调用、方法私有或 final、异常被吞、抛受检异常没配 rollbackFor、对象不是 Bean、多线程、传播行为配错、引擎不支持。",
+   "实践：【结合你的项目】我们遇到过自调用导致事务不生效，后来把事务方法拆到单独 Service，并统一 rollbackFor = Exception.class。",
+   "总结：记住“代理 + 异常”两个关键点。"
+  ],
+  "pitfalls": [
+   "说 Spring 6 仍然只能 public（已放宽到非 private，仅限类代理）。",
+   "加分：讲大事务危害和 REQUIRES_NEW 场景。"
+  ]
+ }
+}

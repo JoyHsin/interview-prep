@@ -1,0 +1,91 @@
+{
+ "a-a3": {
+  "principle": [
+   "Function / Tool Calling 让模型“决定调用哪个函数、传什么参数”，真正执行函数的是你的应用代码，模型本身不执行。流程：",
+   "① 应用把工具定义（名称、描述、参数 JSON Schema）随消息发给模型；",
+   "② 模型判断需要工具时，返回 tool_calls（工具名 + JSON 参数）而不是最终答案；",
+   "③ 应用解析并校验参数，执行对应函数（查数据库、调接口），把结果作为 tool 消息追加到对话；",
+   "④ 再次调用模型，模型结合工具结果生成最终回答；可能循环多轮或并行调用多个工具。",
+   "框架（Spring AI、LangChain4j）把这个循环封装了：Spring AI 中用 @Tool 标注方法，ChatClient 调用时通过 .tools(...) 注册，框架自动完成“模型请求工具→执行→回传”的循环。",
+   "工程要点：工具描述要清晰（模型靠描述选工具）；参数严格校验；写操作要幂等和权限控制，高风险操作人工确认；设置超时、最大调用轮数，失败返回结构化错误让模型可以换策略。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import org.springframework.ai.chat.client.ChatClient;\nimport org.springframework.ai.tool.annotation.Tool;\nimport org.springframework.ai.tool.annotation.ToolParam;\n\npublic class OrderTools {\n    private final OrderService orderService;\n    public OrderTools(OrderService orderService) { this.orderService = orderService; }\n\n    @Tool(description = \"根据订单号查询订单状态和物流信息\")\n    public OrderInfo queryOrder(@ToolParam(description = \"订单号，例如 O20261031001\") String orderNo) {\n        return orderService.findByNo(orderNo);\n    }\n}\n\n// 调用（Spring AI 1.x）\nString answer = chatClient.prompt()\n        .system(\"你是售后客服，只能通过工具查询订单，不要编造。\")\n        .user(\"帮我查一下订单 O20261031001 到哪了\")\n        .tools(new OrderTools(orderService))\n        .call()\n        .content();"
+  },
+  "asks": [
+   "Function Calling 的原理是什么？",
+   "模型会自己执行函数吗？",
+   "你们的 Agent 工具调用是怎么实现的？",
+   "工具调用失败或超时怎么处理？"
+  ],
+  "followups": [
+   {
+    "q": "模型选错工具怎么办？",
+    "a": "优化工具描述和参数说明、减少相似工具、加少样本示例；对参数做校验返回错误让模型重试。"
+   },
+   {
+    "q": "工具调用的安全怎么保证？",
+    "a": "工具以当前用户身份执行并鉴权，最小权限，写操作二次确认，审计日志。"
+   },
+   {
+    "q": "怎么防止无限调用？",
+    "a": "设置最大轮数和总超时，检测重复调用同一工具同一参数。"
+   }
+  ],
+  "answer": [
+   "总：模型只负责“决策调用什么”，应用负责“执行并回传”。",
+   "分：把工具 schema 发给模型，模型返回 tool_calls，应用执行后把结果作为 tool 消息回传，模型再生成答案，可多轮。Spring AI 用 @Tool + ChatClient.tools() 自动处理这个循环。工程上要做好描述、参数校验、权限、超时和最大轮数。",
+   "实践：【结合你的项目】在 Dify/DeerFlow 里我接过【待填：哪些工具】，Java 侧提供 HTTP 接口给 Agent 调用，并做了鉴权和幂等。",
+   "总结：工具调用的难点不在调通，而在可控、安全、可观测。"
+  ],
+  "pitfalls": [
+   "以为模型直接执行函数。",
+   "忽略权限和最大轮数。",
+   "加分：讲清 Spring AI 的 @Tool 用法和失败回传策略。"
+  ]
+ },
+ "a-a5": {
+  "principle": [
+   "MCP（Model Context Protocol）是 Anthropic 2024 年提出的开放协议，目标是让 AI 应用以统一方式接入外部工具和数据，类似“AI 的 USB 接口”：工具提供方写一次 MCP Server，任何支持 MCP 的客户端（Claude、Cursor、各种 Agent 框架）都能用，不用每个应用单独集成。",
+   "角色：Host（AI 应用，如 IDE、聊天客户端）内含 MCP Client，每个 Client 与一个 MCP Server 保持连接；Server 暴露能力。",
+   "三类能力：Tools（可执行动作，可能有副作用，由模型决定调用）、Resources（只读数据，如文件、记录，由应用决定读取）、Prompts（可复用的提示模板，由用户选择）。",
+   "通信基于 JSON-RPC 2.0；传输方式有 stdio（本地子进程）和 Streamable HTTP（远程服务，早期规范使用 HTTP + SSE）。流程：建立连接 → 能力协商 → tools/list 获取工具列表 → 模型决定后 tools/call 调用 → 返回结果。",
+   "与 Function Calling 的关系：Function Calling 是模型层“输出要调用什么”的能力；MCP 是应用和工具之间的标准化接入协议，二者互补。与 A2A 的区别：MCP 连接 Agent 与工具，A2A 连接 Agent 与 Agent。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// Spring AI 1.x：用 MCP Server Starter 把 @Tool 方法暴露为 MCP 工具（示意）\n// 依赖：spring-ai-starter-mcp-server-webmvc（或 stdio 版本）\n@Service\npublic class WeatherService {\n    @Tool(description = \"查询城市当前天气\")\n    public String weather(@ToolParam(description = \"城市名，如 广州\") String city) {\n        return city + \"：多云 26℃\";\n    }\n}\n\n@Configuration\npublic class McpConfig {\n    @Bean\n    public ToolCallbackProvider weatherTools(WeatherService weatherService) {\n        return MethodToolCallbackProvider.builder().toolObjects(weatherService).build();\n    }\n}"
+  },
+  "asks": [
+   "MCP 是什么？解决什么问题？",
+   "MCP 和 Function Calling 有什么区别？",
+   "MCP 的 Tools、Resources、Prompts 区别？",
+   "MCP 的安全问题怎么处理？"
+  ],
+  "followups": [
+   {
+    "q": "什么时候不需要 MCP？",
+    "a": "只有一个应用、一两个内部接口时，直接 Function Calling 调 API 更简单。"
+   },
+   {
+    "q": "MCP 安全风险？",
+    "a": "工具投毒（描述里藏恶意指令）、权限过大、密钥泄露；需要最小权限、可信来源、敏感操作确认和审计。"
+   },
+   {
+    "q": "MCP 和 A2A？",
+    "a": "MCP 是 Agent 接工具（纵向），A2A 是 Agent 之间协作委派任务（横向）。"
+   }
+  ],
+  "answer": [
+   "总：MCP 是 AI 应用接入工具和数据的标准协议。",
+   "分：Host 内的 Client 连接 Server，基于 JSON-RPC，传输有 stdio 和 Streamable HTTP；Server 暴露 Tools、Resources、Prompts 三类能力；它解决的是 M 个应用 × N 个工具重复集成的问题。和 Function Calling 互补：前者是模型决策，后者是接入标准。",
+   "实践：【结合你的项目】我在 DeerFlow 里配置过 MCP Server【待填：接了什么】；日常用 Claude Code 也通过 MCP 接【待填】。",
+   "总结：MCP 让工具可复用，但要重视权限与安全。"
+  ],
+  "pitfalls": [
+   "把 MCP 说成一个模型或框架。",
+   "不知道 Tools 与 Resources 的区别（有无副作用、谁来决定调用）。"
+  ]
+ }
+}

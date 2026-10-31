@@ -1,0 +1,45 @@
+{
+ "j-m3": {
+  "principle": [
+   "MVCC 让读不加锁也能读到一致的数据。InnoDB 每行有隐藏列 DB_TRX_ID（最后修改它的事务 ID）和 DB_ROLL_PTR（指向 undo log 中的旧版本），旧版本串成版本链。",
+   "快照读（普通 SELECT）会生成 ReadView，包含：m_ids（生成时活跃的事务 ID 列表）、min_trx_id（最小活跃 ID）、max_trx_id（下一个将分配的事务 ID）、creator_trx_id。判断某版本是否可见：",
+   "trx_id == creator 可见；< min_trx_id 说明已提交，可见；≥ max_trx_id 说明 ReadView 之后才开启，不可见；在两者之间则看是否在 m_ids 中，在就不可见，否则可见。不可见就沿版本链往前找。",
+   "RC 每条 SELECT 都新建 ReadView，所以能看到别人新提交的数据（不可重复读）；RR 在事务第一次快照读时创建 ReadView 并复用，所以可重复读。",
+   "幻读：快照读靠 MVCC 基本不会出现；当前读（SELECT ... FOR UPDATE、UPDATE、DELETE）读最新数据，靠临键锁（Next-Key Lock = 记录锁 + 间隙锁）阻止插入。但 RR 不是彻底消除幻读：例如先快照读，再 UPDATE 了别人新插入的行，之后再快照读就会看到那一行。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "-- 会话 A（RR）\nBEGIN;\nSELECT * FROM account WHERE id BETWEEN 1 AND 10;          -- 快照读，生成 ReadView\n\n-- 会话 B\nINSERT INTO account(id, balance) VALUES (5, 100); COMMIT;\n\n-- 会话 A\nSELECT * FROM account WHERE id BETWEEN 1 AND 10;          -- 仍看不到 id=5（MVCC）\nSELECT * FROM account WHERE id BETWEEN 1 AND 10 FOR UPDATE; -- 当前读，能看到 id=5，并加临键锁\nCOMMIT;"
+  },
+  "asks": [
+   "MVCC 原理讲一下？",
+   "RC 和 RR 的区别在实现上体现在哪？",
+   "InnoDB 的 RR 能解决幻读吗？",
+   "什么是快照读和当前读？"
+  ],
+  "followups": [
+   {
+    "q": "RR 下完全没幻读吗？",
+    "a": "不是。快照读和当前读混用时仍可能出现，比如更新了别人新插入的行后，该行版本属于自己事务，之后快照读可见。"
+   },
+   {
+    "q": "undo log 什么时候删？",
+    "a": "没有任何 ReadView 还需要该版本时，由 purge 线程清理；长事务会导致 undo 堆积。"
+   },
+   {
+    "q": "间隙锁有什么副作用？",
+    "a": "锁范围变大，并发插入被阻塞，还可能死锁。"
+   }
+  ],
+  "answer": [
+   "总：MVCC 靠“版本链 + ReadView”实现非锁定读。",
+   "分：每行有 trx_id 和回滚指针，旧版本在 undo log 形成链；ReadView 记录活跃事务，按规则判断版本是否可见。RC 每次读都生成 ReadView，RR 只在第一次读生成，这就是可重复读的来源。幻读方面，快照读靠 MVCC，当前读靠临键锁，但两者混用仍有特例。",
+   "实践：【结合你的项目】我们遇到过长事务导致 undo 膨胀、查询变慢，后来拆小事务并监控 information_schema.innodb_trx。",
+   "总结：MVCC 解决读写并发，锁解决写写和当前读。"
+  ],
+  "pitfalls": [
+   "说 RR 彻底解决幻读。",
+   "把 max_trx_id 说成“最大活跃事务 ID”（实为下一个待分配 ID）。"
+  ]
+ }
+}

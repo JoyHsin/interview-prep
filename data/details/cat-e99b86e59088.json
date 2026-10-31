@@ -1,0 +1,93 @@
+{
+ "j-col1": {
+  "principle": [
+   "JDK 8 HashMap 结构是“数组 + 链表 + 红黑树”。put 流程：",
+   "① 计算 hash：(h = key.hashCode()) ^ (h >>> 16)，把高 16 位混进低位，减少只用低位取模时的冲突。",
+   "② 下标 = (n - 1) & hash，n 是 2 的幂，等价于取模但更快。table 懒初始化，默认容量 16。",
+   "③ 桶空直接放；有冲突则链表尾插；链表长度达到 8 且数组长度 ≥ 64 时转红黑树，数组不足 64 则优先扩容；树节点数 ≤ 6 时退化回链表。",
+   "④ size 超过 threshold（容量 × 负载因子 0.75）触发 resize，容量翻倍。JDK 8 扩容时不重新计算 hash，而是看 (hash & oldCap) 是否为 0，把节点拆成低位链（原位置）和高位链（原位置 + oldCap），并保持原顺序。",
+   "JDK 7 是数组 + 链表、头插法，并发扩容时可能形成环形链表导致 get 死循环；JDK 8 改尾插解决了环，但 HashMap 依然线程不安全（并发 put 会丢数据）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.HashMap;\nimport java.util.Map;\n\npublic class HashMapDemo {\n    public static void main(String[] args) {\n        // 预估 1000 个元素：容量 = 1000 / 0.75 + 1，避免多次扩容\n        Map<String, Integer> map = new HashMap<>((int) (1000 / 0.75f) + 1);\n        map.put(\"a\", 1);\n        map.merge(\"a\", 1, Integer::sum);      // a -> 2\n        map.computeIfAbsent(\"b\", k -> 10);\n        System.out.println(map);              // {a=2, b=10}\n\n        int h = \"a\".hashCode();\n        int hash = h ^ (h >>> 16);\n        System.out.println(\"index in 16 = \" + ((16 - 1) & hash));\n    }\n}"
+  },
+  "asks": [
+   "HashMap 底层结构和 put 流程？",
+   "JDK 7 和 8 的 HashMap 有什么区别？",
+   "为什么容量是 2 的幂？",
+   "HashMap 为什么线程不安全？"
+  ],
+  "followups": [
+   {
+    "q": "为什么树化阈值是 8？",
+    "a": "源码注释说明在负载因子 0.75 下桶内元素个数服从泊松分布，长度到 8 的概率极低，到 8 说明 hash 很差，此时转树保底 O(log n)。"
+   },
+   {
+    "q": "为什么要扰动函数？",
+    "a": "下标只用 hash 的低位，扰动把高位信息混入低位，减少冲突。"
+   },
+   {
+    "q": "线程安全用什么？",
+    "a": "ConcurrentHashMap；Collections.synchronizedMap 和 Hashtable 是全表锁，性能差。"
+   }
+  ],
+  "answer": [
+   "总：JDK 8 HashMap 是数组 + 链表 + 红黑树，核心是 hash 定位和扩容。",
+   "分：hash 做高低位异或，用 (n-1)&hash 定位；冲突尾插链表，链表 ≥8 且容量 ≥64 转红黑树；超过容量 ×0.75 扩容翻倍，靠 hash&oldCap 拆分高低链。相比 JDK 7：头插改尾插消除环、引入红黑树、扩容不再重算 hash。",
+   "实践：【结合你的项目】已知数据量时我会指定初始容量减少扩容；多线程共享缓存用 ConcurrentHashMap。",
+   "总结：HashMap 高效但非线程安全。"
+  ],
+  "pitfalls": [
+   "说“链表长度 8 就一定转树”——忽略容量 64 条件。",
+   "说 JDK 8 HashMap 线程安全了。",
+   "加分：讲清 hash & oldCap 拆分。"
+  ]
+ },
+ "j-col2": {
+  "principle": [
+   "JDK 7 的 ConcurrentHashMap 用 Segment 分段锁（Segment 继承 ReentrantLock），默认 16 段，并发度受段数限制。",
+   "JDK 8 去掉 Segment，结构和 HashMap 类似（数组 + 链表 + 红黑树），锁粒度细化到单个桶：",
+   "① put 时如果桶为空，用 CAS 放入首节点，不加锁；",
+   "② 桶非空则 synchronized 锁住桶的头节点再操作链表/树；",
+   "③ 扩容时把桶迁移到新表，迁移完的桶放 ForwardingNode（hash = MOVED），其他线程 put 遇到它会 helpTransfer 协助扩容；sizeCtl 控制初始化和扩容状态；",
+   "④ get 全程不加锁，Node 的 val 和 next 用 volatile 保证可见性；",
+   "⑤ 计数用 baseCount + CounterCell 数组（类似 LongAdder），减少竞争，size() 是并发下的近似值。",
+   "它不允许 key 或 value 为 null，因为并发下 get 返回 null 无法区分“不存在”还是“值为 null”。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.concurrent.ConcurrentHashMap;\nimport java.util.concurrent.atomic.LongAdder;\n\npublic class PvCounter {\n    private final ConcurrentHashMap<String, LongAdder> pv = new ConcurrentHashMap<>();\n\n    public void hit(String url) {\n        // computeIfAbsent 是原子的；避免 get-then-put 的竞态\n        pv.computeIfAbsent(url, k -> new LongAdder()).increment();\n    }\n\n    public long count(String url) {\n        LongAdder a = pv.get(url);\n        return a == null ? 0 : a.sum();\n    }\n}"
+  },
+  "asks": [
+   "ConcurrentHashMap 如何保证线程安全？",
+   "JDK 7 和 8 实现区别？为什么放弃分段锁？",
+   "get 为什么不需要加锁？",
+   "为什么不允许 null？"
+  ],
+  "followups": [
+   {
+    "q": "为什么用 synchronized 不用 ReentrantLock？",
+    "a": "锁粒度已细到桶头，synchronized 经 JVM 优化后开销小，且不需要额外 Node 继承锁对象，节省内存。"
+   },
+   {
+    "q": "复合操作安全吗？",
+    "a": "单个方法是原子的，但 get 后再 put 不是；要用 computeIfAbsent/merge 等原子方法。"
+   },
+   {
+    "q": "size 准确吗？",
+    "a": "并发修改时是估算值，不加全局锁。"
+   }
+  ],
+  "answer": [
+   "总：JDK 8 用“CAS + synchronized 锁桶头 + volatile”实现细粒度并发。",
+   "分：空桶 CAS 插入，非空桶锁头节点；get 无锁靠 volatile；扩容多线程协助迁移，用 ForwardingNode 标记；计数用 CounterCell 分散竞争。JDK 7 是 Segment 分段锁，并发度固定。",
+   "实践：【结合你的项目】本地缓存/计数器我用 CHM + computeIfAbsent，避免 check-then-act 的竞态。",
+   "总结：锁粒度从段细化到桶，读完全无锁。"
+  ],
+  "pitfalls": [
+   "以为用了 CHM 所有组合操作都线程安全。",
+   "加分：讲出 helpTransfer 多线程扩容和不允许 null 的原因。"
+  ]
+ }
+}

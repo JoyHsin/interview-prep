@@ -1,0 +1,45 @@
+{
+ "a-f2": {
+  "principle": [
+   "Spring AI 的 RAG 分两段：",
+   "ETL 入库：DocumentReader（如 TikaDocumentReader、PagePdfDocumentReader）读取文档 → TokenTextSplitter 等 DocumentTransformer 分块 → VectorStore.add() 写入；写入时 VectorStore 内部调用配置的 EmbeddingModel 生成向量。VectorStore 是统一抽象，支持 PGvector、Redis、Milvus、Elasticsearch、Qdrant 等。",
+   "检索生成：通过 Advisor 把检索嵌入 ChatClient 调用链。简单场景用 QuestionAnswerAdvisor：拿用户问题做相似度检索，把结果拼进 Prompt；复杂场景用 RetrievalAugmentationAdvisor 组合查询改写（RewriteQueryTransformer）、多检索器、空上下文策略等模块化组件。",
+   "SearchRequest 可设 topK、similarityThreshold 以及元数据过滤表达式（filterExpression），用于按租户/部门做权限过滤。",
+   "版本提示：Spring AI 1.0 正式版于 2025 年发布，此前的 M 系列里程碑版 API 变化较大（starter 命名、Advisor 构造方式等），网上旧教程需注意版本。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Service\n@RequiredArgsConstructor\npublic class KbService {\n    private final VectorStore vectorStore;\n    private final ChatClient.Builder chatClientBuilder;\n\n    // 入库：读取 -> 分块 -> 写入（内部自动 Embedding）\n    public void ingest(Resource pdf, String dept) {\n        List<Document> docs = new TikaDocumentReader(pdf).get();\n        List<Document> chunks = new TokenTextSplitter().apply(docs);\n        chunks.forEach(d -> d.getMetadata().put(\"dept\", dept));\n        vectorStore.add(chunks);\n    }\n\n    // 问答：检索增强 + 按部门过滤\n    public String ask(String question, String dept) {\n        var advisor = QuestionAnswerAdvisor.builder(vectorStore)\n                .searchRequest(SearchRequest.builder()\n                        .topK(5)\n                        .similarityThreshold(0.6)\n                        .filterExpression(\"dept == '\" + dept + \"'\")\n                        .build())\n                .build();\n        return chatClientBuilder.build().prompt()\n                .advisors(advisor)\n                .user(question)\n                .call()\n                .content();\n    }\n}\n// 生产中 dept 来自登录态，勿直接拼接用户输入；也可用 FilterExpressionBuilder 构造。"
+  },
+  "asks": [
+   "Spring AI 怎么实现 RAG？",
+   "Spring AI 的 Advisor 是什么？",
+   "VectorStore 支持哪些？你用的哪个？",
+   "怎么做多租户的知识库隔离？"
+  ],
+  "followups": [
+   {
+    "q": "Advisor 是什么？",
+    "a": "类似拦截器链，在调用模型前后增强请求和响应，RAG、对话记忆、安全过滤都可以做成 Advisor。"
+   },
+   {
+    "q": "QuestionAnswerAdvisor 和 RetrievalAugmentationAdvisor 区别？",
+    "a": "前者是简单一步检索拼接；后者模块化，可加查询改写、多源检索、无结果处理。"
+   },
+   {
+    "q": "向量库怎么选？",
+    "a": "已有 PostgreSQL 且数据量中等用 PGvector，运维简单；超大规模用 Milvus。"
+   }
+  ],
+  "answer": [
+   "总：Spring AI 用 ETL 管道入库，用 Advisor 把检索织入 ChatClient。",
+   "分：入库用 DocumentReader 读、Splitter 分块、VectorStore 写入并自动向量化；问答用 QuestionAnswerAdvisor 或模块化的 RetrievalAugmentationAdvisor，SearchRequest 控制 topK、阈值和元数据过滤。",
+   "实践：【结合你的项目】我用 Spring AI + PGvector 做了一个知识库 Demo【待填】，按部门元数据隔离，并做了 SSE 流式输出。",
+   "总结：Spring AI 的优势是和 Spring 生态一致、换模型和向量库只改配置。"
+  ],
+  "pitfalls": [
+   "沿用 M 版本旧 API 写法。",
+   "权限过滤字符串直接拼用户输入（表达式注入风险）。"
+  ]
+ }
+}
