@@ -174,40 +174,44 @@
  },
  "p-j84": {
   "principle": [
-   "CF 坑：默认 ForkJoin 公共池易被堵；异常包装成 CompletionException；忘超时；链式中忘记返回；在公共池做阻塞 IO。"
+   "CompletableFuture 常见坑一：不指定线程池时，supplyAsync 默认使用 ForkJoinPool.commonPool，它是全 JVM 共享、线程数约等于 CPU 核数减一的池。如果在其中执行阻塞 IO（查数据库、调接口），很快会被占满，影响所有使用公共池的代码（包括并行流）。业务代码应该传入自定义线程池。",
+   "坑二：异常被包装且容易被吞。异步阶段的异常会被包装为 CompletionException，join 抛 CompletionException，get 抛 ExecutionException，需要取 getCause 拿到真实异常；如果既不 join 也不注册 exceptionally 或 whenComplete，异常就悄无声息地消失了。",
+   "坑三：没有超时。join 会无限等待，下游挂住时调用线程也被挂住，JDK 9 起可以用 orTimeout 或 completeOnTimeout。其他：thenApply 与 thenApplyAsync 执行线程不同；多个任务用 allOf 汇总后要分别处理各自的异常；嵌套 Future 用 thenCompose 扁平化。"
   ],
   "example": {
    "lang": "java",
-   "code": "supplyAsync(this::io, myPool).orTimeout(3,SECONDS).exceptionally(e->\"x\");"
+   "code": "ExecutorService ioPool = new ThreadPoolExecutor(16, 32, 60, TimeUnit.SECONDS,\n        new ArrayBlockingQueue<>(500), new NamedThreadFactory(\"cf-io\"));\n\nCompletableFuture<User> userF = CompletableFuture\n    .supplyAsync(() -> userClient.get(uid), ioPool)       // 指定线程池\n    .orTimeout(800, TimeUnit.MILLISECONDS)                // 超时\n    .exceptionally(ex -> {                                 // 处理异常，ex 可能是 CompletionException\n        log.warn(\"load user failed\", ex.getCause() != null ? ex.getCause() : ex);\n        return User.anonymous();\n    });\nCompletableFuture<Order> orderF = userF.thenCompose(u -> orderClient.latestAsync(u.id())); // 扁平化"
   },
   "asks": [
-   "CF 坑？",
-   "公共池？",
-   "异常？",
-   "超时？"
+   "CompletableFuture 有哪些常见坑？",
+   "为什么不能用默认公共线程池做 IO？",
+   "异常怎么正确处理？",
+   "如何设置超时？"
   ],
   "followups": [
    {
-    "q": "包装？",
-    "a": "get 时解开 cause。"
+    "q": "join 和 get 处理异常有什么不同？",
+    "a": "join 抛出未检查的 CompletionException，get 抛出受检的 ExecutionException，两者都要通过 getCause 取真实异常。"
    },
    {
-    "q": "thenCompose？",
-    "a": "扁平化 Future。"
+    "q": "thenCompose 和 thenApply 有什么区别？",
+    "a": "thenApply 把结果映射成新值，若函数返回 Future 会得到嵌套 Future；thenCompose 用于返回 Future 的函数并把结果扁平化。"
    },
    {
-    "q": "allOf？",
-    "a": "异常要自己处理。"
+    "q": "allOf 之后怎么拿到每个结果？",
+    "a": "allOf 只返回 Void，需要在它完成后分别 join 各个 Future，并逐个处理可能的异常。"
    }
   ],
   "answer": [
-   "总：自备池、超时、正确处理异常。",
-   "分：忌阻塞公共池。",
-   "实践：并行下游调用。",
-   "总结：编排要稳健。"
+   "总：使用 CompletableFuture 要自备线程池、正确处理被包装的异常，并为每个异步调用设置超时。",
+   "分：公共池线程少且共享，阻塞 IO 会拖垮全局；异常包装为 CompletionException，不处理会被吞掉；用 orTimeout 防止无限等待；嵌套用 thenCompose。",
+   "实践：【结合你的项目】说明聚合接口并行调用多个下游时的线程池、超时和降级配置。",
+   "总结：异步编排的可靠性来自明确的线程池、超时和异常处理三件事。"
   ],
   "pitfalls": [
-   "无超时无池。"
+   "阻塞 IO 使用默认 commonPool。",
+   "没有注册异常处理导致错误被吞。",
+   "加分：解释 thenApply 与 thenApplyAsync 的执行线程差异。"
   ]
  }
 }

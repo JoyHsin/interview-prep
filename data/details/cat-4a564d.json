@@ -607,154 +607,170 @@
  },
  "j-v7": {
   "principle": [
-   "ZGC：超低停顿（染色指针/读屏障），适合大堆；JDK21 有分代 ZGC。引用：强（普通）、软（内存足保留，适合缓存）、弱（GC 即清，ThreadLocal key）、虚（唯一目的入队跟踪，DirectByteBuffer 清理）。ReferenceQueue 感知回收。"
+   "ZGC 是面向低延迟的垃圾收集器，目标是无论堆多大（可到 TB 级），GC 停顿都控制在毫秒级（JDK 17 后通常小于 1ms）。它通过着色指针（在指针中记录标记和重映射状态）和读屏障，让标记、对象转移、引用重定位几乎全部与应用线程并发执行，停顿时间与堆大小无关。JDK 21 起支持分代 ZGC，进一步降低开销。",
+   "四种引用决定对象生命周期：强引用只要可达就不回收；软引用 SoftReference 在内存不足时才回收，适合内存敏感的缓存；弱引用 WeakReference 在下一次 GC 时就回收，用于 WeakHashMap、ThreadLocalMap 的 key；虚引用 PhantomReference 无法通过它获取对象，只用于在对象被回收后收到通知，DirectByteBuffer 的 Cleaner 就是基于虚引用释放堆外内存。",
+   "软、弱、虚引用都可以关联 ReferenceQueue，对象被回收后引用本身会进入队列，程序可以据此做清理工作。"
   ],
   "example": {
    "lang": "java",
-   "code": "SoftReference<byte[]> cache=new SoftReference<>(big);\nWeakReference<Object> w=new WeakReference<>(obj, queue);"
+   "code": "// 弱引用：下次 GC 即回收\nWeakReference<byte[]> weak = new WeakReference<>(new byte[1024]);\nSystem.gc();\nSystem.out.println(weak.get());            // 很可能为 null\n\n// 虚引用 + 引用队列：对象回收后做清理（Cleaner 的原理）\nReferenceQueue<Object> q = new ReferenceQueue<>();\nPhantomReference<Object> ph = new PhantomReference<>(new Object(), q);\nReference<?> r = q.remove(1000);           // 回收后进入队列\n\n// 启用 ZGC（JDK 21 分代）\n// -XX:+UseZGC -XX:+ZGenerational -Xmx16g"
   },
   "asks": [
-   "ZGC？",
-   "四类引用？",
-   "软 vs 弱？",
-   "虚引用？"
+   "ZGC 有什么特点？",
+   "ZGC 如何做到低停顿？",
+   "强软弱虚四种引用有什么区别？",
+   "引用队列有什么作用？"
   ],
   "followups": [
    {
-    "q": "缓存？",
-    "a": "软或专业缓存库。"
+    "q": "软引用适合做缓存吗？",
+    "a": "可以用于内存敏感的简单缓存，但回收时机不可控，生产中更推荐 Caffeine 这类有容量和过期策略的缓存。"
    },
    {
-    "q": "ThreadLocal？",
-    "a": "key 弱引用。"
+    "q": "ThreadLocalMap 的 key 为什么用弱引用？",
+    "a": "ThreadLocal 对象没有外部强引用时可以被回收，避免 key 泄漏，但 value 仍是强引用，所以需要 remove。"
    },
    {
-    "q": "停顿？",
-    "a": "ZGC 毫秒级目标。"
+    "q": "ZGC 适合所有应用吗？",
+    "a": "适合对延迟敏感、堆较大的服务；吞吐优先的批处理任务用 G1 或 Parallel 可能更合适。"
    }
   ],
   "answer": [
-   "总：ZGC 低停顿；引用控制生命周期。",
-   "分：软缓存弱即清虚跟踪。",
-   "实践：慎用软当缓存唯一方案。",
-   "总结：引用类型要匹配场景。"
+   "总：ZGC 通过着色指针和读屏障实现并发标记与转移，停顿毫秒级且与堆大小无关；四种引用决定对象何时可被回收。",
+   "分：强引用不回收，软引用内存不足回收，弱引用下次 GC 回收，虚引用只用于回收通知；引用队列用于回收后清理；JDK 21 支持分代 ZGC。",
+   "实践：【结合你的项目】说明你们服务使用的收集器，以及是否评估过切换 ZGC 的延迟收益。",
+   "总结：ZGC 解决大堆停顿问题，引用类型让程序参与控制对象生命周期。"
   ],
   "pitfalls": [
-   "软弱分不清。"
+   "认为软引用缓存可以替代专业缓存库。",
+   "以为 ZGC 在任何场景都比 G1 更好。",
+   "加分：说明 Cleaner 基于虚引用释放直接内存。"
   ]
  },
  "p-v4": {
   "principle": [
-   "CMS：低停顿标记清除，碎片、浮动垃圾、Concurrent Mode Failure→退化 Serial Old 长停顿；JDK9 废弃 14 移除，由 G1/ZGC 替代。"
+   "CMS（Concurrent Mark Sweep）是第一个以低停顿为目标的老年代并发收集器，流程为初始标记（停顿）、并发标记、重新标记（停顿）、并发清除。它在 JDK 9 被标记废弃、JDK 14 被移除，主要因为几个固有问题。",
+   "一是内存碎片：CMS 使用标记清除算法，不整理内存，长期运行后老年代碎片化，大对象找不到连续空间时会触发 Full GC。二是浮动垃圾和 Concurrent Mode Failure：并发清理期间应用仍在分配对象，需要预留空间；如果老年代在 CMS 完成前就被填满，会退化为单线程的 Serial Old 进行 Full GC，停顿可能长达数秒。三是并发阶段占用 CPU 核心，在核数少的机器上明显影响吞吐，且调优参数多、难以掌握。",
+   "G1 用分 Region 的设计、复制整理避免碎片、可预测的停顿时间目标解决了这些问题，成为 JDK 9 起的默认收集器；对极低延迟的需求则有 ZGC 和 Shenandoah。"
   ],
   "example": {
    "lang": "text",
-   "code": "失败：并发清理跟不上晋升 → Full GC"
+   "code": "CMS 阶段：\n1. 初始标记   STW  标记 GC Roots 直接关联对象\n2. 并发标记         与应用并发遍历对象图\n3. 重新标记   STW  修正并发期间变化\n4. 并发清除         清除垃圾，不整理 → 碎片\n\n问题日志示例：\n[GC (CMS Final Remark) ...]\n(concurrent mode failure): ... [Times: real=3.85 secs]   ← 退化为 Serial Old\n迁移：-XX:+UseConcMarkSweepGC  →  -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
   },
   "asks": [
-   "CMS 为何淘汰？",
-   "碎片？",
-   "CMF？",
-   "替代？"
+   "CMS 为什么被淘汰？",
+   "CMS 的工作流程是什么？",
+   "什么是 Concurrent Mode Failure？",
+   "G1 解决了 CMS 的哪些问题？"
   ],
   "followups": [
    {
-    "q": "清除？",
-    "a": "不整理。"
+    "q": "CMS 为什么会产生内存碎片？",
+    "a": "它使用标记清除算法，只回收垃圾不移动存活对象，长期运行后空闲空间不连续。"
    },
    {
-    "q": "CPU？",
-    "a": "并发占核。"
+    "q": "Concurrent Mode Failure 的后果是什么？",
+    "a": "CMS 退化为单线程 Serial Old 对整个老年代做标记整理，停顿时间可能长达数秒。"
    },
    {
-    "q": "调优？",
-    "a": "历史知识。"
+    "q": "现在面试还问 CMS 有什么意义？",
+    "a": "很多老系统仍在使用，而且理解它的缺陷有助于理解 G1 和 ZGC 的设计动机。"
    }
   ],
   "answer": [
-   "总：碎片与失败停顿致命。",
-   "分：G1 取而代之。",
-   "实践：面试历史题。",
-   "总结：知道缺陷即可。"
+   "总：CMS 因内存碎片、浮动垃圾导致的 Concurrent Mode Failure、并发阶段占用 CPU 以及调优复杂而被淘汰。",
+   "分：标记清除不整理导致碎片；并发期间老年代被填满会退化为 Serial Old 长停顿；G1 用 Region 和复制整理加停顿目标取代了它，ZGC 进一步降低停顿。",
+   "实践：【结合你的项目】说明你是否遇到过从 CMS 迁移到 G1 的经历，以及停顿时间的变化。",
+   "总结：CMS 的缺陷正是后续收集器设计要解决的问题。"
   ],
   "pitfalls": [
-   "生产仍推 CMS。"
+   "说不清 CMS 退化成 Serial Old 的原因。",
+   "以为 CMS 至今仍是推荐方案。",
+   "加分：能对照讲出 G1 如何解决碎片问题。"
   ]
  },
  "p-v5": {
   "principle": [
-   "Arthas：watch/trace/stack/jad/ognl、thread、dashboard；条件与耗时过滤；有限热更新；生产慎用写操作。"
+   "Arthas 是阿里开源的 Java 线上诊断工具，通过 attach 到运行中的 JVM 进程，无需重启、无需修改代码就能观察程序内部状态，非常适合排查只在线上复现的问题。",
+   "常用命令：dashboard 查看线程、内存、GC 总览；thread -n 3 找出 CPU 占用最高的线程，thread -b 找出阻塞其他线程的锁持有者；trace 统计方法内部每一步调用耗时，定位慢在哪里；watch 观察方法入参、返回值和异常；jad 反编译线上运行的类，确认部署的代码版本是否正确；sc/sm 查看类和方法的加载信息；profiler 生成 CPU 火焰图。",
+   "热更新（redefine/retransform）只能修改方法体，不能增删字段或方法，且重启后失效，只适合紧急止血。线上使用要注意：trace 和 watch 有性能开销，需要限定条件和次数；生产环境应控制使用权限并审计操作。"
   ],
   "example": {
    "lang": "bash",
-   "code": "java -jar arthas-boot.jar\ntrace com.demo.Api save '#cost>200'\nthread -n 3"
+   "code": "java -jar arthas-boot.jar              # 选择目标进程 attach\ndashboard                              # 总览\nthread -n 3                            # CPU 最高的 3 个线程\nthread -b                              # 找到持有锁阻塞他人的线程\ntrace com.demo.OrderService create '#cost > 200' -n 5   # 只看耗时>200ms 的 5 次\nwatch com.demo.OrderService create '{params, returnObj, throwExp}' -x 2 -n 3\njad com.demo.OrderService             # 确认线上代码版本\nprofiler start ; profiler stop --format html             # 火焰图"
   },
   "asks": [
-   "Arthas？",
-   "常用命令？",
-   "风险？",
-   "替代？"
+   "Arthas 能做什么？",
+   "如何用 Arthas 定位慢方法？",
+   "Arthas 的热更新有什么限制？",
+   "线上使用 Arthas 要注意什么？"
   ],
   "followups": [
    {
-    "q": "生产？",
-    "a": "只读优先；权限。"
+    "q": "trace 和 watch 有什么区别？",
+    "a": "trace 统计方法内部调用链各步骤的耗时，用于找慢点；watch 观察方法的入参、返回值和异常，用于查数据问题。"
    },
    {
-    "q": "安装？",
-    "a": "进程附着。"
+    "q": "Arthas 的原理是什么？",
+    "a": "通过 Attach API 把 agent 加载到目标 JVM，再借助 Instrumentation 对字节码进行增强来采集数据。"
    },
    {
-    "q": "火焰图？",
-    "a": "profiler。"
+    "q": "退出后增强的代码会恢复吗？",
+    "a": "执行 stop 命令会还原所有被增强的类，只用 quit 退出客户端则增强仍然保留，需要注意。"
    }
   ],
   "answer": [
-   "总：线上诊断利器。",
-   "分：trace/watch/thread。",
-   "实践：慢方法定位。",
-   "总结：会用加分。"
+   "总：Arthas 能在不重启的情况下 attach 到线上 JVM，观察线程、方法耗时、参数和返回值，是线上诊断利器。",
+   "分：thread 查热点和锁，trace 查慢调用，watch 查数据，jad 确认代码版本，profiler 出火焰图；热更新只改方法体且重启失效；使用要限制次数并控制权限。",
+   "实践：【结合你的项目】讲一次用 trace 定位接口慢在某个下游调用或 SQL 的经历。",
+   "总结：Arthas 让线上排查从猜测变成观察，但要注意性能开销和操作安全。"
   ],
   "pitfalls": [
-   "生产随意 retransform。"
+   "在高流量方法上无条件 watch 导致性能下降。",
+   "用 quit 退出后忘记还原增强。",
+   "加分：会用 thread -b 和 profiler 火焰图。"
   ]
  },
  "p2-13": {
   "principle": [
-   "JIT：热点字节码编译本地码；分层 C1 快编 C2 深优化；解释+编译混合。了解即可解释为何预热后变快。"
+   "Java 程序启动时字节码先由解释器逐条解释执行，启动快但执行慢。JVM 统计方法调用次数和循环回边次数，当某段代码成为热点时，JIT（即时编译器）把它编译成本地机器码缓存起来，后续直接执行机器码，速度大幅提升。",
+   "HotSpot 有两个编译器：C1（客户端编译器）编译快、优化少；C2（服务端编译器）编译慢但做激进优化，如方法内联、逃逸分析、循环展开、去虚拟化。分层编译（JDK 8 默认开启）结合两者：代码先解释执行，热了用 C1 快速编译并收集性能数据，更热时再用 C2 依据这些数据深度优化。",
+   "C2 的部分优化基于假设（例如某个接口只有一个实现），假设被打破时会「去优化」退回解释执行再重新编译。所以服务刚启动时性能较差，压测和发布要做预热；GraalVM 的 AOT 编译是另一条路线，用提前编译换取启动速度。"
   ],
   "example": {
-   "lang": "bash",
-   "code": "-XX:+PrintCompilation   # 观察编译"
+   "lang": "text",
+   "code": "执行层级（分层编译）：\n0 解释执行\n1-3 C1 编译（3 层带 profiling 收集类型和分支信息）\n4 C2 编译（基于 profiling 激进优化：内联、逃逸分析、去虚拟化）\n\n常用参数：\n-XX:+PrintCompilation              # 观察哪些方法被编译\n-XX:ReservedCodeCacheSize=256m     # 代码缓存，满了会停止编译\n-XX:-TieredCompilation             # 关闭分层（一般不建议）"
   },
   "asks": [
-   "JIT？",
-   "分层？",
-   "预热？",
-   "AOT？"
+   "JIT 编译与分层编译是什么？",
+   "C1 和 C2 有什么区别？",
+   "为什么服务刚启动时比较慢？",
+   "什么是去优化？"
   ],
   "followups": [
    {
-    "q": "去优化？",
-    "a": "假设失败回退。"
+    "q": "代码缓存满了会怎样？",
+    "a": "JIT 停止编译新的热点方法，程序退化为解释执行，性能显著下降，需要调大 ReservedCodeCacheSize。"
    },
    {
-    "q": "热点？",
-    "a": "调用计数。"
+    "q": "为什么压测前需要预热？",
+    "a": "未预热时大量代码还在解释执行或只有 C1 编译，测出的性能不能代表稳定状态。"
    },
    {
-    "q": "Native？",
-    "a": "AOT 另一路径。"
+    "q": "AOT 和 JIT 有什么取舍？",
+    "a": "AOT 启动快、内存小，但缺少运行时 profiling 信息，峰值性能可能不如 JIT 充分优化后的代码。"
    }
   ],
   "answer": [
-   "总：热点编译加速。",
-   "分：C1/C2；预热。",
-   "实践：压测要预热。",
-   "总结：冷启动≠稳态。"
+   "总：JVM 先解释执行，对热点代码用 JIT 编译成机器码，分层编译结合 C1 快速编译和 C2 深度优化。",
+   "分：C1 编译快优化少，C2 基于 profiling 做内联和逃逸分析等优化；假设失效会去优化；启动阶段性能较差，需要预热；AOT 用启动速度换峰值。",
+   "实践：【结合你的项目】说明发布后流量逐步放大或做接口预热的做法，避免冷启动时超时。",
+   "总结：理解 JIT 才能解释 Java 程序为什么越跑越快，以及为什么要做预热。"
   ],
   "pitfalls": [
-   "一启动就测峰值。"
+   "拿未预热的压测数据下结论。",
+   "不知道代码缓存满会导致性能骤降。",
+   "加分：讲清去优化的触发原因。"
   ]
  }
 }

@@ -56,6 +56,7 @@ def is_ok(pri, d):
 
 bad = []
 seen = {}
+dup_warn = []
 pri_filter = None
 if '--priority' in sys.argv:
     i = sys.argv.index('--priority')
@@ -65,6 +66,9 @@ for f in DETAIL_FILES:
     stem = os.path.basename(f)[:-5]
     data = json.load(open(f))
     for k, d in data.items():
+        if k in idx and idx[k] != stem:
+            dup_warn.append((k, stem, idx[k]))   # shadowed copy; index decides the live one
+            continue
         seen[k] = stem
         q = qs.get(k)
         pri = (q or {}).get('priority', '重点')
@@ -97,6 +101,9 @@ if os.path.exists(js_path):
     js_idx = json.loads(raw.split('=', 1)[1].strip().rstrip(';'))
     if js_idx != idx:
         bad.append(('_details-index.js', ['out of sync with index.json'], '?'))
+
+for k, s_, live in dup_warn:
+    print(f'warning: {k} also in {s_}.json (shadowed; live copy in {live}.json)', file=sys.stderr)
 
 if '--list' in sys.argv:
     for k, p, pri in bad:

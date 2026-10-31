@@ -347,78 +347,86 @@
  },
  "p-io7": {
   "principle": [
-   "HeapBuffer 在堆，受 GC；Direct 堆外，IO 少一次拷贝，分配慢、泄漏难查（Cleaner）。池化复用；MaxDirectMemorySize。"
+   "Java NIO 的 ByteBuffer 分为堆内缓冲区（HeapByteBuffer，allocate）和堆外直接缓冲区（DirectByteBuffer，allocateDirect）。进行文件或网络 IO 时，操作系统只能读写不会被 GC 移动的内存，所以堆内缓冲区在 IO 时 JDK 会先把数据复制到一块临时的堆外内存，多了一次拷贝；直接缓冲区本身就在堆外，可以直接参与系统调用，减少一次复制。",
+   "代价是：直接内存分配和释放比堆内对象昂贵；它不受 -Xmx 限制而受 -XX:MaxDirectMemorySize 限制；回收依赖关联的 Java 对象被 GC 后通过 Cleaner（虚引用机制）释放，如果堆很空闲迟迟不 GC，直接内存可能一直不释放，导致 OOM: Direct buffer memory，且问题不容易通过堆 dump 发现。",
+   "因此直接缓冲区适合生命周期长、需要反复用于 IO 的场景，并且应该池化复用（如 Netty 的 PooledByteBufAllocator），不要频繁临时分配。"
   ],
   "example": {
    "lang": "java",
-   "code": "ByteBuffer.allocateDirect(8<<20);"
+   "code": "ByteBuffer heap = ByteBuffer.allocate(8192);          // 堆内，分配快，IO 时多一次拷贝\nByteBuffer direct = ByteBuffer.allocateDirect(8192);  // 堆外，IO 少一次拷贝，分配贵\n\ntry (FileChannel ch = FileChannel.open(path)) {\n    while (ch.read(direct) > 0) { direct.flip(); process(direct); direct.clear(); } // 复用\n}\n// 启动参数：限制直接内存\n// -XX:MaxDirectMemorySize=1g\n// 监控：BufferPoolMXBean(\"direct\").getMemoryUsed()"
   },
   "asks": [
-   "Direct vs Heap？",
-   "何时 Direct？",
-   "泄漏？",
-   "参数？"
+   "Direct Buffer 与 Heap Buffer 有什么区别？",
+   "为什么直接缓冲区能减少拷贝？",
+   "直接内存是怎么回收的？",
+   "使用直接缓冲区要注意什么？"
   ],
   "followups": [
    {
-    "q": "Netty？",
-    "a": "池化 Direct。"
+    "q": "直接内存会受 -Xmx 限制吗？",
+    "a": "不受，它由 -XX:MaxDirectMemorySize 控制，默认约等于最大堆大小，需要单独设置和监控。"
    },
    {
-    "q": "大？",
-    "a": "慎频繁分配。"
+    "q": "为什么直接内存泄漏难查？",
+    "a": "堆 dump 里只能看到很小的 DirectByteBuffer 对象，真正占用的堆外内存不在堆中，需要用 BufferPoolMXBean 或 NMT 观察。"
    },
    {
-    "q": "谁回收？",
-    "a": "幻引用清理。"
+    "q": "频繁临时分配直接缓冲区有什么问题？",
+    "a": "分配释放开销大，还可能因为 GC 不及时导致直接内存耗尽，应该池化复用。"
    }
   ],
   "answer": [
-   "总：堆外换拷贝，代价是管理。",
-   "分：池化；监控。",
-   "实践：NIO 网络。",
-   "总结：同堆外 OOM。"
+   "总：堆内缓冲区分配便宜但 IO 时多一次拷贝，直接缓冲区在堆外能减少拷贝，但分配贵且回收依赖 GC。",
+   "分：直接内存受 MaxDirectMemorySize 限制，由 Cleaner 释放；泄漏难从堆 dump 发现；适合长期复用并池化。",
+   "实践：【结合你的项目】如果用过 Netty，说明它的池化分配器和直接内存监控。",
+   "总结：直接缓冲区用管理成本换取更少的拷贝，必须池化和监控。"
   ],
   "pitfalls": [
-   "任意 new Direct。"
+   "在高频路径上临时 allocateDirect。",
+   "只监控堆内存，忽略直接内存。",
+   "加分：提到 NMT 和 BufferPoolMXBean 监控。"
   ]
  },
  "p2-16": {
   "principle": [
-   "ByteBuf 池化：复用减分配与 GC；引用计数 release；泄漏检测。忘 release 堆外涨。"
+   "Netty 的 ByteBuf 可以由 PooledByteBufAllocator 分配，它借鉴 jemalloc 思路，把内存划分为 Arena、Chunk、Page、Subpage 等层级，并为每个线程提供本地缓存，分配和释放主要在已有的大块内存中完成。好处是大幅减少频繁创建缓冲区带来的 GC 压力和直接内存分配开销，提高吞吐、降低延迟抖动。",
+   "池化 ByteBuf 使用引用计数管理生命周期：创建时 refCnt=1，retain 加一，release 减一，减到 0 时归还到池。由于不再依赖 GC 回收，忘记 release 就会造成内存泄漏；重复 release 会抛 IllegalReferenceCountException。",
+   "规则是「谁最后使用谁释放」：在 ChannelHandler 中消费了消息且不再向后传递时要 release（或继承 SimpleChannelInboundHandler 自动释放）；继续 fireChannelRead 传递则交给下游负责。开发和测试阶段可以开启 -Dio.netty.leakDetection.level=paranoid 检测泄漏。"
   ],
   "example": {
    "lang": "java",
-   "code": "buf.release(); // SimpleChannelInboundHandler 常自动释放"
+   "code": "public class MyHandler extends ChannelInboundHandlerAdapter {\n    @Override\n    public void channelRead(ChannelHandlerContext ctx, Object msg) {\n        ByteBuf buf = (ByteBuf) msg;\n        try {\n            handle(buf);                       // 消费完不再向后传递\n        } finally {\n            ReferenceCountUtil.release(buf);   // 必须释放，否则泄漏\n        }\n    }\n}\n// 或继承 SimpleChannelInboundHandler<ByteBuf>，channelRead0 结束后自动 release\n// 测试环境：-Dio.netty.leakDetection.level=paranoid"
   },
   "asks": [
-   "池化好处？",
-   "引用计数？",
-   "泄漏？",
-   "堆外？"
+   "Netty ByteBuf 池化有什么好处？",
+   "引用计数是怎么工作的？",
+   "什么时候需要手动 release？",
+   "如何发现 ByteBuf 泄漏？"
   ],
   "followups": [
    {
-    "q": "retain？",
-    "a": "传递所有权。"
+    "q": "消息传给下一个 Handler 还需要 release 吗？",
+    "a": "不需要，调用 fireChannelRead 把消息继续传递就把释放责任交给了下游。"
    },
    {
-    "q": "检测？",
-    "a": "leakDetectionLevel。"
+    "q": "泄漏检测级别有什么区别？",
+    "a": "默认 SIMPLE 抽样检测开销小，PARANOID 检测每个对象开销大，适合在测试环境定位泄漏。"
    },
    {
-    "q": "池参数？",
-    "a": "allocator 配置。"
+    "q": "池化分配器在哪里配置？",
+    "a": "通过 ChannelOption.ALLOCATOR 设置，Netty 4.1 起默认就是 PooledByteBufAllocator。"
    }
   ],
   "answer": [
-   "总：池化+引用计数。",
-   "分：谁最后 release。",
-   "实践：查泄漏。",
-   "总结：Netty 内存纪律。"
+   "总：ByteBuf 池化复用内存，减少 GC 和直接内存分配开销，用引用计数管理生命周期。",
+   "分：分层管理内存并带线程本地缓存；refCnt 归零归还池；谁最后使用谁 release；SimpleChannelInboundHandler 自动释放；用泄漏检测级别排查。",
+   "实践：【结合你的项目】说明你是否在 Netty 服务中遇到过直接内存增长，以及如何定位到未释放的 ByteBuf。",
+   "总结：池化带来性能，代价是必须严格遵守引用计数的释放约定。"
   ],
   "pitfalls": [
-   "不 release。"
+   "消费了 ByteBuf 却不 release。",
+   "在传递给下游后又自己 release 一次。",
+   "加分：说明 Arena、Chunk、Page 的分层设计。"
   ]
  }
 }
