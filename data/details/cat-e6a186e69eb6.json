@@ -254,5 +254,84 @@
    "夸大自己的参与。",
    "加分：讲清 1.x 与 2.0 的区别和沙箱的必要性。"
   ]
+ },
+ "a-f7": {
+  "principle": [
+   "集成模式：Java 做 BFF/网关——鉴权、限流、租户头、审计；通过 HTTP/SSE 调 Dify/DeerFlow API；长任务异步（提交任务 ID，回调或轮询）；流式用 SSE 透传并关 Nginx 缓冲。",
+   "工具回调：平台调 Java 业务 API，需鉴权（HMAC/JWT）、幂等、超时。密钥放配置中心。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@PostMapping(value=\"/ai/chat\", produces=MediaType.TEXT_EVENT_STREAM_VALUE)\npublic Flux<String> chat(@RequestBody ChatReq req, Principal u) {\n  return difyClient.streamChat(u.getName(), req.query(), req.conversationId())\n      .doOnNext(e -> audit.log(u.getName(), e));\n}\n// Dify: Authorization Bearer app-xxx；DeerFlow: 按任务 API 提交 + SSE 进度"
+  },
+  "asks": [
+   "Dify/DeerFlow 怎么和 Java 集成？",
+   "流式怎么透传？",
+   "工具回调安全？",
+   "同步还是异步？"
+  ],
+  "followups": [
+   {
+    "q": "缓冲？",
+    "a": "proxy_buffering off；X-Accel-Buffering: no。"
+   },
+   {
+    "q": "租户？",
+    "a": "user 字段与业务租户绑定，勿混会话。"
+   },
+   {
+    "q": "密钥？",
+    "a": "环境变量/配置中心，不进仓库。"
+   }
+  ],
+  "answer": [
+   "总：Java 管身份与业务，平台管编排，API/SSE 连接。",
+   "分：鉴权限流审计；长任务异步；回调鉴权幂等。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：边界清晰，安全在自己这边。"
+  ],
+  "pitfalls": [
+   "前端直连平台密钥。",
+   "无审计。"
+  ]
+ },
+ "a-f8": {
+  "principle": [
+   "一句话对比：Coze（扣子）——托管与插件生态强，上手快，偏产品运营；Dify——可自托管、工作流/知识库完整，适合要数据在内网的团队；自研 Spring AI/LangChain4j——可控性、可测性、复杂集成最强，成本最高。",
+   "选型看：是否要私有化、团队是否会代码、要多快上线、是否要深度定制。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "要快、可接受 SaaS → Coze\n要私有化 + 可视化 → Dify\n要深度定制/强治理 → 代码框架\n也可：Coze/Dify 做前端编排，核心交易仍在 Java"
+  },
+  "asks": [
+   "Coze、Dify、自研怎么选？",
+   "一句话区别？",
+   "能否混用？",
+   "你为什么选某个？"
+  ],
+  "followups": [
+   {
+    "q": "混用？",
+    "a": "可以，注意身份与数据打通成本。"
+   },
+   {
+    "q": "厂商锁定？",
+    "a": "Prompt/知识可迁移性要评估。"
+   },
+   {
+    "q": "面试？",
+    "a": "结合自己真实使用经历。"
+   }
+  ],
+  "answer": [
+   "总：托管快 vs 自托管平衡 vs 代码可控。",
+   "分：按私有化与定制深度选；可组合。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：没有最好，只有适合。"
+  ],
+  "pitfalls": [
+   "贬低未用过的平台。"
+  ]
  }
 }

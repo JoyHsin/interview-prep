@@ -209,5 +209,121 @@
    "忽略不同模型的提示和格式差异。",
    "对 400 错误也切换。"
   ]
+ },
+ "a-e5": {
+  "principle": [
+   "可观测三点：① Trace：traceId/conversationId 串联网关→编排→模型→工具→DB。② Metrics：QPS、延迟（首 token/总时长）、错误率、token 用量与成本、工具成功率、检索命中。③ Log：Prompt 版本、检索片段 ID、工具入参出参（脱敏）、模型名。坏 case 可按 ID 回放。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "MDC.put(\"traceId\", tid);\nTimer.Sample s = Timer.start();\ntry {\n  String ans = chatClient.prompt().user(q).call().content();\n  meter.counter(\"ai.tokens\", \"type\",\"completion\").increment(usage.getCompletionTokens());\n  return ans;\n} finally { s.stop(meter.timer(\"ai.latency\")); MDC.remove(\"traceId\"); }"
+  },
+  "asks": [
+   "AI 服务打哪些观测点？",
+   "如何回放坏 case？",
+   "成本怎么监控？",
+   "和传统监控差异？"
+  ],
+  "followups": [
+   {
+    "q": "差异？",
+    "a": "多了 token/成本/工具步数/检索质量。"
+   },
+   {
+    "q": "隐私？",
+    "a": "日志脱敏，Prompt 分层存储。"
+   },
+   {
+    "q": "告警？",
+    "a": "错误率、P99、费用日预算。"
+   }
+  ],
+  "answer": [
+   "总：trace 串联，指标含 token，日志可回放。",
+   "分：延迟分首字与总时长；工具与检索单独打点。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：看不见就优化不了。"
+  ],
+  "pitfalls": [
+   "只看 CPU。",
+   "日志塞隐私。"
+  ]
+ },
+ "a-e6": {
+  "principle": [
+   "Eval：建黄金集（问题+标准答案/要点+应召回文档）；指标：正确性、忠实度、引用准确、格式合规、安全（注入/越权）、延迟成本。上线前跑回归，改 Prompt/模型/分块后对比。",
+   "方法：规则校验 + 人工抽检 + LLM-as-Judge（需校准）。持续把线上坏 case 入库。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "流水线：改动 → 跑 eval 集 → 看差分 → 人工抽失败 → 合入或回滚\n门禁：忠实度不低于上版；严重安全 case 为 0"
+  },
+  "asks": [
+   "Eval 怎么做？",
+   "黄金集哪里来？",
+   "LLM Judge 风险？",
+   "多久跑一次？"
+  ],
+  "followups": [
+   {
+    "q": "来源？",
+    "a": "真实日志抽样+专家标注。"
+   },
+   {
+    "q": "Judge？",
+    "a": "偏好长答案，要与人校准。"
+   },
+   {
+    "q": "频率？",
+    "a": "每次 Prompt/模型变更必跑。"
+   }
+  ],
+  "answer": [
+   "总：黄金集 + 多指标 + 变更必回归。",
+   "分：检索与生成分开看；坏 case 回流。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：没有 Eval 的优化是玄学。"
+  ],
+  "pitfalls": [
+   "凭感觉上线。"
+  ]
+ },
+ "a-e7": {
+  "principle": [
+   "多模型网关：统一 OpenAI 兼容或内部协议；按任务路由（分类小模型/推理大模型）；密钥与配额；熔断 failover；计费与审计；Prompt 适配层。可自研或 LiteLLM 等。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "ChatClient pick(Task t) {\n  return switch (t.type()) {\n    case CLASSIFY -> small;\n    case REASON -> large;\n    default -> defaultClient;\n  };\n}"
+  },
+  "asks": [
+   "多模型网关要点？",
+   "怎么路由？",
+   "如何计费？",
+   "失败切换？"
+  ],
+  "followups": [
+   {
+    "q": "路由？",
+    "a": "规则或小模型判难度。"
+   },
+   {
+    "q": "兼容？",
+    "a": "输出 schema 统一，差异在适配层。"
+   },
+   {
+    "q": "配额？",
+    "a": "按租户/API Key。"
+   }
+  ],
+  "answer": [
+   "总：统一协议、任务路由、配额熔断、审计计费。",
+   "分：适配差异；failover；观测。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：网关是治理点不是简单转发。"
+  ],
+  "pitfalls": [
+   "只做反向代理无治理。"
+  ]
  }
 }

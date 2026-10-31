@@ -169,5 +169,280 @@
    "只看最终答案对不对，不拆分检索与生成。",
    "没有回归测试。"
   ]
+ },
+ "a-r5": {
+  "principle": [
+   "权限必须在检索时用元数据过滤，而不是先召回 TopK 再按权限丢弃——后者可能把无权文档的片段进了 Prompt（即使用户最终看不到完整文档，也已泄露到模型上下文/日志）。",
+   "做法：文档入库时写入 dept、role、acl、tenantId；SearchRequest.filterExpression 或等价过滤与用户身份绑定；变更 ACL 时同步更新元数据。测试要覆盖“跨租户问不到”。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "String dept = SecurityContext.currentDept(); // 来自登录态，勿信前端传参\nvar req = SearchRequest.builder().topK(5)\n    .filterExpression(\"dept == '\" + escape(dept) + \"'\").build();\n// 或 FilterExpressionBuilder；生产防表达式注入\nchatClient.prompt().advisors(QuestionAnswerAdvisor.builder(store)\n    .searchRequest(req).build()).user(q).call().content();"
+  },
+  "asks": [
+   "RAG 权限怎么做？",
+   "为什么不能先召回再过滤？",
+   "ACL 变更怎么办？",
+   "多租户隔离？"
+  ],
+  "followups": [
+   {
+    "q": "先过滤？",
+    "a": "无权片段可能进上下文或日志。"
+   },
+   {
+    "q": "表达式注入？",
+    "a": "不要拼接不可信输入；用白名单字段与参数化构建。"
+   },
+   {
+    "q": "同文档部分可见？",
+    "a": "按块级 ACL 或拆库。"
+   }
+  ],
+  "answer": [
+   "总：检索时按身份元数据过滤，ACL 与索引同步。",
+   "分：入库带权限字段；禁止后置过滤；防注入。",
+   "实践：【结合你的项目】按部门隔离知识库。",
+   "总结：权限是安全边界不是体验优化。"
+  ],
+  "pitfalls": [
+   "先召回再过滤。",
+   "信任前端传的租户 ID。"
+  ]
+ },
+ "a-r6": {
+  "principle": [
+   "新鲜度：文档变更后索引要尽快一致。管道：监听源系统变更（Webhook/MQ/binlog）→ 解析分块 → 删旧块（按 docId）写新块 → 更新版本号。软删：先标 deleted 再物理清，检索过滤已删。",
+   "定时全量对账防漏同步；大批量用批量 embedding。删除源文档必须删向量，否则答出过期内容。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public void onDocUpdated(String docId, Resource file) {\n    vectorStore.delete(List.of(docId));              // 或按 metadata doc_id 删\n    List<Document> chunks = split(read(file));\n    chunks.forEach(c -> { c.getMetadata().put(\"doc_id\", docId);\n                          c.getMetadata().put(\"version\", now()); });\n    vectorStore.add(chunks);\n}\n// 定时：源库所有 docId 与索引 docId 对账，补漏删多余"
+  },
+  "asks": [
+   "索引如何增量更新？",
+   "删除文档怎么办？",
+   "如何保证最终一致？",
+   "嵌入成本？"
+  ],
+  "followups": [
+   {
+    "q": "只追加不删？",
+    "a": "会检索到过期块，必须删旧。"
+   },
+   {
+    "q": "对账？",
+    "a": "定期比对源与索引 ID 集合。"
+   },
+   {
+    "q": "版本？",
+    "a": "检索可优先高版本或同版一致。"
+   }
+  ],
+  "answer": [
+   "总：变更管道删旧写新 + 软删过滤 + 全量对账。",
+   "分：事件驱动增量；删除同步；控制 embedding 批量。",
+   "实践：【结合你的项目】【待填：同步延迟】。",
+   "总结：索引与源同样需要生命周期管理。"
+  ],
+  "pitfalls": [
+   "只更新不删旧块。",
+   "无对账。"
+  ]
+ },
+ "a-r7": {
+  "principle": [
+   "空检索或低相关时硬答最易幻觉。策略：① 相似度阈值，低于则视为无结果；② 拒答或追问澄清；③ 放宽检索（改写查询、降阈值、混合检索）后再试一次；④ Spring AI ContextualQueryAugmenter 默认不允许空上下文，会指示模型不要编造，也可 allowEmptyContext。",
+   "产品上明确“未找到”比瞎答更好；记录这类 case 优化分块与词表。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Advisor rag = RetrievalAugmentationAdvisor.builder()\n    .documentRetriever(VectorStoreDocumentRetriever.builder()\n        .vectorStore(store).similarityThreshold(0.75).topK(5).build())\n    .queryAugmenter(ContextualQueryAugmenter.builder()\n        .allowEmptyContext(false).build())   // 空则拒答指令\n    .build();"
+  },
+  "asks": [
+   "检索为空怎么办？",
+   "阈值怎么定？",
+   "Spring AI 怎么处理？",
+   "要不要降级网页搜索？"
+  ],
+  "followups": [
+   {
+    "q": "阈值？",
+    "a": "用评测集调，过高拒答多，过低噪声多。"
+   },
+   {
+    "q": "追问？",
+    "a": "缺槽位时先问清再检索。"
+   },
+   {
+    "q": "外搜？",
+    "a": "企业内知识库通常不自动外搜，除非产品允许。"
+   }
+  ],
+  "answer": [
+   "总：低相关就拒答或澄清，不要硬编。",
+   "分：阈值 + 改写重试 + ContextualQueryAugmenter；记坏 case。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：宁可少答不可瞎答。"
+  ],
+  "pitfalls": [
+   "无结果仍让模型自由发挥。"
+  ]
+ },
+ "r-r1": {
+  "principle": [
+   "ANN 近似近邻：HNSW——多层跳表式图，召回高、查询快、内存占用大，构建慢。IVF——先聚类分桶，查时探 nprobe 个桶，省内存可扩展，要调 nlist/nprobe 平衡精度与速度。",
+   "取舍：内存充足要高召回用 HNSW；十亿级要分片压缩看 IVF/DiskANN 等。还可乘积量化压缩向量。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "小规模（百万内）pgvector + HNSW/IVFFlat\n大规模分布式 Milvus（HNSW/IVF_PQ）\n调参：HNSW ef/M；IVF nprobe↑ 更准更慢"
+  },
+  "asks": [
+   "HNSW 和 IVF？",
+   "怎么选？",
+   "精确检索？",
+   "量化？"
+  ],
+  "followups": [
+   {
+    "q": "精确？",
+    "a": "Flat 暴力，小数据或召回评测基线。"
+   },
+   {
+    "q": "参数？",
+    "a": "用召回率曲线调。"
+   },
+   {
+    "q": "过滤？",
+    "a": "标量过滤与 ANN 组合，注意实现差异。"
+   }
+  ],
+  "answer": [
+   "总：HNSW 准快占内存，IVF 省内存可扩展。",
+   "分：按规模与内存选；调参看召回-延迟。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：ANN 是精度与资源的折中。"
+  ],
+  "pitfalls": [
+   "以为向量检索总是精确的。"
+  ]
+ },
+ "r-r2": {
+  "principle": [
+   "Bi-Encoder：问题与文档分别编码成向量，文档可离线入库，检索快，适合召回。Cross-Encoder：问题与文档拼在一起过模型打分，交互充分更准，但无法离线预存，慢，适合对 TopN 重排。",
+   "流水线：Bi 召回几百 → Cross 精排 Top5。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "List<Doc> cand = biEncoderSearch(q, 50);\nList<Doc> top = crossEncoderRerank(q, cand, 5);"
+  },
+  "asks": [
+   "Bi 和 Cross 区别？",
+   "为何重排用 Cross？",
+   "能全用 Cross？",
+   "和 BM25 混合？"
+  ],
+  "followups": [
+   {
+    "q": "全 Cross？",
+    "a": "候选太多算不过来。"
+   },
+   {
+    "q": "模型？",
+    "a": "bge-reranker 等。"
+   },
+   {
+    "q": "延迟？",
+    "a": "控制候选数 N。"
+   }
+  ],
+  "answer": [
+   "总：Bi 快召回，Cross 准重排。",
+   "分：先多后精；控 N。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：两阶段是标准结构。"
+  ],
+  "pitfalls": [
+   "召回重排用同一个双塔硬比。"
+  ]
+ },
+ "r-r3": {
+  "principle": [
+   "Ragas 类指标：faithfulness 忠实度（答案是否由上下文支持）；answer relevancy；context precision/recall（检索上下文是否准、是否全）。用于回归 RAG 改动。",
+   "落地：准备集 → 跑检索+生成 → 算指标（可 LLM 评）→ 人工校准。关注差分不是绝对值。"
+  ],
+  "example": {
+   "lang": "python",
+   "code": "# 示意\nscores = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_recall])\nassert scores[\"faithfulness\"] >= baseline - 0.02"
+  },
+  "asks": [
+   "Ragas 有哪些指标？",
+   "怎么用在 CI？",
+   "忠实度低说明什么？",
+   "局限？"
+  ],
+  "followups": [
+   {
+    "q": "忠实度低？",
+    "a": "幻觉或检索噪声，查 Prompt/阈值。"
+   },
+   {
+    "q": "context recall 低？",
+    "a": "分块或召回问题。"
+   },
+   {
+    "q": "局限？",
+    "a": "LLM 评有偏差，需抽样人审。"
+   }
+  ],
+  "answer": [
+   "总：忠实度+相关性+上下文精确/召回。",
+   "分：变更看差分；人机校准。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：指标服务归因。"
+  ],
+  "pitfalls": [
+   "只看最终对错。"
+  ]
+ },
+ "r-r4": {
+  "principle": [
+   "上下文污染：无关、过时、矛盾的片段进入 Prompt，干扰回答甚至导致错误遵循。",
+   "避免：相似度阈值；Rerank 后严格 TopK；去重；权限与时效过滤；重要指令放系统提示开头/结尾；分隔资料与指令；控制总长度防 lost-in-the-middle。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "只注入 Rerank Top5；阈值 0.7；同 doc 去重；\n资料包在 <docs> 中并声明“可能含无关内容，请忽略无关部分”"
+  },
+  "asks": [
+   "什么是上下文污染？",
+   "怎么避免？",
+   "lost-in-the-middle？",
+   "K 是否越大越好？"
+  ],
+  "followups": [
+   {
+    "q": "K 越大？",
+    "a": "噪声与成本升，未必更好。"
+   },
+   {
+    "q": "矛盾片段？",
+    "a": "优先高分/新版本，或让模型指出冲突。"
+   },
+   {
+    "q": "中间丢失？",
+    "a": "关键放两端或缩短。"
+   }
+  ],
+  "answer": [
+   "总：严控进入上下文的片段质量与数量。",
+   "分：阈值、重排、TopK、去重、结构分隔。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：上下文是稀缺且易污染的资源。"
+  ],
+  "pitfalls": [
+   "K 盲目加大。"
+  ]
  }
 }
