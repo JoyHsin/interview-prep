@@ -351,7 +351,8 @@
     "keyPoints": [
       "1.7 Segment vs 1.8 CAS+synchronized 桶头",
       "sizeCtl 扩容协助",
-      "不允许 null"
+      "不允许 null",
+      "单个方法线程安全不代表检查再更新等组合操作原子；使用 putIfAbsent、compute 或明确的同步边界。"
     ],
     "source": "本指南",
     "refLinks": [
@@ -370,7 +371,8 @@
     "keyPoints": [
       "随机访问 O(1) vs 遍历",
       "扩容 1.5 倍",
-      "实际业务多用 ArrayList"
+      "实际业务多用 ArrayList",
+      "LinkedList 按索引定位需要遍历，不能笼统说插入删除总更快。"
     ],
     "source": "本指南",
     "refLinks": [
@@ -389,7 +391,8 @@
     "keyPoints": [
       "相等必须同 hash",
       "作 Hash 键必须稳定",
-      "业务主键字段"
+      "业务主键字段",
+      "equals 相等必须具有相同 hashCode，这是对象契约，不因是否放入哈希集合而改变。"
     ],
     "source": "本指南",
     "refLinks": [
@@ -412,7 +415,8 @@
     "keyPoints": [
       "modCount",
       "读多写少",
-      "迭代快照代价"
+      "迭代快照代价",
+      "并发集合的迭代语义可能是快照或弱一致；不能将所有并发集合都说成复制后遍历。"
     ],
     "source": "本指南",
     "refLinks": [
@@ -4679,6 +4683,1490 @@
       "错误率"
     ],
     "source": "本指南",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h01",
+    "section": "传统Java",
+    "category": "网络",
+    "priority": "重点",
+    "question": "TCP 如何保证可靠传输？",
+    "keyPoints": [
+      "序号和确认应答用于检测丢失与重排，接收端按序交付字节流；超时或重复确认可触发重传。",
+      "校验和检测传输错误；接收窗口提供流量控制，拥塞控制限制网络负载。",
+      "TCP 只保证连接内字节流可靠有序，不提供应用消息边界或业务恰好执行一次。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h02",
+    "section": "传统Java",
+    "category": "网络",
+    "priority": "重点",
+    "question": "TCP 流量控制与拥塞控制有什么区别？",
+    "keyPoints": [
+      "流量控制保护接收端，发送方依据接收窗口限制未确认数据。",
+      "拥塞控制保护网络，发送方依据拥塞窗口和算法调整速率。",
+      "实际可发送的数据受接收窗口和拥塞窗口共同约束。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h03",
+    "section": "传统Java",
+    "category": "网络",
+    "priority": "重点",
+    "question": "TCP 的 TIME_WAIT 有什么作用？",
+    "keyPoints": [
+      "主动关闭方通常进入 TIME_WAIT，以便在最终 ACK 丢失时响应对端重传的 FIN。",
+      "等待一段时间也有助于旧连接报文从网络中消失，降低对后续连接的干扰。",
+      "大量 TIME_WAIT 应先分析连接模式、短连接和流量，不应盲目修改内核参数。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h04",
+    "section": "传统Java",
+    "category": "网络",
+    "priority": "重点",
+    "question": "Cookie 和 Session 如何配合？",
+    "keyPoints": [
+      "Session 状态通常保存在服务端，浏览器通过 Cookie 携带会话标识；具体实现可以不同。",
+      "Cookie 使用 Secure、HttpOnly、合理的 SameSite 和过期策略，登录后应轮换会话标识。",
+      "多实例部署需要共享会话存储或其他一致的会话方案，并考虑 CSRF 防护。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h05",
+    "section": "传统Java",
+    "category": "网络",
+    "priority": "重点",
+    "question": "TCP 和 UDP 有什么区别？",
+    "keyPoints": [
+      "TCP 提供面向连接的可靠有序字节流，并具备流量与拥塞控制；UDP 提供无连接的数据报服务。",
+      "UDP 不保证交付、顺序和去重，应用可按需补充可靠性与拥塞控制。",
+      "选型取决于延迟、可靠性与协议生态；HTTP/3 通过 QUIC 使用 UDP。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h06",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis 插件的拦截机制和使用边界？",
+    "keyPoints": [
+      "插件通过 Interceptor 指定要拦截的接口和方法，对 Executor、StatementHandler、ParameterHandler、ResultSetHandler 等扩展点进行代理。",
+      "分页、审计等可使用插件；需注意插件顺序、SQL 改写兼容性和性能。",
+      "插件不能拦截任意业务方法；复杂改写应测试参数绑定、方言和总数查询。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h07",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis 分页有哪些方式和风险？",
+    "keyPoints": [
+      "可以使用数据库分页 SQL 或分页插件；RowBounds 的实际效率取决于驱动和实现，不应默认等同数据库物理分页。",
+      "深分页的 OFFSET 可能扫描大量行，可考虑基于稳定索引的游标分页。",
+      "排序必须稳定且有唯一兜底字段；并发写入时明确是否需要快照一致性。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h08",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis 如何避免一对多查询的 N+1 问题？",
+    "keyPoints": [
+      "先识别一次列表查询后逐条触发关联查询的访问模式，通过 SQL 日志或链路观测确认。",
+      "按场景使用批量查询、适当的 JOIN 和结果映射，避免重复往返。",
+      "JOIN 一对多分页可能造成主表结果截断，可先分页主键再批量加载关联。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h09",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "Spring、Spring MVC 和 Spring Boot 各自负责什么？",
+    "keyPoints": [
+      "Spring 提供依赖注入、事务等基础能力；Spring MVC 提供基于 Servlet 的 Web 请求处理。",
+      "Spring Boot 通过自动配置、依赖管理和运行时能力简化应用搭建。",
+      "三者不是互斥替代关系，Boot 应用可以使用 Spring MVC。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h10",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "Spring MVC 如何统一处理接口异常？",
+    "keyPoints": [
+      "使用 @ControllerAdvice 或 @RestControllerAdvice 配合 @ExceptionHandler 映射异常和响应。",
+      "区分参数错误、业务冲突和服务端故障，返回合理状态码及稳定的错误码。",
+      "记录必要的追踪信息，避免向客户端暴露堆栈、密钥和内部实现。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h11",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "微服务调用中的超时、重试和幂等如何配合？",
+    "keyPoints": [
+      "为连接和请求设置超时并控制端到端时间预算；超时不代表对端没有执行。",
+      "仅对适合重试的错误采用有限次数、退避和抖动，并避免多层重试放大流量。",
+      "有副作用的操作使用幂等键及持久化去重，验证超时后重复请求的结果。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h12",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "熔断、限流和隔离分别解决什么问题？",
+    "keyPoints": [
+      "限流约束进入系统的速率或并发；隔离通过线程池、连接池或资源配额限制故障影响范围。",
+      "熔断在下游持续失败时暂时拒绝请求，并通过半开探测恢复。",
+      "结合超时、降级和监控配置，避免降级逻辑造成新的依赖压力。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h13",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "服务注册中心不可用时，服务调用一定会中断吗？",
+    "keyPoints": [
+      "取决于客户端是否缓存可用实例、调用路径和具体实现；已有连接或缓存可能暂时可用。",
+      "新实例发现、地址变更和故障摘除可能受影响，缓存也可能变得陈旧。",
+      "结合注册中心、客户端版本和故障演练验证，不应笼统保证持续可用。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h14",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "RPC 调用与本地调用有哪些关键差异？",
+    "keyPoints": [
+      "远程调用存在网络延迟、部分失败、序列化和协议兼容等问题。",
+      "超时后调用结果可能未知，重试需要结合幂等；调用链需要超时预算和追踪。",
+      "接口演进关注字段兼容、版本管理和灰度发布。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h15",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "RabbitMQ 的交换机、队列和绑定分别做什么？",
+    "keyPoints": [
+      "生产者发布消息到交换机，交换机依据类型、路由键和绑定关系将消息路由到队列。",
+      "消费者从队列获取消息并确认处理；未路由和消费失败需要明确处理策略。",
+      "发布确认、持久化和消费者确认各解决不同环节的问题，应结合实际队列类型验证。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h16",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "Kafka 消费位点提交和业务处理顺序如何影响重复与丢失？",
+    "keyPoints": [
+      "先提交位点再处理，处理失败可能跳过消息；处理成功再提交，崩溃可能导致重复消费。",
+      "常见方案是处理成功后提交，并通过业务唯一键或去重表保证幂等。",
+      "批处理、并发处理和分区再均衡都要求谨慎管理位点，避免提交未完成记录。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h17",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "死信队列适合处理哪些失败？",
+    "keyPoints": [
+      "对不可恢复、重试耗尽或超过有效期等消息，按中间件能力和配置转入死信处理流程。",
+      "保留失败原因、原消息标识和追踪信息，设置告警、排查与安全重放机制。",
+      "死信不是自动修复：重放前确认幂等、顺序和下游容量。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h18",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "订单创建后如何可靠地通知其他服务？",
+    "keyPoints": [
+      "先明确订单落库与消息发送之间的双写风险，以及最终一致性的业务要求。",
+      "可在本地事务中写订单和待发送事件，再由可靠任务投递并标记状态。",
+      "投递与消费都可能重复，使用事件 ID、幂等处理、监控和补偿；不要把最终一致说成强一致。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h19",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "下游依赖超时导致接口大量失败，如何处置？",
+    "keyPoints": [
+      "先确认影响范围和调用链，结合延迟、错误率、线程池及连接池指标定位瓶颈。",
+      "通过限流、合理超时、隔离和可接受的降级保护主链路，并避免无界重试。",
+      "恢复后复盘容量、告警和演练；涉及写操作时确认超时请求是否已生效。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h20",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "MySQL 内连接和外连接有什么区别？",
+    "keyPoints": [
+      "内连接只返回满足连接条件的行；左外连接保留左表未匹配的行，右侧列填 NULL。",
+      "对右表的过滤放在 WHERE 中可能过滤掉未匹配行，改变外连接结果；需要结合语义判断放在 ON 或 WHERE。",
+      "结合执行计划、索引和实际数据量检查连接性能。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h21",
+    "section": "传统Java",
+    "category": "Redis",
+    "priority": "重点",
+    "question": "Redis 主从复制可能带来哪些一致性问题？",
+    "keyPoints": [
+      "复制通常异步进行，主库写入后从库可能暂时读不到新值。",
+      "主库故障切换时，尚未复制的数据可能丢失；持久化和复制配置影响风险。",
+      "按业务选择读主、容忍延迟或其他一致性方案，并监测复制延迟。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h22",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "Java 中断线程的正确方式是什么？",
+    "keyPoints": [
+      "interrupt 通常是协作式取消信号，不会强制终止线程。",
+      "阻塞方法抛出 InterruptedException 时应传播异常，或在无法传播时恢复中断状态并结束任务。",
+      "循环任务应适时检查中断状态，释放资源并保证操作可安全取消。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h23",
+    "section": "传统Java",
+    "category": "JVM",
+    "priority": "重点",
+    "question": "类加载的加载、链接和初始化分别做什么？",
+    "keyPoints": [
+      "加载获取类的二进制表示并创建对应的 Class；链接包含验证、准备和解析。",
+      "准备阶段为类变量设置初始值；初始化阶段执行类初始化逻辑。",
+      "解析的具体时机可以灵活，需区分类加载与对象创建。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h24",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "未支付订单超时关闭如何设计？",
+    "keyPoints": [
+      "订单创建时记录过期时间，可用延迟消息触发检查，并以定时扫描作为补偿。",
+      "关闭时以订单 ID 和待支付状态做条件更新；支付回调也需要条件更新，避免并发覆盖。",
+      "处理消息重复、延迟投递、任务积压和支付渠道状态不确定，并监控超时关闭的延迟。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h25",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis 的 resultType 和 resultMap 有什么区别？",
+    "keyPoints": [
+      "resultType 适合字段与属性能直接匹配的简单结果；resultMap 可显式定义列到属性的映射。",
+      "复杂对象、关联对象及集合可使用 resultMap 的关联映射，但要注意关联加载的查询次数。",
+      "字段别名或下划线转驼峰可简化简单映射；实际结果以配置和类型处理器为准。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h26",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis 批量执行有哪些注意点？",
+    "keyPoints": [
+      "可根据场景使用批量 SQL 或 BATCH 执行器，减少数据库往返；具体收益需结合驱动和数据库验证。",
+      "批量大小应控制内存和事务时长；执行与提交时机、异常定位和回滚策略需要测试。",
+      "自动生成主键的批量回填依赖数据库、驱动和具体写法，不能一概保证。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h27",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "Spring MVC 控制器为什么要注意线程安全？",
+    "keyPoints": [
+      "控制器通常由 Spring 以单例作用域管理，同一实例可能并发处理多个请求。",
+      "不要把请求相关的可变状态保存在控制器实例字段中；使用局部变量或合适的请求作用域。",
+      "注入的依赖也可能共享可变状态，应分别检查其线程安全与连接资源管理。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h28",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "Kafka 消费组再均衡会带来什么影响？",
+    "keyPoints": [
+      "组成员变化、订阅变化等可能触发分区重新分配；具体机制取决于客户端配置及协议版本。",
+      "再均衡期间分区处理可能暂停或迁移；未安全提交的记录可能再次消费。",
+      "控制单次处理时长，妥善处理分区撤销时的任务与位点，并保证消费幂等。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h29",
+    "section": "传统Java",
+    "category": "Redis",
+    "priority": "重点",
+    "question": "Redis 为什么会出现阻塞，如何排查？",
+    "keyPoints": [
+      "可能原因包括执行耗时命令、处理大键、持久化相关开销以及 CPU 或网络资源不足；需结合版本和部署环境判断。",
+      "结合慢日志、延迟监控、命令统计及系统指标定位，再针对大键和高成本操作做治理。",
+      "避免直接在生产上运行可能加重负载的全量扫描；使用渐进扫描并控制速率。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h30",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "MySQL 自增主键为什么可能不连续？",
+    "keyPoints": [
+      "并发写入、事务回滚、插入失败或批量分配等都可能产生空洞，具体行为受版本和配置影响。",
+      "自增值用于生成标识，不应承担无缺口业务流水号的要求。",
+      "业务若要求严格连续编号，需要单独设计分配、作废和审计流程，并评估并发成本。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h31",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "死锁、活锁和线程饥饿有什么区别？",
+    "keyPoints": [
+      "死锁是多个执行单元互相等待而无法推进；活锁是在持续改变状态或重试，但仍没有有效进展。",
+      "饥饿是某些任务长期得不到所需资源或执行机会，不一定存在循环等待。",
+      "排查时结合线程转储、锁持有关系、队列等待时间和重试指标；应针对具体原因治理。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h32",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "MySQL 事务的 ACID 分别指什么？",
+    "keyPoints": [
+      "原子性要求事务整体提交或回滚；一致性指事务前后满足业务和数据库约束。",
+      "隔离性约束并发事务之间的影响；持久性要求已提交结果在系统故障后仍可恢复。",
+      "具体保障依赖存储引擎、日志、隔离级别和持久化配置，不能把一致性归因于数据库单一机制。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h33",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "MySQL 执行一条查询通常经过哪些环节？",
+    "keyPoints": [
+      "客户端建立连接并发送 SQL，服务端进行解析、预处理和权限检查。",
+      "优化器选择执行计划，执行器调用存储引擎接口读取数据并返回结果。",
+      "实际路径受版本、缓存和查询类型影响；用 EXPLAIN 与运行指标验证，不应将旧版查询缓存当作通用步骤。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h34",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "数据库金额为什么通常使用 DECIMAL？",
+    "keyPoints": [
+      "金额需要明确精度和舍入规则，定点十进制类型适合避免二进制浮点表示误差。",
+      "字段精度和小数位应按币种、范围及业务规则设计，应用层计算与数据库转换要统一舍入。",
+      "DECIMAL 不能自动处理汇率、溢出或业务精度规则；必须覆盖边界测试。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h35",
+    "section": "传统Java",
+    "category": "Redis",
+    "priority": "重点",
+    "question": "Redis 事务和关系型数据库事务有何不同？",
+    "keyPoints": [
+      "MULTI 将命令入队，EXEC 顺序执行队列中的命令；WATCH 可用于乐观并发控制。",
+      "Redis 不提供关系型数据库式的执行时错误回滚：队列中个别命令执行失败不会自动撤销已执行命令。",
+      "网络断开可能使客户端不确定事务是否执行，需要结合业务幂等和结果查询。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h36",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "RabbitMQ 生产确认和消费者确认各保证什么？",
+    "keyPoints": [
+      "生产确认让发布方获知 broker 对消息的确认或拒绝；无法路由的消息还需配置并处理返回机制。",
+      "消费者确认表明应用已处理该投递；自动确认与手动确认的失败风险不同。",
+      "队列类型、持久化、复制、确认时机和失败重试共同影响可靠性，仍需业务幂等。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h37",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "Kafka 如何选择分区数，有什么取舍？",
+    "keyPoints": [
+      "分区数影响并行消费能力和数据分布；组内同一分区同一时刻由一个消费者负责。",
+      "分区过多也会增加元数据、文件句柄和协调等开销；结合吞吐、消息大小与集群容量压测。",
+      "扩容分区可能改变基于 key 的分配结果，影响跨扩容边界的顺序假设。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h38",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "start() 和直接调用 run() 有什么区别？",
+    "keyPoints": [
+      "调用 Thread.start() 会请求启动新线程，随后由新线程执行其 run 方法。",
+      "直接调用 run() 是普通方法调用，在当前线程同步执行，不会创建新的执行线程。",
+      "同一个 Thread 对象不能重复 start；任务生命周期应由线程池或明确的管理策略控制。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h39",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "客户端负载均衡如何选择服务实例？",
+    "keyPoints": [
+      "客户端从服务发现或配置中获得实例列表，再按照轮询、随机、加权等策略选择目标。",
+      "健康检查、权重、地域、连接池和负载变化会影响实际效果；策略与行为取决于具体实现。",
+      "故障实例摘除需要时间，仍应配置超时、有限重试和可观测性。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h40",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis Mapper 接口为什么不需要手写实现类？",
+    "keyPoints": [
+      "获取 Mapper 时，MyBatis 为接口创建动态代理；调用方法会进入代理，将接口及方法定位到已注册的映射语句，再通过 SqlSession 执行。",
+      "XML 的 namespace 通常对应接口全限定名，语句 id 对应方法名。参数需要经过命名与绑定，返回值也需匹配查询结果；同名重载不宜用于区分不同 XML 语句。",
+      "排查绑定错误时，先检查 XML 是否被扫描、namespace 与 id 是否一致，再检查参数名、集合与单对象返回方式。并非只要声明接口就能自动生成正确 SQL。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "MyBatis 官方文档",
+        "url": "https://mybatis.org/mybatis-3/java-api.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h41",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis TypeHandler 有什么作用？",
+    "keyPoints": [
+      "TypeHandler 负责 Java 类型与 JDBC 类型间的读写转换，包括为预编译语句设置参数，以及从结果集中读取并转换列值。",
+      "枚举状态字段应定义稳定的存储编码，避免业务含义依赖枚举声明顺序。可以按类型注册处理器，也可以在具体映射中显式指定，处理器的选择受 Java 类型、JDBC 类型和注册范围影响。",
+      "自定义转换需要处理 NULL、未知编码和历史数据兼容。上线前用真实驱动验证参数写入和读取两个方向，避免只验证序列化的一侧。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "MyBatis 官方文档",
+        "url": "https://mybatis.org/mybatis-3/java-api.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h42",
+    "section": "传统Java",
+    "category": "MyBatis",
+    "priority": "重点",
+    "question": "MyBatis 的 SIMPLE、REUSE 和 BATCH 执行器有什么区别？",
+    "keyPoints": [
+      "SIMPLE 不对语句做特别复用；REUSE 尝试复用预编译语句；BATCH 聚合更新操作，适合经过验证的批量写入场景。",
+      "BATCH 的执行可能推迟到 flush、查询前或提交等时机，因此不能把每次调用返回值立即当成最终影响行数。失败的具体语句和批次边界需要额外检查。",
+      "执行器不改变业务事务的原子性要求。选择时同时考虑批量大小、内存、数据库锁持有时长、驱动支持和框架事务集成，不能简单认为 BATCH 对所有负载都最快。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "MyBatis 官方文档",
+        "url": "https://mybatis.org/mybatis-3/java-api.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h43",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "Spring Boot 如何管理不同环境的配置？",
+    "keyPoints": [
+      "把应用配置外置，使用 application 配置、环境变量和启动参数等来源；同名属性按框架规定的优先级覆盖，应按项目使用的版本核实具体规则。",
+      "Profile 用于选择一组环境配置，但不代表环境隔离或访问控制。",
+      "敏感值通过部署环境或秘密管理系统注入，避免写入版本库；变更需要可回滚。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "官方文档",
+        "url": "https://docs.spring.io/spring-boot/reference/features/external-config.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h44",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "@ConfigurationProperties 与 @Value 如何选择？",
+    "keyPoints": [
+      "@Value 适合注入少量独立属性；@ConfigurationProperties 可将同一前缀的一组配置绑定到有明确类型的对象，便于集中管理。",
+      "结构化配置应定义默认值、有效范围和必要的校验，并在应用启动时尽早发现错误。",
+      "配置对象需要通过合适方式注册到容器。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "官方文档",
+        "url": "https://docs.spring.io/spring-boot/reference/features/external-config.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h45",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "声明式 HTTP 客户端解决什么问题？",
+    "keyPoints": [
+      "通过接口及注解描述请求路径、参数与返回类型，由代理负责构造和发送 HTTP 请求，减少重复的编码、解码和客户端调用代码。",
+      "声明式调用仍然是远程调用，必须配置超时、错误处理、鉴权与追踪。",
+      "调用方和服务方通过 HTTP 契约协作，字段和错误响应变化都可能影响兼容性。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "官方文档",
+        "url": "https://docs.spring.io/spring-cloud-openfeign/reference/spring-cloud-openfeign.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h46",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "配置变更如何安全传播到多个服务实例？",
+    "keyPoints": [
+      "中心化配置负责管理配置内容，实例还需要轮询、监听或事件总线等变更传播机制。",
+      "对关键配置先做格式和业务校验，再按版本灰度发布，观测各实例已应用的版本。",
+      "配置事件应可重复处理，并具备失败重试、告警及回滚方案。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h47",
+    "section": "传统Java",
+    "category": "微服务",
+    "priority": "重点",
+    "question": "RPC 的 Failover、Failfast 与并行调用如何取舍？",
+    "keyPoints": [
+      "Failover 失败后可尝试其他实例，适合允许安全重试的操作；Failfast 尽快返回失败，避免额外调用，但仍不能证明服务端没有执行。",
+      "并行请求多个实例并取先成功结果可能降低尾延迟，也会增加资源消耗，并且取消其他请求不一定能取消远端执行。",
+      "容错策略需要结合幂等、超时预算和错误类型配置。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h48",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "Spring Boot 可执行 JAR 与传统 WAR 部署有何区别？",
+    "keyPoints": [
+      "可执行 JAR 通常将应用与所需依赖一起打包，并通过启动器运行；Web 应用可以包含嵌入式容器，便于按统一方式启动。",
+      "传统 WAR 部署由外部 Servlet 容器承载，应用需要满足容器与框架的版本及接口兼容要求。",
+      "嵌入式服务器简化交付但不免除运维职责，仍需设置线程和连接资源、健康检查、优雅退出及资源限制。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h49",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "IoC 与依赖注入分别是什么？",
+    "keyPoints": [
+      "IoC 将对象创建与依赖装配交给容器，业务对象不必自行构造整个依赖关系；依赖注入是实现这种控制反转的一种方式。",
+      "构造器注入适合表达必需依赖，有利于不可变设计和脱离容器的单元测试；可选依赖可按需采用其他注入方式。",
+      "容器只管理注册的对象；手动 new 出来的普通对象不会自动获得同样的注入与代理能力。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h50",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "BeanFactory 和 ApplicationContext 有什么关系？",
+    "keyPoints": [
+      "BeanFactory 定义获取和管理 Bean 的基本能力；ApplicationContext 在其基础上提供更完整的应用上下文能力。",
+      "应用上下文还整合事件发布、资源访问和国际化等功能，启动时会执行容器扩展与生命周期处理。",
+      "实例化时机取决于容器类型、作用域和懒加载配置，不能简单断言一种永远懒加载、另一种永远立即创建所有对象。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h51",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "sleep、wait 与 notify 有什么区别？",
+    "keyPoints": [
+      "sleep 暂停当前线程一段时间，不释放已持有的对象监视器；wait 在持有对应监视器时等待，并释放该监视器。",
+      "notify 或 notifyAll 唤醒等待者后，不会立即把锁移交；被唤醒线程仍需重新竞争锁。",
+      "等待业务条件应放在 while 循环中，处理虚假唤醒和多个等待者竞争；所有条件检查与修改都应遵循同一同步规则。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h52",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "线程池 execute 和 submit 的异常处理有什么区别？",
+    "keyPoints": [
+      "execute 提交 Runnable，不直接返回任务结果；submit 返回 Future，任务结果或失败可通过 Future 获取。",
+      "submit 包装任务后，异常通常保存在 Future 中，调用 get 时以 ExecutionException 等形式暴露；未观察 Future 容易遗漏任务失败。",
+      "execute 的未捕获异常处理受线程执行和异常处理器影响，应为任务设计统一的记录、告警与取消策略。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h53",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "interrupted 和 isInterrupted 有什么区别？",
+    "keyPoints": [
+      "Thread.interrupted() 是静态方法，检查当前线程的中断标记并清除该标记；isInterrupted() 检查目标线程的标记而不清除。",
+      "中断是协作取消信号；部分阻塞方法抛出 InterruptedException 时也会清除标记，应传播异常或在合适边界恢复状态。",
+      "取消逻辑要明确由谁消费信号以及何时退出，不能在多层循环中无意清除中断后继续工作。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h54",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "守护线程与用户线程有什么区别？",
+    "keyPoints": [
+      "当 JVM 只剩守护线程时，可以结束进程；守护线程不能保证后台任务一定执行完成。",
+      "线程是否为守护线程应在启动前设置；需要可靠完成的任务应显式管理生命周期、等待结果并持久化必要状态。",
+      "守护线程不是虚拟机专属，也不等于低优先级线程；不要用它承担必须完成的支付或审计落盘。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h55",
+    "section": "传统Java",
+    "category": "集合",
+    "priority": "重点",
+    "question": "Comparable 和 Comparator 如何选择？",
+    "keyPoints": [
+      "Comparable 在类型中定义自然顺序；Comparator 是独立的比较策略，可为同一类型提供多种排序。",
+      "比较结果要满足一致的顺序规则；排序集合中比较结果为 0 可能被视为同一个排序键，因此应与业务上的唯一性要求协调。",
+      "数值比较应使用 compare 方法，避免用直接相减造成溢出；复合排序要明确空值规则和最终兜底字段。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h56",
+    "section": "传统Java",
+    "category": "集合",
+    "priority": "重点",
+    "question": "Iterator 和 ListIterator 有什么区别？",
+    "keyPoints": [
+      "Iterator 提供向前遍历和按约定删除当前元素；ListIterator 面向 List，支持双向移动及部分原地修改能力。",
+      "迭代期间能否修改以及如何反映并发更新由集合实现约定，fail-fast 只是尽力检测错误，不能用来保证线程安全。",
+      "需要删除时可使用受支持的迭代器删除方法；并发遍历应选择适当的同步或并发集合语义。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h57",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "Spring AOP 的通知类型如何区分？",
+    "keyPoints": [
+      "Before 在目标调用前执行；AfterReturning 在正常返回后执行；AfterThrowing 在目标抛出异常后执行；After 按类似 finally 的退出语义执行。",
+      "Around 包围目标调用，可以决定是否继续执行、修改返回值或处理异常；必须谨慎保证返回类型和异常语义。",
+      "通知发生在代理调用链中，不等于数据库事务已最终提交。记录成功事件时应明确成功指方法返回、事务提交还是外部业务确认。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h58",
+    "section": "传统Java",
+    "category": "Spring",
+    "priority": "重点",
+    "question": "Spring 事件适合什么场景，有哪些可靠性边界？",
+    "keyPoints": [
+      "容器事件可用于应用内组件解耦，由发布者发布事件、监听器处理；监听器的同步或异步执行取决于配置。",
+      "同步监听可能影响发布方法的延迟与异常传播；异步监听要考虑线程池、上下文传递和失败处理。",
+      "普通内存事件不提供跨进程可靠投递；关键业务事件应结合事务时机、持久化和补偿设计，不能代替可靠消息方案。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h59",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "不可变对象为什么有助于并发安全？",
+    "keyPoints": [
+      "对象正确构造且发布后不再改变，多个线程读取时可减少可变状态的同步需求。",
+      "不可变设计应限制继承、使用私有字段并避免泄漏可变引用；对集合或数组需要防御性复制，final 引用本身不会冻结对象。",
+      "构造期间不能让 this 提前逃逸，发布与关联的其他共享状态也要遵循正确的内存可见性规则。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h60",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "双重检查单例为什么需要 volatile？",
+    "keyPoints": [
+      "双重检查先在无锁路径判断实例，再在同步块内再次检查，以减少初始化后的锁开销。",
+      "实例引用的发布需要满足可见性和有序性要求；volatile 配合正确构造，可避免其他线程通过非空引用观察到未正确发布的对象。",
+      "只有需要这种延迟初始化时才考虑 DCL；静态初始化或枚举可简化实现。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h61",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "AtomicLong 和 LongAdder 计数如何选择？",
+    "keyPoints": [
+      "AtomicLong 提供单变量原子操作和 CAS，适合需要原子读取并更新等明确操作语义的场景。",
+      "LongAdder 在竞争下将累加分散到多个单元，适合高竞争统计；sum 汇总并发更新时不是针对所有单元的一次原子快照。",
+      "计费扣减、限额判断等需要条件更新或精确原子边界的业务不能直接用累加器替代，应结合竞争程度与读写频率测试。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "Java 21 官方文档",
+        "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/atomic/LongAdder.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h62",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "固定频率和固定延迟的定时任务有什么区别？",
+    "keyPoints": [
+      "固定频率按计划开始时间推进；固定延迟从上一次执行结束后再等待指定时间。",
+      "使用 ScheduledExecutorService 时，同一周期任务不会因耗时超出周期而自动并发执行自身；任务异常终止时应确认后续调度是否被抑制。",
+      "记录执行耗时、失败与延迟，明确异常处理和关闭流程；多实例重复执行还需要分布式协调或业务幂等。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "Java 21 官方文档",
+        "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ScheduledExecutorService.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h63",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "线程池中等待同一线程池的子任务为什么会饥饿？",
+    "keyPoints": [
+      "如果父任务占满线程池的全部线程，又同步等待提交到同一池的子任务，子任务可能一直排队而无法执行。",
+      "这类依赖等待不一定表现为对象锁死锁，线程转储可能显示等待 Future，任务队列却持续非空。",
+      "应重构依赖为异步组合、避免嵌套阻塞或使用适当的资源隔离；只增加线程数不能从根本上证明不会再次饥饿。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h64",
+    "section": "传统Java",
+    "category": "并发",
+    "priority": "重点",
+    "question": "生产者消费者模式如何实现背压？",
+    "keyPoints": [
+      "使用有界队列将生产与消费解耦，队列满时通过阻塞、超时拒绝或降级约束生产速度。",
+      "明确吞吐、延迟与容量边界，避免用无界队列把流量峰值转换成内存耗尽；队列满时的策略是业务设计的一部分。",
+      "停止时要处理消费者取消、队列剩余任务和失败重试；需要崩溃恢复的任务不能只保存在内存队列中。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h65",
+    "section": "传统Java",
+    "category": "JVM",
+    "priority": "重点",
+    "question": "有垃圾回收为什么仍会发生内存泄漏？",
+    "keyPoints": [
+      "GC 按可达性识别存活对象，不理解对象在业务上是否还需要；长期持有的无用对象仍可能无法释放。",
+      "常见根源是无界缓存、未注销监听器、静态集合和线程相关引用。",
+      "结合堆转储、支配树和到 GC Roots 的引用路径定位持有者，修复释放与容量策略；采集转储前评估暂停、磁盘与敏感数据影响。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h66",
+    "section": "传统Java",
+    "category": "JVM",
+    "priority": "重点",
+    "question": "GC Roots 与可达性分析解决什么问题？",
+    "keyPoints": [
+      "从一组根引用出发遍历对象图，识别仍然可达的对象；单纯对象互相引用并不保证它们存活。",
+      "根来源包括活跃线程栈上的引用、静态字段所关联的引用以及 JNI 等运行时持有的引用；具体根集合与 JVM 实现和阶段有关。",
+      "不可达不代表立即回收，引用类型、回收时机和清理机制仍影响释放；不要依赖 finalize 或 System.gc 及时完成资源管理。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h67",
+    "section": "传统Java",
+    "category": "JVM",
+    "priority": "重点",
+    "question": "StackOverflowError 与堆 OOM 如何区分？",
+    "keyPoints": [
+      "调用栈深度过大可能出现 StackOverflowError，常见于无限递归或异常深的调用；堆分配失败则需结合具体 OOM 消息分析。",
+      "栈大小、线程数量、进程内存限制和堆配置共同消耗进程资源，增大单线程栈并不总是安全。",
+      "先检查异常类型和重复栈帧；堆 OOM 还需观察存活对象与分配压力。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h68",
+    "section": "传统Java",
+    "category": "JVM",
+    "priority": "重点",
+    "question": "如何用 javap 阅读字节码，解决什么问题？",
+    "keyPoints": [
+      "javap 可展示类的方法、指令和常量池等信息，帮助理解编译器生成的调用、异常处理和同步结构。",
+      "局部变量表保存方法执行所需的局部值，操作数栈用于指令计算；字节码层面的结构不能直接等同于优化后的机器码执行方式。",
+      "反编译或反汇编结果依赖编译器和目标版本，分析时应记录版本；常量折叠、字符串拼接等优化不应照搬旧实现。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h69",
+    "section": "传统Java",
+    "category": "JVM",
+    "priority": "重点",
+    "question": "逃逸分析和标量替换有什么作用？",
+    "keyPoints": [
+      "逃逸分析判断对象引用是否逃出方法或线程等范围，JIT 可据此进行部分优化。",
+      "满足条件时可能消除对象分配、把字段作为标量处理或消除不必要的锁；这不是 Java 语言层面保证的固定分配策略。",
+      "优化效果受代码形态、编译热度和 JVM 版本影响，需要结合实际基准与运行观测，不能声称所有不逃逸对象必定分配在栈上。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h70",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "redo log、undo log 和 binlog 有什么区别？",
+    "keyPoints": [
+      "redo 用于 InnoDB 崩溃恢复等场景，记录可用于恢复页修改的信息；undo 支持事务回滚和一致性读所需的旧版本。",
+      "binlog 属于服务端日志，用于复制和基于日志的数据恢复等用途，与存储引擎的 redo 职责不同。",
+      "持久化与恢复效果受配置影响；日志之间的提交协调不能代替备份。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h71",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "数据库备份与误删恢复如何设计？",
+    "keyPoints": [
+      "先定义可接受的数据丢失量与恢复时间，再选择全量、增量和日志保留策略，并检查备份一致性。",
+      "发现误删后先保护现场与日志，避免继续覆盖；在隔离环境从备份恢复并应用日志到正确位置，核对结果后再制定恢复上线方案。",
+      "必须定期演练、核对恢复耗时与数据完整性；复制副本会同步误删，不能自动替代独立备份。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h72",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "线上修改大表结构有哪些风险？",
+    "keyPoints": [
+      "DDL 可能需要元数据锁、数据重建或额外空间，在线能力取决于数据库版本、具体操作和参数。",
+      "长事务可能阻碍 DDL 获取元数据锁，排队的 DDL 又可能影响后续请求；需要观察阻塞链、复制延迟和资源用量。",
+      "在接近真实数据量的环境验证算法、耗时和空间，设定窗口与停止条件；回滚也需考虑数据和应用版本兼容。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "MySQL 8.4 官方文档",
+        "url": "https://dev.mysql.com/doc/refman/8.4/en/innodb-online-ddl-limitations.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h73",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "InnoDB 与 MyISAM 如何比较？",
+    "keyPoints": [
+      "InnoDB 支持事务、崩溃恢复和行级锁等能力；MyISAM 的事务与并发控制能力不同，不能直接互换。",
+      "选择存储引擎需要考虑一致性、并发写入、恢复、索引和运维条件，不应只比较单次读取速度。",
+      "现代业务系统通常以事务型需求为核心；迁移旧表时应核对约束、锁行为与恢复流程，并用真实负载评估。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h74",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "MySQL 前缀索引适合什么场景？",
+    "keyPoints": [
+      "对较长字符串只索引前面一段，可以减少索引空间，但也可能降低区分度。",
+      "根据真实数据比较候选前缀的选择性及查询方式；若大量值共享相同前缀，过滤效果会很差。",
+      "前缀无法总是代替完整字段满足覆盖、排序或唯一性需求，应检查执行计划与实际返回结果。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h75",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "DELETE、TRUNCATE 和 DROP 如何区分？",
+    "keyPoints": [
+      "DELETE 按条件删除行；TRUNCATE 清空表数据；DROP 删除表对象本身，三者对结构、事务和依赖的影响不同。",
+      "在 MySQL 中 TRUNCATE 和 DROP 属于具有隐式提交等语义的 DDL，不能把它们当作普通行删除一样依赖事务回滚。",
+      "执行前确认环境、影响范围和恢复方案；权限、备份、审核与最小化操作范围比记忆速度比较更重要。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "MySQL 8.4 官方文档",
+        "url": "https://dev.mysql.com/doc/refman/8.4/en/truncate-table.html"
+      }
+    ]
+  },
+  {
+    "id": "pack-h76",
+    "section": "传统Java",
+    "category": "Redis",
+    "priority": "重点",
+    "question": "本地缓存与 Redis 缓存如何选择？",
+    "keyPoints": [
+      "本地缓存减少网络往返，但每个进程独立，容量和数据更新需要分别管理；Redis 提供共享访问和独立扩容的缓存服务。",
+      "多级缓存可以降低热点压力，但使失效传播更复杂。",
+      "选型应看一致性容忍度、热点分布、延迟、容量和故障影响，不应断言共享缓存总是优于本地缓存。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h77",
+    "section": "传统Java",
+    "category": "Redis",
+    "priority": "重点",
+    "question": "Redis 发布订阅能替代可靠消息队列吗？",
+    "keyPoints": [
+      "发布订阅适合在线广播，订阅者断开时可能错过消息，不能把它当作持久待消费任务队列。",
+      "需要历史消费、确认、重试或崩溃恢复时，应选择有相应机制的数据结构或消息中间件，并设计消费幂等。",
+      "缓存失效通知可使用广播，但需要TTL、版本或定期校验兜底；过期事件也不能保证业务准时执行。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "Redis 官方文档",
+        "url": "https://redis.io/docs/latest/develop/pubsub/"
+      }
+    ]
+  },
+  {
+    "id": "pack-h78",
+    "section": "传统Java",
+    "category": "Redis",
+    "priority": "重点",
+    "question": "Redis ZSet 适合什么场景，编码有什么影响？",
+    "keyPoints": [
+      "ZSet 为唯一成员维护分数，适合排名、按分数范围查询等场景；相同分数的成员仍可共存。",
+      "底层编码取决于版本、元素数量、长度及配置，小集合可使用紧凑表示，较大集合可能使用字典与跳表等结构。",
+      "选择数据结构时同时考虑更新、范围读取和内存成本；不要把旧ziplist阈值当作所有版本固定规则。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h79",
+    "section": "传统Java",
+    "category": "Redis",
+    "priority": "重点",
+    "question": "Redis Cluster 的哈希槽与多键操作有什么限制？",
+    "keyPoints": [
+      "Cluster 将键映射到哈希槽，再由节点负责槽位；分片和副本复制解决的问题不同。",
+      "多键命令、事务或脚本可能要求涉及的键处于同一槽；哈希标签可让相关键映射到同槽，但也可能形成热点。",
+      "客户端需正确处理重定向与拓扑变化；扩缩容、故障切换和异步复制都可能影响延迟或一致性，不能承诺任意节点故障均无影响。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "Redis 官方文档",
+        "url": "https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/"
+      }
+    ]
+  },
+  {
+    "id": "pack-h80",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "RocketMQ 事务消息如何协调本地事务？",
+    "keyPoints": [
+      "先发送暂不可消费的半消息，再执行业务本地事务，依据本地事务结果提交或回滚消息；结果不明确时需要回查机制。",
+      "回查必须能从持久业务状态判断结果，不能只依赖进程内变量；回查重复、延迟或进程重启都要能正确处理。",
+      "该方案协调业务事务与消息可见性，不自动把所有消费端数据库加入同一事务；消费者仍需幂等与失败补偿。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "官方文档",
+        "url": "https://rocketmq.apache.org/docs/featureBehavior/04transactionmessage/"
+      }
+    ]
+  },
+  {
+    "id": "pack-h81",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "Kafka 的幂等生产与事务有哪些边界？",
+    "keyPoints": [
+      "幂等生产可在协议支持范围内避免生产重试造成的重复追加；业务再次提交同一事件不一定被自动识别为重复。",
+      "Kafka 事务可将多条 Kafka 写入以及相应消费位点纳入受支持的原子操作；消费者需要匹配的隔离级别来过滤未提交事务记录。",
+      "事务不会自动包含外部数据库或HTTP副作用，端到端恰好一次仍需明确系统边界、失败恢复与幂等策略。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h82",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "Kafka 日志保留与日志压缩有什么区别？",
+    "keyPoints": [
+      "保留策略按时间或容量等条件清理旧日志段；消费完成不代表消息立即删除。",
+      "日志压缩按键保留状态重建所需的记录，适合变更流等场景；压缩异步进行，读取时仍可能看到同键多个版本。",
+      "删除标记和保留窗口影响恢复语义，应保证消费者的落后程度与重建过程满足要求；不能把压缩日志当作任意历史审计库。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h83",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "Kafka 消费延迟和积压如何观测？",
+    "keyPoints": [
+      "位点差值可反映分区的记录积压，但它不直接等于时间延迟或待处理字节数；不同隔离级别下可见记录边界也可能不同。",
+      "结合消息产生到业务完成的耗时、消费速率、再均衡次数、失败率和下游延迟定位问题，按分区观察热点。",
+      "扩消费者受分区数量限制；下游过载时盲目扩容可能更严重，应先判断瓶颈再决定扩容、降级或重放策略。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h84",
+    "section": "传统Java",
+    "category": "MQ",
+    "priority": "重点",
+    "question": "RabbitMQ 消费确认、prefetch 与重投递如何配合？",
+    "keyPoints": [
+      "手动确认应与业务成功处理对应；连接中断等情况可能导致未确认消息重投递，因此处理端需要幂等。",
+      "prefetch 用于限制未确认投递数量，帮助控制消费者在途负载；具体作用范围需结合客户端与broker版本配置确认。",
+      "拒绝消息时应明确是否重新入队，持续失败不能无界重入队；可采用有限重试、死信和告警，避免热循环压垮系统。"
+    ],
+    "source": "资源包整理",
+    "refLinks": [
+      {
+        "title": "官方文档",
+        "url": "https://www.rabbitmq.com/docs/confirms"
+      }
+    ]
+  },
+  {
+    "id": "pack-h85",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "InnoDB Buffer Pool、脏页与 WAL 如何配合？",
+    "keyPoints": [
+      "Buffer Pool 缓存数据页和索引页；修改页后，内存页与磁盘页暂时不同，称为脏页。",
+      "预写日志要求在相关脏页持久化之前，恢复所需的日志先满足持久化规则。",
+      "检查点压力、脏页淘汰、存储带宽等会影响延迟。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h86",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "MySQL 优化器的统计信息为什么会影响索引选择？",
+    "keyPoints": [
+      "优化器根据统计信息与成本模型估计访问路径代价，索引基数、数据分布、过滤条件和排序要求都会影响判断。",
+      "统计信息通常不是完整数据的实时精确快照，采样、数据倾斜和相关列可能导致估计偏差；应比较估计与实际扫描情况。",
+      "确认问题后再考虑更新统计、调整索引或改写SQL；强制索引可能随数据变化失效，删除其他索引也可能破坏其他查询。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h87",
+    "section": "传统Java",
+    "category": "MySQL",
+    "priority": "重点",
+    "question": "MySQL 查询长时间不返回如何区分锁等待与慢执行？",
+    "keyPoints": [
+      "先判断请求是否已到数据库，并查看会话状态、活动事务和锁等待关系；长事务或DDL相关元数据锁也可能阻塞访问。",
+      "若主要在扫描、排序或IO，应结合执行计划、扫描量、资源指标定位；若等待锁，则要追踪阻塞者及其事务边界。",
+      "处置前确认事务与业务影响，避免盲目终止会话导致大回滚。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h88",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "评论系统如何支持多级回复与热点读取？",
+    "keyPoints": [
+      "先定义评论、根评论、父评论、作者和可见状态，区分列表索引与正文；无限嵌套展示不等于数据库必须无限递归查询。",
+      "首屏、热评和热门主题可能形成热点，结合分页、缓存、批量加载与必要的异步计数，避免逐条查询和读放大。",
+      "删除、审核与权限状态优先保证正确，计数可按业务容忍最终一致；缓存更新需防止已删除内容重新露出。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h89",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "文件上传如何实现分片、续传与安全秒传？",
+    "keyPoints": [
+      "分片上传以稳定上传ID、分片序号和校验信息记录进度，重试相同分片应幂等，完成时核对完整性并原子发布文件元数据。",
+      "续传读取服务端确认的分片状态；秒传复用已有内容时不能只凭客户端提供的哈希就授予文件访问权。",
+      "对象存储、元数据与引用计数之间需要补偿和垃圾清理；权限、配额、内容检查和失败上传清理也属于系统设计。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h90",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "如何设计优惠券领取与核销系统？",
+    "keyPoints": [
+      "明确券模板、总额度、每用户领取限制、有效期和核销状态，领取与核销分别建立稳定的幂等标识。",
+      "总量扣减和领取记录需要协调，采用条件更新、唯一约束或受控预扣并定义失败补偿；缓存只能承担与一致性要求匹配的职责。",
+      "高峰流量通过限流、排队与分片治理，异步处理应提供明确受理状态；最终以持久记录核对超发、少发和重复核销。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h91",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "站内信未读数与广播消息如何设计？",
+    "keyPoints": [
+      "区分个人通知与全量广播；个人通知可写用户收件箱，广播可保存公共消息并维护用户已读边界，避免对所有用户同步写放大。",
+      "单条已读、全部已读、删除和跨设备访问需定义一致的状态规则；乱序和重复事件不能直接无条件累减计数。",
+      "未读数可按业务采用计数缓存与异步校正，保留可重建的数据依据；按用户分区并对热点与批量发送限速。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h92",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "数据库迁移如何灰度切流并支持回滚？",
+    "keyPoints": [
+      "先建立全量基线与增量追平机制，核对主键、数量、校验与业务不变量；双写并不天然保证新旧库一致。",
+      "按范围灰度读流量并比对结果，切写时定义唯一写入权和同步方向，防止分叉；明确延迟窗口与切换条件。",
+      "回滚需确认新库写入能否回到旧库，不能只切连接地址。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h93",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "如何设计全链路压测并隔离测试数据？",
+    "keyPoints": [
+      "根据流量结构、峰值和关键链路设计场景，覆盖缓存命中与未命中、热点、写入和下游依赖，而非只压一个健康接口。",
+      "从入口传播压测标识，并在数据库、缓存、消息与第三方调用处实施隔离或替身策略；隔离必须可验证。",
+      "分阶段提高负载，监控延迟分位数、错误率、饱和度与队列，预设停止条件和清理流程；容量结论需限定环境和负载。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h94",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "分布式调度任务如何避免重复执行和漏执行？",
+    "keyPoints": [
+      "调度中心分配任务并不等于任务业务恰好执行一次；网络超时、节点重启和租约过期都可能造成重复或结果未知。",
+      "使用稳定任务实例ID、持久执行状态和幂等业务更新；租约只能控制调度权，必要时用版本或栅栏令牌阻止旧执行者继续写入。",
+      "区分到期时间、开始时间与完成时间，监控漏跑、积压和重试；分片与补偿需要可追踪的进度和恢复策略。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h95",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "大文件数据导入如何控制内存并处理部分失败？",
+    "keyPoints": [
+      "使用流式解析和有界缓冲，分批校验、写入，避免一次将全部行或错误信息加载到内存。",
+      "导入任务持久记录进度、批次及错误明细，定义全量原子还是部分成功；以业务键和批次标识支持幂等重试。",
+      "控制数据库并发、事务大小与连接使用，提供取消、限速和可下载的错误报告；导入内容不能直接拼接SQL。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h96",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "扫码登录如何设计状态流转与安全边界？",
+    "keyPoints": [
+      "浏览器创建短时有效的随机登录会话，二维码携带会话标识；手机端先完成自身身份验证，扫码后显示待确认状态。",
+      "用户确认时必须绑定到具体浏览器会话和应用，使用短时、一次性的授权结果；只知道二维码ID不能直接获取登录凭证。",
+      "服务端原子推进待扫码、待确认、已确认、已消费、已过期等状态，防重放；轮询或推送只是获取状态的方式，不能替代授权校验。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h97",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "单点登录如何处理多应用会话与退出？",
+    "keyPoints": [
+      "统一身份服务完成身份验证，各业务应用建立自己的受控会话；跨应用信任应基于成熟协议与明确的签名、接收方和有效期校验。",
+      "登录结果交换需防重放与请求关联，回调地址受控；不能把跨域共享一个长期token当作完整SSO方案。",
+      "统一退出、令牌撤销和本地会话失效并非天然同步，应定义传播、过期与离线处理规则；敏感操作可要求再次验证。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h98",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "购物车如何合并游客数据与登录用户数据？",
+    "keyPoints": [
+      "区分游客购物车与账号购物车，明确SKU、数量、选择状态及更新时间；客户端数据不能作为价格或库存的可信依据。",
+      "登录合并需定义同SKU数量相加、覆盖或上限等规则，并用合并标识或版本保证重试不会重复累加。",
+      "账号购物车应支持跨端一致的状态规则，结算时重新校验价格、优惠与库存；加购不一定意味着预占库存。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h99",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "附近的人或网约车候选如何做空间检索？",
+    "keyPoints": [
+      "先按地理网格、空间索引或GEO能力筛选候选，再依据距离、状态与业务规则过滤排序，避免全量计算。",
+      "网格边界需要查询邻近区域，热门区域需考虑数据倾斜；位置更新的频率与过期策略会影响实时性和负载。",
+      "位置数据涉及授权与可见性，不能只返回精确坐标；网约车匹配还要通过状态竞争防止同一司机重复接单。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h100",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "随机红包如何保证金额守恒与领取幂等？",
+    "keyPoints": [
+      "使用整数最小货币单位管理金额，明确最小领取额、剩余份数和未领退款规则；随机策略应单独验证公平性要求。",
+      "无论预拆还是实时拆分，都需要原子维护剩余金额、份数和用户领取记录，不能只保证单次Redis操作原子。",
+      "资金账务需要持久化、对账、幂等入账与补偿，缓存分配成功不等于钱已到账；不要把历史平台传闻当作实现依据。"
+    ],
+    "source": "资源包整理",
+    "refLinks": []
+  },
+  {
+    "id": "pack-h101",
+    "section": "传统Java",
+    "category": "场景题",
+    "priority": "重点",
+    "question": "蓝绿发布与灰度发布如何选择并回滚？",
+    "keyPoints": [
+      "蓝绿通常准备两套运行环境并切换流量；灰度将部分流量逐步引向新版本，按指标决定继续或回退。",
+      "请求路由、长连接、后台任务、缓存与消息消费都需要纳入切换设计，不能只切HTTP入口。",
+      "回滚前必须验证数据库结构与事件格式兼容；新版本已写入的不可逆数据不会因为切回旧代码自动恢复。"
+    ],
+    "source": "资源包整理",
     "refLinks": []
   }
 ]

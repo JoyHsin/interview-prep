@@ -1,0 +1,807 @@
+{
+  "scope": "高优先级专题题集、JVM/并发笔记与场景题；pending 表示尚未完成逐考点核对，文本提取不代表对比完成。",
+  "files": [
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/JVM相关/1_内存结构.pdf",
+      "sha256": "44b465b06fb04806e8737111b4ddd8fb7c9b7ae76ae4b3c237d4939e10a54ad3",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 4386,
+      "candidateHeadings": 40,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h65",
+        "pack-h67",
+        "pack-h69"
+      ],
+      "decision": "按PC/栈/堆/方法区/字符串池/直接内存对照：运行时区域、元空间、参数和堆外OOM已有；补栈溢出与泄漏。直接内存释放和GC间接关联不能说完全无关；new不保证优化后每次都实际分配堆对象；旧jmap参数按版本使用。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/JVM相关/2_垃圾回收.pdf",
+      "sha256": "b758abcff300d081c80e7b2c37418ad512209ca3df91cdd5ede068ec4b03ac60",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 8014,
+      "candidateHeadings": 35,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h65",
+        "pack-h66"
+      ],
+      "decision": "按存活判定/引用/算法/分代/回收器/调优核对：算法、G1、CMS、ZGC、引用类型和Full GC排查已有；补GC Roots及泄漏。年龄阈值、分代布局、晋升和Full GC路径限定收集器与版本；不采用CMS为当前通用选型或暂停目标为保证的表述。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/JVM相关/3_类加载与字节码技术.pdf",
+      "sha256": "0d9554215b82bae85fe61e3261a4008c82bac7b163487cead6842c1f428137be",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 99163,
+      "candidateHeadings": 82,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h23",
+        "pack-h67",
+        "pack-h68",
+        "pack-h69"
+      ],
+      "decision": "按Class格式/指令/编译糖/类加载/加载器/JIT核对：类加载委派和JIT已有，补javap、栈与标量替换。字节码十六进制练习、固定JDK8反射阈值不纳入高频题；旧扩展加载器与字符串拼接实现按版本限定。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/JVM相关/4_内存模型.pdf",
+      "sha256": "bd0931797672ff8ae9629d20c48b4cc19e6e2ca214ae25aae9039af992d18e7c",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 24523,
+      "candidateHeadings": 31,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h59",
+        "pack-h60",
+        "pack-h61"
+      ],
+      "decision": "按原子性/可见性/有序性/happens-before/CAS/锁优化核对：内存模型、CAS和同步器已有；补DCL发布、不可变对象与累加器。旧偏向锁和对象头示例不当作现代JDK固定实现；不把JMM抽象工作内存直接等同CPU缓存。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/JVM相关/JVM从入门到入魔 笔记.pdf",
+      "sha256": "bf697aff04919f6b4dfa0266be4872b433f9216bf0f3f5d74f07a45c87afe6c4",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 48917,
+      "candidateHeadings": 144,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h23",
+        "pack-h65",
+        "pack-h66",
+        "pack-h67",
+        "pack-h68",
+        "pack-h69"
+      ],
+      "decision": "按加载/运行时区/对象布局/GC/参数工具/执行引擎/性能优化章节核对：生命周期、GC、JIT与工具题已有；补泄漏、根、栈、字节码、逃逸优化。旧CMS/PermGen/固定Eden比例及GC日志参数不作为跨版本默认；压测数据和第三方工具宣传不纳入题库。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/MySQL等pdf/168道 MySQL精品面试题（带解析）.pdf",
+      "sha256": "c5875f0c864198eb3886fc8b91d80e8d2a37f72ea0fb6e5b6fc2e535cea730c5",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 45628,
+      "candidateHeadings": 168,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h20",
+        "pack-h30",
+        "pack-h32",
+        "pack-h33",
+        "pack-h34",
+        "pack-h70",
+        "pack-h71",
+        "pack-h72",
+        "pack-h73",
+        "pack-h74",
+        "pack-h75",
+        "pack-h85",
+        "pack-h86",
+        "pack-h87"
+      ],
+      "decision": "按基础/索引/锁/日志/命令/性能/开放场景各节核对，两份为同主题版本。已有事务隔离/MVCC/索引/死锁/复制/分页等；补执行过程、精度、日志恢复、DDL、统计、缓冲池与阻塞诊断。SQL函数速查、表空间管理命令、授权语法及固定索引列限制不扩为高频题。纠正OR必全扫、按任意索引建议删其他索引、WAL仅降IO和change buffer缓存查询等错误；查询缓存与旧元数据存储描述按版本筛除。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/MySQL等pdf/20 数据库高频知识点.pdf",
+      "sha256": "22ca8281ab2658703ec1d57c50d2a5aa9a49eebb6530a625906445cddb2b5dec",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 19811,
+      "candidateHeadings": 75,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h32",
+        "pack-h70",
+        "pack-h71",
+        "pack-h73"
+      ],
+      "decision": "与MySQL高频20题主题一致，核对事务/索引/锁/复制/备份等；复用已有对比结论与补题，不重复导入。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/Redis等pdf/Redis70题解析.pdf",
+      "sha256": "0240283f4de1adba4263f6955cab9f8619bc4059ded249df85038c1c7d6932b7",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 23928,
+      "candidateHeadings": 309,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h21",
+        "pack-h29",
+        "pack-h35",
+        "pack-h76",
+        "pack-h77",
+        "pack-h78",
+        "pack-h79"
+      ],
+      "decision": "按概念/结构指令/并发缓存/集群/持久化/内存/应用章节核对：过期淘汰、持久化、锁、缓存故障和Pipeline已有；补复制一致性、事务错误边界、阻塞、共享缓存、PubSub、ZSet与槽限制。旧ziplist阈值、SDS误写SSD、固定十万QPS、所有操作原子等不采用；客户端连接池代码和命令容量枚举留作参考，不纳入重点。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/Redis等pdf/Redis学习笔记.pdf",
+      "sha256": "228cb774a70f6171fda8bc1c5161ec42520e7565c20420f477e18712e3e41a3c",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 12786,
+      "candidateHeadings": 79,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h21",
+        "pack-h35",
+        "pack-h76",
+        "pack-h77",
+        "pack-h79"
+      ],
+      "decision": "按基础/缓存选择/结构/过期淘汰/持久化/事务/缓存故障/分布式锁/ID/集群核对。常用场景与故障题已有；补共享缓存边界、事务错误、复制与槽限制。纠正复制只有全量、单线程等跨版本概括；不采用单节点故障必无影响或不用淘汰策略等武断选型。相同笔记按内容复用结论。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/Spring相关pdf/Spring灵魂100问.pdf",
+      "sha256": "10642de22814cb0189328fc9edfa8140ed46a871050121bcf399e507c8ba1afc",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 36763,
+      "candidateHeadings": 380,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h09",
+        "pack-h10",
+        "pack-h27",
+        "pack-h43",
+        "pack-h44",
+        "pack-h49",
+        "pack-h50",
+        "pack-h57",
+        "pack-h58"
+      ],
+      "decision": "按100项及重复考点对照：生命周期/事务/循环依赖/AOP/MVC/作用域/Boot已有；补IoC、上下文、通知类型与事件。XML装配细节、Struts/Hibernate模板整合与旧热部署教程不纳入当前高频主线；纠正通知语义混用，不采用所有Spring对象天然线程安全、固定模块列表等概括。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/分布式pdf/Redis学习笔记.pdf",
+      "sha256": "228cb774a70f6171fda8bc1c5161ec42520e7565c20420f477e18712e3e41a3c",
+      "duplicateOf": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/Redis等pdf/Redis学习笔记.pdf",
+      "textExtracted": true,
+      "characters": 12786,
+      "candidateHeadings": 79,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h21",
+        "pack-h35",
+        "pack-h76",
+        "pack-h77",
+        "pack-h79"
+      ],
+      "decision": "按基础/缓存选择/结构/过期淘汰/持久化/事务/缓存故障/分布式锁/ID/集群核对。常用场景与故障题已有；补共享缓存边界、事务错误、复制与槽限制。纠正复制只有全量、单线程等跨版本概括；不采用单节点故障必无影响或不用淘汰策略等武断选型。相同笔记按内容复用结论。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/分布式pdf/手写RocketMQ笔记.pdf",
+      "sha256": "aa5fb76a8b3699be355ff718bff7798db7484f093240ea09535083f67c7b9ab1",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 37987,
+      "candidateHeadings": 93,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h18",
+        "pack-h24",
+        "pack-h80"
+      ],
+      "decision": "按路由/生产消费/存储/重试/事务/主从/延迟订单/源码章节核对：丢失重复顺序积压延迟已有；补半消息本地事务与回查。源码调用链、默认定时周期、旧主从方式按版本参考，不当通用结论；删除同步刷盘绝对不丢、只引入延迟消息即可解决订单可靠性等说法。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/分布式pdf/手写“Kafka笔记”.pdf",
+      "sha256": "48b06d48edd3b818e4489703d65a11556d4355046142daf5a0c178958513ff2f",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 150272,
+      "candidateHeadings": 8,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h16",
+        "pack-h28",
+        "pack-h37",
+        "pack-h81",
+        "pack-h82",
+        "pack-h83"
+      ],
+      "decision": "按生产/消费/组/位点/再均衡/分区副本/存储/事务/可靠性/监控核对：分区顺序、ISR、确认和故障已有；补事务边界、保留压缩及业务积压观测。旧Scala消费者/ZK实现、每版内部线程和源码状态机不纳入重点；纠正Kafka没有事务等过时结论，不使用无限重试保证可靠性。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/并发编程pdf/并发编程.pdf",
+      "sha256": "3ae1c224dd0b86c8d1b640b802c8b62f224c0ecfee61a77ea9c5dcea619fdcef",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 196012,
+      "candidateHeadings": 86,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h22",
+        "pack-h31",
+        "pack-h51",
+        "pack-h52",
+        "pack-h59",
+        "pack-h60",
+        "pack-h61",
+        "pack-h62",
+        "pack-h63",
+        "pack-h64"
+      ],
+      "decision": "按进程线程/管程/JMM/CAS/不可变/线程池/JUC章节与配套笔记合并核对，补取消/异常/不可变/累加器/嵌套池饥饿/背压；状态、锁、同步器、集合题已有。手写线程池、旧对象头和课堂计时不当生产实现或容量结论。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/并发编程pdf/并发编程_原理.pdf",
+      "sha256": "d5ae35c957de292c35974069914f7cbc15026b5062dadcba7ce02617b427fc8c",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 134544,
+      "candidateHeadings": 77,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h59",
+        "pack-h60",
+        "pack-h61",
+        "j-col2"
+      ],
+      "decision": "按重排/缓存一致性/屏障/发布/锁优化/park/AQS/读写锁/集合源码核对。内存语义、同步器和集合已有；补DCL与不可变发布。CPU协议不等于JMM；JDK7/8源码状态与偏向锁流程不当现代版本规范。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/并发编程pdf/并发编程_应用.pdf",
+      "sha256": "283df8da09d6c660d0d904d03fb35a18b11889d179aab679a1cfc2a68c8870f1",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 34905,
+      "candidateHeadings": 25,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h61",
+        "pack-h62",
+        "pack-h64"
+      ],
+      "decision": "按CPU利用、限流、结果等待、缓存、统计、定期执行章节核对：线程池/锁/信号量/Future已有；补计数器、定时任务与背压；课堂操作系统界面步骤及压测样本数据不作为工程容量结论。"
+    },
+    {
+      "path": "PDF学习资源（分布式、微服务、Spring全家桶、JVM、设计模式、并发编程、数据库等）/并发编程pdf/并发编程_模式.pdf",
+      "sha256": "b6cc35b5ce1fecd6ff6bcf67ad09158dd3e7061f111eff1cb4d1db0e22a4e9e4",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 41387,
+      "candidateHeadings": 36,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h51",
+        "pack-h59",
+        "pack-h60",
+        "pack-h63",
+        "pack-h64"
+      ],
+      "decision": "按保护性暂停、生产者消费者、顺序控制、工作线程、终止、单例及不可变模式核对：wait/notify、LockSupport、条件变量与中断已有；补有界队列背压、嵌套池饥饿、DCL、不可变设计。教学手写线程池不作为生产实现，固定线程数公式作为估算而非保证。"
+    },
+    {
+      "path": "场景题：Java程序员找工作最新面试场景攻略.pdf",
+      "sha256": "ffb5d631ecbee8b62f4ef939793b3111cf9db3cc14324456aec2bfa811135c0a",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 767162,
+      "candidateHeadings": 2667,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "a-e1",
+        "j-d1",
+        "j-d3",
+        "j-m5",
+        "j-q2",
+        "j-q3",
+        "j-q4",
+        "j-q5",
+        "j-sc1",
+        "j-sc2",
+        "j-sc3",
+        "j-sc4",
+        "j-sc5",
+        "j-t1",
+        "j-t3",
+        "j-v4",
+        "p-d2",
+        "p-mq2",
+        "p-sc1",
+        "p-sc2",
+        "p-v1",
+        "p2-27",
+        "p2-28",
+        "p2-32",
+        "p2-33",
+        "p2-36",
+        "p2-48",
+        "pack-h04",
+        "pack-h100",
+        "pack-h101",
+        "pack-h12",
+        "pack-h14",
+        "pack-h16",
+        "pack-h24",
+        "pack-h47",
+        "pack-h67",
+        "pack-h83",
+        "pack-h88",
+        "pack-h89",
+        "pack-h90",
+        "pack-h91",
+        "pack-h92",
+        "pack-h93",
+        "pack-h94",
+        "pack-h95",
+        "pack-h96",
+        "pack-h97",
+        "pack-h98",
+        "pack-h99",
+        "r-e6",
+        "sd3",
+        "sd6"
+      ],
+      "decision": "54节按核心考点对照，逐节结论见scenario-review.json。秒杀/短链/限流/排障等复用已有；新增14道具体场景与完整详解。专项媒体转码、密码平台、多活与外部算法细节不扩为当前面试主线；拒绝固定QPS承诺、平台历史实现猜测和缓存即账务成功等结论。"
+    },
+    {
+      "path": "面试、面经、题库/BAT面试常问81题/JVM.pdf",
+      "sha256": "06b25374a30c6e49b586ef9f0c2dfb4e0609a1e3a76c754b0a6cd6b83861b22d",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 10783,
+      "candidateHeadings": 12,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h23",
+        "pack-h65",
+        "pack-h66",
+        "pack-h67"
+      ],
+      "decision": "按类加载/内存/GC/可达性/泄漏等题核对：类加载、运行区与算法已有；补根、泄漏和栈。纠正GC仅在空闲时运行、对象出作用域即回收等说法；finalize复活教程不作为推荐资源释放方式。"
+    },
+    {
+      "path": "面试、面经、题库/BAT面试常问81题/Redis.pdf",
+      "sha256": "3a35e1b194d96e069783d615dea3e8b9b8b8aecf6eae1705ac5ad408e8a53e0f",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 12786,
+      "candidateHeadings": 79,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h21",
+        "pack-h35",
+        "pack-h76",
+        "pack-h77",
+        "pack-h79"
+      ],
+      "decision": "按基础/缓存选择/结构/过期淘汰/持久化/事务/缓存故障/分布式锁/ID/集群核对。常用场景与故障题已有；补共享缓存边界、事务错误、复制与槽限制。纠正复制只有全量、单线程等跨版本概括；不采用单节点故障必无影响或不用淘汰策略等武断选型。相同笔记按内容复用结论。"
+    },
+    {
+      "path": "面试、面经、题库/BAT面试常问81题/多线程，高并发.pdf",
+      "sha256": "5b407bb9cbadf59027832a1e3675d3bb6a5b0e07512de284b5502528f5c155ee",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 5593,
+      "candidateHeadings": 14,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h22",
+        "pack-h31",
+        "pack-h38",
+        "pack-h51"
+      ],
+      "decision": "14题按考点核对：线程状态/ThreadLocal/锁/volatile/原子性/活性已有；补wait与sleep、run与start、中断取消。stop/suspend不提供使用示例，采用协作式取消；同步/异步不等于串行/并行。"
+    },
+    {
+      "path": "面试、面经、题库/BAT面试常问81题/数据库.pdf",
+      "sha256": "e55623ee7f1231cf7e8797aa530541efd8844ad2c2aab254d42ad1c298b0f7d6",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 12412,
+      "candidateHeadings": 48,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h20",
+        "pack-h32",
+        "pack-h71",
+        "pack-h73",
+        "pack-h75"
+      ],
+      "decision": "29项按MySQL基础、备份、删除语义及Redis概要核对。事务/索引/锁/缓存已有；补备份恢复及删除区别。函数、触发器数量等命令记忆与MongoDB对比不纳入高优先级；资料中的固定Redis吞吐及同步耗时不作为承诺。"
+    },
+    {
+      "path": "面试、面经、题库/BAT面试常问81题/集合框架.pdf",
+      "sha256": "bf603cfc73eeecb2bb39b027a50f00b8cd15ce0b2e89905a7a27d05579d69279",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 8034,
+      "candidateHeadings": 22,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "j-col2",
+        "j-col3",
+        "j-col4",
+        "j-col5",
+        "pack-h55",
+        "pack-h56"
+      ],
+      "decision": "22项按结构/遍历/相等/排序/容量核对，强化4道现有题并补原题缺失详解。纠正equals契约仅适用哈希容器、所有并发集合复制遍历、单方法同步保证组合原子等错误。Collection工具类命名、旧Vector增长倍数作为参考不扩题。"
+    },
+    {
+      "path": "面试、面经、题库/第七部分：其他：并发编程+设计模式+数据结构与算法+网络/并发编程面试题汇总（72）.pdf",
+      "sha256": "56b8507047d7adceb8738141bc5a6d143a7e50fd5e31b97f164fafcdf4cfa76c",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 23035,
+      "candidateHeadings": 95,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h22",
+        "pack-h31",
+        "pack-h38",
+        "pack-h51",
+        "pack-h52",
+        "pack-h53",
+        "pack-h54",
+        "pack-h59",
+        "pack-h62"
+      ],
+      "decision": "72项及重复问法按主题核对：同步器/线程池/Future/共享状态/锁/线程转储已有；新增等待条件循环、submit异常、中断标记、守护线程、不可变与定时任务。线程优先级和yield不作为执行顺序保证；旧CHM并发度不当成新版固定分段数；ThreadGroup历史细节不纳入重点。"
+    },
+    {
+      "path": "面试、面经、题库/第七部分：其他：并发编程+设计模式+数据结构与算法+网络/网络相关面试（一）TCP 三次握手和四次挥手协议.pdf",
+      "sha256": "6945fa67d212c384faf287bb6c17de72bce9985e3f0853c44a41f2908efaf90e",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 1745,
+      "candidateHeadings": 3,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h01",
+        "pack-h02",
+        "pack-h03",
+        "pack-h04",
+        "pack-h05"
+      ],
+      "decision": "TCP/HTTP/状态码/会话已覆盖；新增可靠传输、窗口、TIME_WAIT、会话和UDP。旧SSL及TCP承载所有HTTP的表述未采用。"
+    },
+    {
+      "path": "面试、面经、题库/第七部分：其他：并发编程+设计模式+数据结构与算法+网络/网络相关面试（二）HTTP 和 HTTPS.pdf",
+      "sha256": "b8b06d26df51be7763558913daab944bc66748cf069f5cc0b29c030bf66f0d8f",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 2148,
+      "candidateHeadings": 0,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h01",
+        "pack-h02",
+        "pack-h03",
+        "pack-h04",
+        "pack-h05"
+      ],
+      "decision": "TCP/HTTP/状态码/会话已覆盖；新增可靠传输、窗口、TIME_WAIT、会话和UDP。旧SSL及TCP承载所有HTTP的表述未采用。"
+    },
+    {
+      "path": "面试、面经、题库/第七部分：其他：并发编程+设计模式+数据结构与算法+网络/网络相关面试（二）TCP协议 （可靠保证、TCP、UDP、拥塞、ARQ）.pdf",
+      "sha256": "18146c6b6f4d68bf041ff83481a50241c6c07bcf0412f705856c6d022479de1b",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 2555,
+      "candidateHeadings": 0,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h01",
+        "pack-h02",
+        "pack-h03",
+        "pack-h04",
+        "pack-h05"
+      ],
+      "decision": "TCP/HTTP/状态码/会话已覆盖；新增可靠传输、窗口、TIME_WAIT、会话和UDP。旧SSL及TCP承载所有HTTP的表述未采用。"
+    },
+    {
+      "path": "面试、面经、题库/第七部分：其他：并发编程+设计模式+数据结构与算法+网络/网络相关面试（四）socket、session、url、http、状态码.pdf",
+      "sha256": "eb59745d921114329be0aeeee95200a1bcfc35355dcb689f49b540023d7ea8a9",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 1842,
+      "candidateHeadings": 0,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h01",
+        "pack-h02",
+        "pack-h03",
+        "pack-h04",
+        "pack-h05"
+      ],
+      "decision": "TCP/HTTP/状态码/会话已覆盖；新增可靠传输、窗口、TIME_WAIT、会话和UDP。旧SSL及TCP承载所有HTTP的表述未采用。"
+    },
+    {
+      "path": "面试、面经、题库/第三部分：性能调优（JVM+MySQL+Tomcat）/JVM面试题汇总.pdf",
+      "sha256": "660a7748d35a79b18a998ed5ec1246af738330cd388bc2360c1a5766f81c01e8",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 10783,
+      "candidateHeadings": 12,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h23",
+        "pack-h65",
+        "pack-h66",
+        "pack-h67"
+      ],
+      "decision": "与BAT JVM专题文字主题一致，按同一考点核对；类加载、运行区、GC已有，补根、泄漏和栈。弃用“GC仅空闲才执行”等错误结论及finalize清理方案。"
+    },
+    {
+      "path": "面试、面经、题库/第三部分：性能调优（JVM+MySQL+Tomcat）/MySQL性能优化的21个最佳实践.pdf",
+      "sha256": "a4d1ac1593c827cb2b1f6dda540ffd509043785628a9e5f1cbccc1af4718c2d6",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 8122,
+      "candidateHeadings": 21,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h73",
+        "pack-h86",
+        "pack-h95"
+      ],
+      "decision": "21条逐项对照。EXPLAIN/索引/批处理/引擎/连接管理已有；不采用查询缓存、PROCEDURE ANALYSE、固定长度必快、ENUM总优于VARCHAR等旧版或绝对建议；参数化与最小必要字段作为现有SQL题的工程补充。"
+    },
+    {
+      "path": "面试、面经、题库/第三部分：性能调优（JVM+MySQL+Tomcat）/MySQL高频面试题汇总.pdf",
+      "sha256": "1553130ded9b58aedc0986f290d47111ee78a0eefb5d1357a5098817ce8e4d35",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 19811,
+      "candidateHeadings": 75,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h20",
+        "pack-h32",
+        "pack-h33",
+        "pack-h70",
+        "pack-h71",
+        "pack-h73"
+      ],
+      "decision": "20项按事务/隔离/引擎/执行/索引/锁/复制/备份等主题核对；事务、查询计划、MVCC、索引和延迟已有；补ACID、引擎与日志恢复。字段类型枚举、临时表语法和范式定义留作低优先级数据库基础，不重复扩题；不采用RR查询一律不加锁等绝对描述。"
+    },
+    {
+      "path": "面试、面经、题库/第二部分：开源框架（SSM：Spring+SpringMVC+MyBatis）/MyBatis面试题汇总.pdf",
+      "sha256": "8c92b5fb4fe0f3565a2ff1a1d54f80f0b844474bdccc68203ca665ac72f8baf6",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 7859,
+      "candidateHeadings": 36,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h06",
+        "pack-h07",
+        "pack-h08",
+        "pack-h25",
+        "pack-h26",
+        "pack-h40",
+        "pack-h41",
+        "pack-h42"
+      ],
+      "decision": "36项已按考点核对：缓存/参数占位符/动态SQL已有；分页、关联、映射、批处理和代理类型转换执行器补齐。重复问法合并；IBatis迁移历史及XML标签次序未纳入高频主线；修正批量主键必然回填、SQL拼接一律注入、CGLIB固定实现等绝对结论。"
+    },
+    {
+      "path": "面试、面经、题库/第二部分：开源框架（SSM：Spring+SpringMVC+MyBatis）/SpringMVC面试题汇总.pdf",
+      "sha256": "3f1af8563833e86b6ab312d0ef7b1f58c3e236dbb4ffab3676778c58254db79d",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 3583,
+      "candidateHeadings": 22,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h10",
+        "pack-h27"
+      ],
+      "decision": "请求链路与拦截器已有；补统一异常与单例线程安全。Struts2对比及JSP/ModelMap细节不纳入当前高频主线。"
+    },
+    {
+      "path": "面试、面经、题库/第二部分：开源框架（SSM：Spring+SpringMVC+MyBatis）/Spring面试题汇总（100问）.pdf",
+      "sha256": "1e44d81742e82e433c5237d16617475931fa316e6a20e5bd40fe2c25f495492d",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 36763,
+      "candidateHeadings": 380,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h09",
+        "pack-h10",
+        "pack-h27",
+        "pack-h43",
+        "pack-h44",
+        "pack-h49",
+        "pack-h50",
+        "pack-h57",
+        "pack-h58"
+      ],
+      "decision": "按100项及重复考点对照：生命周期/事务/循环依赖/AOP/MVC/作用域/Boot已有；补IoC、上下文、通知类型与事件。XML装配细节、Struts/Hibernate模板整合与旧热部署教程不纳入当前高频主线；纠正通知语义混用，不采用所有Spring对象天然线程安全、固定模块列表等概括。"
+    },
+    {
+      "path": "面试、面经、题库/第五部分：微服务（SpringBoot+SpringCloud+Dubbo）/Dubbo面试题汇总（上）.pdf",
+      "sha256": "5bb76dcbd99dc134eb3a868c50dc2db07517ead3cf1234b3fac3b3e9918328a4",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 7178,
+      "candidateHeadings": 0,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h11",
+        "pack-h13",
+        "pack-h14",
+        "pack-h39",
+        "pack-h47"
+      ],
+      "decision": "注册发现、缓存调用、RPC差异、超时、负载均衡及容错已覆盖。补容错策略选择；协议/序列化/注册中心默认值依版本，未沿用旧版绝对表述；每连接7MB及消费者数比例不作通用容量结论；不采用忽略审计失败的建议。框架十层背诵及Dubbox历史不纳入当前主线。"
+    },
+    {
+      "path": "面试、面经、题库/第五部分：微服务（SpringBoot+SpringCloud+Dubbo）/Dubbo面试题汇总（下）.pdf",
+      "sha256": "1932665f71dd0c7ea64f14ff2672e32267b3a11ea34bf187ebab34fe19a8b2ca",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 5259,
+      "candidateHeadings": 14,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h11",
+        "pack-h13",
+        "pack-h14",
+        "pack-h39",
+        "pack-h47"
+      ],
+      "decision": "注册发现、缓存调用、RPC差异、超时、负载均衡及容错已覆盖。补容错策略选择；协议/序列化/注册中心默认值依版本，未沿用旧版绝对表述；每连接7MB及消费者数比例不作通用容量结论；不采用忽略审计失败的建议。框架十层背诵及Dubbox历史不纳入当前主线。"
+    },
+    {
+      "path": "面试、面经、题库/第五部分：微服务（SpringBoot+SpringCloud+Dubbo）/SpringBoot面试题汇总（大厂高频35）.pdf",
+      "sha256": "5876ca074ef467a911c1145bdd90579a7a474faa01c5c4f293ca99ae1415a994",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 10384,
+      "candidateHeadings": 38,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h09",
+        "pack-h43",
+        "pack-h44",
+        "pack-h48"
+      ],
+      "decision": "35项按主题核对：自动配置/starter/事务已有；补外置配置、类型绑定与部署方式。Initializr操作、H2默认库名、HAL页面及特定IDE步骤不纳入面试主线；management.security.enabled等旧配置未采用；不沿用旧javax包名。"
+    },
+    {
+      "path": "面试、面经、题库/第五部分：微服务（SpringBoot+SpringCloud+Dubbo）/SpringCloud面试题汇总.pdf",
+      "sha256": "a7fc7d9108062024d456187514c0b49581b7a2f799611a7111d3b520600cbfd0",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 3798,
+      "candidateHeadings": 35,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h11",
+        "pack-h12",
+        "pack-h13",
+        "pack-h39",
+        "pack-h45",
+        "pack-h46"
+      ],
+      "decision": "8项已核对：发现/容错/负载均衡已有或前批补齐，补声明式HTTP客户端及配置传播。资料将Cloud与Stream/Task混淆，不采用；旧Hystrix/Ribbon集成和刷新端点路径不作为通用结论。"
+    },
+    {
+      "path": "面试、面经、题库/第六部分：数据库Redis+MySQL/68道 Redis精品面试题（带解析）.pdf",
+      "sha256": "28e33dc100ce1530744ca9adc0c313d0fe1ca51e32f67ae65542baed6f98bdd3",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 23289,
+      "candidateHeadings": 309,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h21",
+        "pack-h29",
+        "pack-h35",
+        "pack-h76",
+        "pack-h77",
+        "pack-h78",
+        "pack-h79"
+      ],
+      "decision": "按概念/结构指令/并发缓存/集群/持久化/内存/应用章节核对：过期淘汰、持久化、锁、缓存故障和Pipeline已有；补复制一致性、事务错误边界、阻塞、共享缓存、PubSub、ZSet与槽限制。旧ziplist阈值、SDS误写SSD、固定十万QPS、所有操作原子等不采用；客户端连接池代码和命令容量枚举留作参考，不纳入重点。"
+    },
+    {
+      "path": "面试、面经、题库/第六部分：数据库Redis+MySQL/阿里P8MySQL(168道题).pdf",
+      "sha256": "cddc3786ee2885be1e994316a9d6af89ce9aa0f5657fdc0096c3a9fa8093d4e6",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 72797,
+      "candidateHeadings": 168,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h20",
+        "pack-h30",
+        "pack-h32",
+        "pack-h33",
+        "pack-h34",
+        "pack-h70",
+        "pack-h71",
+        "pack-h72",
+        "pack-h73",
+        "pack-h74",
+        "pack-h75",
+        "pack-h85",
+        "pack-h86",
+        "pack-h87"
+      ],
+      "decision": "按基础/索引/锁/日志/命令/性能/开放场景各节核对，两份为同主题版本。已有事务隔离/MVCC/索引/死锁/复制/分页等；补执行过程、精度、日志恢复、DDL、统计、缓冲池与阻塞诊断。SQL函数速查、表空间管理命令、授权语法及固定索引列限制不扩为高频题。纠正OR必全扫、按任意索引建议删其他索引、WAL仅降IO和change buffer缓存查询等错误；查询缓存与旧元数据存储描述按版本筛除。"
+    },
+    {
+      "path": "面试、面经、题库/第四部分：分布式（限流：ZK+Nginx；缓存：Redis+MongoDB+Memcached；通讯：MQ+kafka）/分布式缓存之Redis面试汇总.pdf",
+      "sha256": "d02083f7fced89de74c25a7ac67559c4ee0a47945d55c7e71787cc0405dc0677",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 12786,
+      "candidateHeadings": 79,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h21",
+        "pack-h35",
+        "pack-h76",
+        "pack-h77",
+        "pack-h79"
+      ],
+      "decision": "与Redis学习笔记主题一致，另含并发key和缓存双写；分布式锁、缓存一致性已有，补本地缓存/发布订阅/事务/复制和槽边界；不采用全量复制唯一方式、固定线程模型及无条件可靠性结论。"
+    },
+    {
+      "path": "面试、面经、题库/第四部分：分布式（限流：ZK+Nginx；缓存：Redis+MongoDB+Memcached；通讯：MQ+kafka）/分布式通讯之Kafka面试题汇总（基础+进阶+高阶）.pdf",
+      "sha256": "98d7b7f3dd69d37117ad3300101abef4b7b2436d18cb66c382aabaa75ed1d69a",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 29023,
+      "candidateHeadings": 82,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h16",
+        "pack-h28",
+        "pack-h37",
+        "pack-h81",
+        "pack-h82",
+        "pack-h83"
+      ],
+      "decision": "按生产/消费/组/位点/再均衡/分区副本/存储/事务/可靠性/监控核对：分区顺序、ISR、确认和故障已有；补事务边界、保留压缩及业务积压观测。旧Scala消费者/ZK实现、每版内部线程和源码状态机不纳入重点；纠正Kafka没有事务等过时结论，不使用无限重试保证可靠性。"
+    },
+    {
+      "path": "面试、面经、题库/第四部分：分布式（限流：ZK+Nginx；缓存：Redis+MongoDB+Memcached；通讯：MQ+kafka）/分布式通讯之RabbitMQ面试题汇总.pdf",
+      "sha256": "85ee00a49e6f37d288e9057dcae3b47fd996491b25adecc7bf88ced24e883bd0",
+      "duplicateOf": null,
+      "textExtracted": true,
+      "characters": 7688,
+      "candidateHeadings": 24,
+      "comparisonStatus": "reviewed",
+      "questionIds": [
+        "pack-h15",
+        "pack-h17",
+        "pack-h36",
+        "pack-h84"
+      ],
+      "decision": "24项按拓扑/路由/集群/节点故障/死信/确认重投递核对：补交换机队列绑定、确认和消费流控。RAM/disk节点、mirrored queue、warrens等旧架构不作当前推荐；持久化与复制需结合队列类型，不沿用durable即不丢结论。报文字节限制及内部进程映射作为版本手册细节不纳重点。"
+    }
+  ]
+}

@@ -1,0 +1,424 @@
+[
+  {
+    "section": 1,
+    "topic": "项目准备",
+    "questionIds": [],
+    "decision": "现有项目STAR与简历指南承担此内容；不把2024行情判断写成当前市场事实。"
+  },
+  {
+    "section": 2,
+    "topic": "关单",
+    "questionIds": [
+      "pack-h24"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 3,
+    "topic": "秒杀",
+    "questionIds": [
+      "j-sc1",
+      "sd3"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 4,
+    "topic": "QPS突增",
+    "questionIds": [
+      "j-sc4"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 5,
+    "topic": "会话",
+    "questionIds": [
+      "pack-h04"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 6,
+    "topic": "优惠券",
+    "questionIds": [
+      "pack-h90"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 7,
+    "topic": "评论",
+    "questionIds": [
+      "pack-h88"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 8,
+    "topic": "短链",
+    "questionIds": [
+      "j-sc5",
+      "p-sc1"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 9,
+    "topic": "网盘上传",
+    "questionIds": [
+      "pack-h89"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 10,
+    "topic": "短视频",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 11,
+    "topic": "LBS",
+    "questionIds": [
+      "pack-h99"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 12,
+    "topic": "搜索",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 13,
+    "topic": "热点微博",
+    "questionIds": [
+      "p-sc2"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 14,
+    "topic": "过载保护",
+    "questionIds": [
+      "j-d3",
+      "r-e6",
+      "p-d2",
+      "pack-h12"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 15,
+    "topic": "加密服务",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 16,
+    "topic": "网约车",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 17,
+    "topic": "预约抢购",
+    "questionIds": [
+      "j-sc1",
+      "sd3"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 18,
+    "topic": "流量架构",
+    "questionIds": [
+      "j-sc4"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 19,
+    "topic": "RPC",
+    "questionIds": [
+      "pack-h14",
+      "pack-h47"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 20,
+    "topic": "蓝绿",
+    "questionIds": [
+      "pack-h101"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 21,
+    "topic": "MQ选型",
+    "questionIds": [
+      "j-q5"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 22,
+    "topic": "顺序消费",
+    "questionIds": [
+      "j-q4",
+      "p-mq2",
+      "pack-h16"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 23,
+    "topic": "调度",
+    "questionIds": [
+      "pack-h94"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 24,
+    "topic": "同城多活",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 25,
+    "topic": "服务拆分",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 26,
+    "topic": "库存",
+    "questionIds": [
+      "j-sc3",
+      "p2-33"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 27,
+    "topic": "写入选型",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 28,
+    "topic": "追踪",
+    "questionIds": [
+      "p2-32"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 29,
+    "topic": "流量压力",
+    "questionIds": [
+      "j-d3",
+      "r-e6",
+      "p-d2",
+      "pack-h12"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 30,
+    "topic": "分层",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 31,
+    "topic": "数据库瓶颈",
+    "questionIds": [
+      "j-m5",
+      "p2-36"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 32,
+    "topic": "站内信",
+    "questionIds": [
+      "pack-h91"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 33,
+    "topic": "故障排查",
+    "questionIds": [
+      "sd6"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 34,
+    "topic": "API延迟",
+    "questionIds": [
+      "j-t1",
+      "sd6"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 35,
+    "topic": "导入",
+    "questionIds": [
+      "pack-h95"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 36,
+    "topic": "敏感词",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 37,
+    "topic": "红包",
+    "questionIds": [
+      "pack-h100"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 38,
+    "topic": "迁移",
+    "questionIds": [
+      "pack-h92"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 39,
+    "topic": "幂等",
+    "questionIds": [
+      "j-q2",
+      "j-d1",
+      "j-sc2",
+      "p2-28"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 40,
+    "topic": "压测",
+    "questionIds": [
+      "pack-h93"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 41,
+    "topic": "MQ积压",
+    "questionIds": [
+      "j-q3",
+      "pack-h83"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 42,
+    "topic": "FullGC",
+    "questionIds": [
+      "j-v4",
+      "j-t3",
+      "p2-48"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 43,
+    "topic": "OOM",
+    "questionIds": [
+      "p-v1",
+      "pack-h67"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 44,
+    "topic": "CPU",
+    "questionIds": [],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 45,
+    "topic": "海量统计",
+    "questionIds": [],
+    "decision": "按考点参考：复用上传/Feed/ES/空间匹配/幂等/一致性/限流/安全与统计题；视频转码、密码服务、跨机房多活及外部算法实现属于专项扩展，未照搬成通用高频答案。"
+  },
+  {
+    "section": 46,
+    "topic": "死锁",
+    "questionIds": [],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 47,
+    "topic": "扫码",
+    "questionIds": [
+      "pack-h96"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 48,
+    "topic": "SSO",
+    "questionIds": [
+      "pack-h97"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 49,
+    "topic": "访问量",
+    "questionIds": [
+      "p2-27"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 50,
+    "topic": "订阅推送",
+    "questionIds": [
+      "a-e1"
+    ],
+    "decision": "题库已覆盖核心机制，章节中的容量数字仅视为需求假设；具体方案需验证。"
+  },
+  {
+    "section": 51,
+    "topic": "购物车",
+    "questionIds": [
+      "pack-h98"
+    ],
+    "decision": "补充场景题及详解，强调状态、故障窗口、幂等与验证边界。"
+  },
+  {
+    "section": 52,
+    "topic": "真题合集",
+    "questionIds": [],
+    "decision": "与专题题集交叉核对：事务/MVCC/锁/消息/线程池/缓存等已有或本轮补齐；重复问法合并，旧默认参数和未经证实平台实现不采用。"
+  },
+  {
+    "section": 53,
+    "topic": "八股合集",
+    "questionIds": [],
+    "decision": "与专题题集交叉核对：事务/MVCC/锁/消息/线程池/缓存等已有或本轮补齐；重复问法合并，旧默认参数和未经证实平台实现不采用。"
+  },
+  {
+    "section": 54,
+    "topic": "真题合集",
+    "questionIds": [],
+    "decision": "与专题题集交叉核对：事务/MVCC/锁/消息/线程池/缓存等已有或本轮补齐；重复问法合并，旧默认参数和未经证实平台实现不采用。"
+  }
+]
