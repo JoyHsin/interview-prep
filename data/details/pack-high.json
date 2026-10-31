@@ -2506,640 +2506,926 @@
  },
  "pack-h59": {
   "principle": [
-   "对象正确构造且发布后不再改变，多个线程读取时可减少可变状态的同步需求。",
-   "不可变设计应限制继承、使用私有字段并避免泄漏可变引用；对集合或数组需要防御性复制，final 引用本身不会冻结对象。",
-   "构造期间不能让 this 提前逃逸，发布与关联的其他共享状态也要遵循正确的内存可见性规则。"
+   "不可变对象在构造完成后状态不再改变，所以多个线程同时读它时不存在读写冲突，也不需要加锁。只要对象被安全发布，任何线程看到的都是同一个完整状态，天然线程安全，还可以自由共享和缓存（如 String、Integer、LocalDate、BigDecimal）。",
+   "实现不可变要做到：类用 final 防止子类破坏；所有字段 private final；不提供 setter；构造器中对可变参数做防御性拷贝；getter 不直接返回内部可变对象（返回拷贝或不可修改视图）。final 字段还有 JMM 的特殊保证：构造器正确结束后（this 未逸出），其他线程一定看到 final 字段初始化后的值。",
+   "修改需求通过返回新对象实现（如 withXxx），代价是创建更多对象，但在读多写少、需要跨线程传递值的场景非常划算。Java 16 的 record 是浅不可变，字段若是 List 仍需拷贝。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "构造时复制传入列表；访问时返回只读视图或副本，并保证元素自身的可变性不破坏约束。"
+   "lang": "java",
+   "code": "public final class Money {\n    private final BigDecimal amount;\n    private final List<String> tags;\n    public Money(BigDecimal amount, List<String> tags) {\n        this.amount = amount;\n        this.tags = List.copyOf(tags);        // 防御性拷贝 + 不可修改\n    }\n    public BigDecimal amount() { return amount; }\n    public List<String> tags() { return tags; }\n    public Money add(BigDecimal x) { return new Money(amount.add(x), tags); } // 返回新对象\n}"
   },
   "asks": [
    "不可变对象为什么有助于并发安全？",
-   "返回 unmodifiableList 是否一定深度不可变？"
+   "怎么设计一个不可变类？",
+   "final 字段有什么内存语义？",
+   "record 是完全不可变的吗？"
   ],
   "followups": [
    {
-    "q": "返回 unmodifiableList 是否一定深度不可变？",
-    "a": "不一定；它限制列表操作，但底层列表或元素仍可能被其他引用修改。"
+    "q": "final 修饰引用就代表对象不可变吗？",
+    "a": "不是，final 只保证引用不能再指向别的对象，引用对象内部的状态仍然可以被修改。"
+   },
+   {
+    "q": "构造器里 this 逸出会怎样？",
+    "a": "其他线程可能在构造完成前拿到对象引用，看到 final 字段尚未初始化的值，破坏不可变保证。"
+   },
+   {
+    "q": "不可变对象会带来性能问题吗？",
+    "a": "每次修改都创建新对象会增加分配和 GC，但现代 JVM 对短命对象回收很快，读多写少场景通常收益更大。"
    }
   ],
   "answer": [
-   "对象正确构造且发布后不再改变，多个线程读取时可减少可变状态的同步需求。",
-   "不可变设计应限制继承、使用私有字段并避免泄漏可变引用；对集合或数组需要防御性复制，final 引用本身不会冻结对象。",
-   "构造期间不能让 this 提前逃逸，发布与关联的其他共享状态也要遵循正确的内存可见性规则。"
+   "总：不可变对象构造后状态不变，多线程只读不写，因此无需同步即可安全共享。",
+   "分：final 类、private final 字段、无 setter、防御性拷贝、不返回内部可变引用；final 字段有构造后可见性保证；修改通过返回新对象完成。",
+   "实践：【结合你的项目】举金额、配置快照等值对象设计为不可变，在多线程间传递的例子。",
+   "总结：能不可变就不可变，是消除并发问题最省心的方式。"
   ],
   "pitfalls": [
-   "把 final 字段或只读包装当作深度不可变。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲清 final 字段的 JMM 语义和 this 逸出。"
   ]
  },
  "pack-h60": {
   "principle": [
-   "双重检查先在无锁路径判断实例，再在同步块内再次检查，以减少初始化后的锁开销。",
-   "实例引用的发布需要满足可见性和有序性要求；volatile 配合正确构造，可避免其他线程通过非空引用观察到未正确发布的对象。",
-   "只有需要这种延迟初始化时才考虑 DCL；静态初始化或枚举可简化实现。单例只限定实例创建方式，不自动保证对象内可变状态安全。"
+   "双重检查锁（DCL）单例里，instance = new Singleton() 不是原子操作，大致分三步：分配内存、调用构造器初始化、把引用赋给 instance。JIT 或 CPU 可能把后两步重排序，使引用先被赋值而对象尚未初始化完成。",
+   "此时另一个线程在第一次检查 instance != null 时（没有加锁）就会直接返回这个「半初始化」对象，读到字段默认值，产生难以复现的错误。volatile 禁止了这种重排序，并建立 happens-before：写 volatile 之前的初始化对之后读取该变量的线程可见。",
+   "JDK5 之后的 JMM 保证 volatile 修复 DCL 有效。更简单的替代是静态内部类（依赖类初始化的线程安全）或枚举单例（还能防反射和序列化破坏）。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "if (instance == null) synchronized (Type.class) { if (instance == null) instance = new Type(); } // instance 声明为 volatile"
+   "lang": "java",
+   "code": "public class Singleton {\n    private static volatile Singleton instance;      // 必须 volatile\n    private Singleton() {}\n    public static Singleton getInstance() {\n        if (instance == null) {                      // 第一次检查：无锁快路径\n            synchronized (Singleton.class) {\n                if (instance == null) {              // 第二次检查：防重复创建\n                    instance = new Singleton();      // 分配 → 初始化 → 赋值（可能重排）\n                }\n            }\n        }\n        return instance;\n    }\n}\n// 替代：enum Holder { INSTANCE; }"
   },
   "asks": [
    "双重检查单例为什么需要 volatile？",
-   "单例的方法就天然线程安全吗？"
+   "new 对象有哪几步？",
+   "两次检查分别起什么作用？",
+   "有没有更简单的线程安全单例写法？"
   ],
   "followups": [
    {
-    "q": "单例的方法就天然线程安全吗？",
-    "a": "不是，实例字段的并发读写仍需单独设计。"
+    "q": "synchronized 不是已经保证可见性了吗？",
+    "a": "只对同样进入同步块的线程有效，第一次检查在锁外执行，读线程没有加锁，所以仍可能看到重排后的半成品对象。"
+   },
+   {
+    "q": "去掉第二次检查会怎样？",
+    "a": "两个线程都通过第一次检查后排队进入同步块，第二个线程会再创建一个实例，单例被破坏。"
+   },
+   {
+    "q": "为什么枚举单例更推荐？",
+    "a": "JVM 保证枚举实例唯一且线程安全，还天然防止反射调用构造器和反序列化创建新实例。"
    }
   ],
   "answer": [
-   "双重检查先在无锁路径判断实例，再在同步块内再次检查，以减少初始化后的锁开销。",
-   "实例引用的发布需要满足可见性和有序性要求；volatile 配合正确构造，可避免其他线程通过非空引用观察到未正确发布的对象。",
-   "只有需要这种延迟初始化时才考虑 DCL；静态初始化或枚举可简化实现。单例只限定实例创建方式，不自动保证对象内可变状态安全。"
+   "总：DCL 需要 volatile，防止对象创建时引用赋值与初始化被重排，避免其他线程拿到半初始化对象。",
+   "分：第一次检查无锁提升性能，第二次检查防重复创建；volatile 禁止重排并保证可见；静态内部类和枚举是更简单的替代。",
+   "实践：【结合你的项目】说明项目里单例的实现方式，通常交给 Spring 容器管理即可。",
+   "总结：DCL 的关键是理解锁外读取需要 volatile 提供的有序性保障。"
   ],
   "pitfalls": [
-   "只有一次判空，或把 volatile 当成所有字段更新的互斥锁。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：能讲清三步指令重排的具体过程。"
   ]
  },
  "pack-h61": {
   "principle": [
-   "AtomicLong 提供单变量原子操作和 CAS，适合需要原子读取并更新等明确操作语义的场景。",
-   "LongAdder 在竞争下将累加分散到多个单元，适合高竞争统计；sum 汇总并发更新时不是针对所有单元的一次原子快照。",
-   "计费扣减、限额判断等需要条件更新或精确原子边界的业务不能直接用累加器替代，应结合竞争程度与读写频率测试。"
+   "AtomicLong 基于 CAS 更新一个 value，高并发下大量线程竞争同一个变量，CAS 失败后不断自旋重试，CPU 消耗大、吞吐下降。LongAdder 采用分段累加思想：低竞争时直接更新 base；竞争激烈时把线程分散到 Cell 数组的不同槽位分别累加，sum() 时把 base 和所有 Cell 加起来。",
+   "所以 LongAdder 在高并发写多读少的计数场景（如 QPS 统计、指标计数）吞吐远高于 AtomicLong，代价是占用更多内存，且 sum() 在并发更新时不是精确的瞬时快照。",
+   "AtomicLong 适合需要精确当前值或依赖返回值做判断的场景，如生成序列号、incrementAndGet 后判断阈值、compareAndSet 条件更新。LongAdder 没有 CAS 风格的条件更新方法。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "统计请求次数可考虑 LongAdder；需要 compareAndSet 更新状态时使用合适的原子变量或锁。"
+   "lang": "java",
+   "code": "// 指标计数：高并发写，偶尔读\nLongAdder requests = new LongAdder();\nrequests.increment();\nlong total = requests.sum();          // 非原子快照\n\n// 序列号、阈值判断：需要精确返回值\nAtomicLong seq = new AtomicLong();\nlong id = seq.incrementAndGet();\nif (counter.incrementAndGet() > LIMIT) reject();\n\n// 按 key 计数\nConcurrentHashMap<String, LongAdder> m = new ConcurrentHashMap<>();\nm.computeIfAbsent(api, k -> new LongAdder()).increment();"
   },
   "asks": [
    "AtomicLong 和 LongAdder 计数如何选择？",
-   "sum 适合用作严格限流的原子判断吗？"
+   "LongAdder 为什么在高并发下更快？",
+   "LongAdder 的 sum 是精确的吗？",
+   "哪些场景必须用 AtomicLong？"
   ],
   "followups": [
    {
-    "q": "sum 适合用作严格限流的原子判断吗？",
-    "a": "不适合直接将读取再判断再增加作为原子限流操作，需使用具有明确原子语义的方案。"
+    "q": "Cell 数组会无限扩容吗？",
+    "a": "不会，Cell 数组大小上限约为 CPU 核数，扩容只在竞争失败时发生。"
+   },
+   {
+    "q": "什么是伪共享，LongAdder 怎么处理？",
+    "a": "多个变量位于同一缓存行时相互失效，Cell 用 @Contended 填充缓存行来避免伪共享。"
+   },
+   {
+    "q": "低并发时 LongAdder 会更慢吗？",
+    "a": "低竞争时直接 CAS 更新 base，与 AtomicLong 性能接近，只是多占少量内存。"
    }
   ],
   "answer": [
-   "AtomicLong 提供单变量原子操作和 CAS，适合需要原子读取并更新等明确操作语义的场景。",
-   "LongAdder 在竞争下将累加分散到多个单元，适合高竞争统计；sum 汇总并发更新时不是针对所有单元的一次原子快照。",
-   "计费扣减、限额判断等需要条件更新或精确原子边界的业务不能直接用累加器替代，应结合竞争程度与读写频率测试。"
+   "总：高并发累加计数用 LongAdder，需要精确值或条件更新用 AtomicLong。",
+   "分：AtomicLong 单变量 CAS 竞争激烈时自旋严重；LongAdder 分散到多个 Cell 降低竞争，sum 非原子快照；Cell 用缓存行填充避免伪共享。",
+   "实践：【结合你的项目】举接口调用次数统计用 LongAdder、订单流水号用 AtomicLong 的例子。",
+   "总结：选择依据是写竞争程度和是否需要精确的即时值。"
   ],
   "pitfalls": [
-   "认为分段累加与单变量 CAS 语义完全一致。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：提到 @Contended 与伪共享。"
   ]
  },
  "pack-h62": {
   "principle": [
-   "固定频率按计划开始时间推进；固定延迟从上一次执行结束后再等待指定时间。任务耗时会以不同方式影响后续执行时机。",
-   "使用 ScheduledExecutorService 时，同一周期任务不会因耗时超出周期而自动并发执行自身；任务异常终止时应确认后续调度是否被抑制。",
-   "记录执行耗时、失败与延迟，明确异常处理和关闭流程；多实例重复执行还需要分布式协调或业务幂等。"
+   "ScheduledExecutorService 的 scheduleAtFixedRate 按固定频率执行：以上一次计划开始时间为基准，每隔 period 触发一次。如果某次执行时间超过 period，下一次会在上次结束后立即执行，不会并发重叠，但会出现「追赶」连续执行。",
+   "scheduleWithFixedDelay 按固定延迟执行：在上一次执行结束后，再等待 delay 才开始下一次，两次执行之间始终有固定间隔，适合需要间隔休息的轮询、清理任务。",
+   "两者都有一个大坑：任务抛出未捕获异常后，后续调度会被静默取消，不再执行，也没有日志，所以任务体必须 try-catch。在 Spring 中对应 @Scheduled(fixedRate) 和 @Scheduled(fixedDelay)，默认单线程执行所有定时任务，需要配置线程池；多实例部署时还要用分布式锁或 XXL-JOB 等调度平台避免重复执行。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "耗时 8 秒，间隔 10 秒：固定延迟下一次约在结束后再等10秒；固定频率依据原计划节奏。"
+   "lang": "java",
+   "code": "ScheduledExecutorService ses = Executors.newScheduledThreadPool(2);\nses.scheduleAtFixedRate(() -> safe(this::reportMetrics), 0, 10, TimeUnit.SECONDS);\nses.scheduleWithFixedDelay(() -> safe(this::pollTasks), 0, 5, TimeUnit.SECONDS);\n\nstatic void safe(Runnable r) {\n    try { r.run(); } catch (Throwable t) { log.error(\"scheduled task failed\", t); } // 防止调度被取消\n}\n\n// Spring\n@Scheduled(fixedRate = 10_000)  public void report() {}\n@Scheduled(fixedDelay = 5_000)  public void poll() {}"
   },
   "asks": [
    "固定频率和固定延迟的定时任务有什么区别？",
-   "定时执行成功就表示不会漏任务吗？"
+   "任务执行时间超过周期会怎样？",
+   "定时任务抛异常会怎样？",
+   "多实例部署定时任务要注意什么？"
   ],
   "followups": [
    {
-    "q": "定时执行成功就表示不会漏任务吗？",
-    "a": "不是，进程退出或任务异常等仍可能中断调度，重要任务需要持久化与补偿。"
+    "q": "fixedRate 会让任务并发执行吗？",
+    "a": "同一个任务不会并发，超时后下一次会在当前执行结束后立即开始，产生连续追赶执行。"
+   },
+   {
+    "q": "Spring @Scheduled 默认几个线程？",
+    "a": "默认单线程，一个任务阻塞会影响其他任务，需要配置 TaskScheduler 线程池。"
+   },
+   {
+    "q": "为什么不用 Timer？",
+    "a": "Timer 单线程且任务异常会导致整个 Timer 终止，ScheduledThreadPoolExecutor 更健壮。"
    }
   ],
   "answer": [
-   "固定频率按计划开始时间推进；固定延迟从上一次执行结束后再等待指定时间。任务耗时会以不同方式影响后续执行时机。",
-   "使用 ScheduledExecutorService 时，同一周期任务不会因耗时超出周期而自动并发执行自身；任务异常终止时应确认后续调度是否被抑制。",
-   "记录执行耗时、失败与延迟，明确异常处理和关闭流程；多实例重复执行还需要分布式协调或业务幂等。"
+   "总：固定频率以开始时间为基准按周期触发，固定延迟以上次结束时间为基准再等待固定间隔。",
+   "分：超时任务在固定频率下会追赶执行；任务异常会导致调度被静默取消，必须捕获；Spring 默认单线程；多实例需分布式锁或调度平台。",
+   "实践：【结合你的项目】讲一次定时任务突然不再执行，最后发现是异常导致调度取消的排查。",
+   "总结：定时任务要选对调度模式，并做好异常捕获和多实例防重。"
   ],
   "pitfalls": [
-   "忽略未捕获异常导致后续周期任务停止。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲清多实例重复执行和分布式调度。"
   ]
  },
  "pack-h63": {
   "principle": [
-   "如果父任务占满线程池的全部线程，又同步等待提交到同一池的子任务，子任务可能一直排队而无法执行。",
-   "这类依赖等待不一定表现为对象锁死锁，线程转储可能显示等待 Future，任务队列却持续非空。",
-   "应重构依赖为异步组合、避免嵌套阻塞或使用适当的资源隔离；只增加线程数不能从根本上证明不会再次饥饿。"
+   "当父任务在线程池中运行，又向同一个线程池提交子任务并阻塞等待子任务结果（future.get）时，如果所有工作线程都被这类父任务占满，子任务只能在队列里排队，而父任务又在等子任务，彼此等待就形成了线程饥饿死锁：没有锁，但系统完全卡住。",
+   "典型场景：固定大小线程池中处理请求，请求内部又用同一线程池并行查询多个下游并 join；流量高时所有线程都在等待。CompletableFuture 默认使用 ForkJoinPool.commonPool，在 commonPool 中做阻塞等待也有类似问题。",
+   "解决办法：父子任务使用不同的线程池（隔离）；避免在池内线程中阻塞等待，改用 thenCompose/thenCombine 等异步编排；必须阻塞时设置超时；ForkJoinPool 中用 fork/join 让工作线程在等待时帮忙执行其他任务。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "单线程池执行父任务 → 父任务提交子任务 → 父任务 get 等待 → 子任务没有空闲线程。"
+   "lang": "java",
+   "code": "ExecutorService pool = Executors.newFixedThreadPool(2);\n// ❌ 两个父任务占满线程，子任务排队，父任务永远等不到\npool.submit(() -> {\n    Future<String> child = pool.submit(() -> query());\n    return child.get();\n});\n\n// ✅ 父子隔离 + 异步编排\nExecutorService ioPool = Executors.newFixedThreadPool(16);\nCompletableFuture<String> a = CompletableFuture.supplyAsync(this::queryA, ioPool);\nCompletableFuture<String> b = CompletableFuture.supplyAsync(this::queryB, ioPool);\na.thenCombine(b, this::merge).orTimeout(2, TimeUnit.SECONDS);"
   },
   "asks": [
    "线程池中等待同一线程池的子任务为什么会饥饿？",
-   "没有 synchronized 就能排除死等吗？"
+   "怎么识别这种问题？",
+   "如何避免？",
+   "CompletableFuture 有没有这个问题？"
   ],
   "followups": [
    {
-    "q": "没有 synchronized 就能排除死等吗？",
-    "a": "不能，任务之间的资源和调度依赖也可能使系统无法推进。"
+    "q": "这种问题线程 dump 上有什么特征？",
+    "a": "所有工作线程都处于 WAITING 状态，堆栈停在 FutureTask.get，而队列中有大量待执行任务，但没有锁的死锁报告。"
+   },
+   {
+    "q": "把线程池调大能解决吗？",
+    "a": "只能推迟问题，流量更高时依然会占满，正确做法是隔离线程池或改成非阻塞编排。"
+   },
+   {
+    "q": "ForkJoinPool 为什么不容易出这个问题？",
+    "a": "它的 join 会让当前线程去执行其他待办任务（工作窃取），而不是单纯阻塞等待。"
    }
   ],
   "answer": [
-   "如果父任务占满线程池的全部线程，又同步等待提交到同一池的子任务，子任务可能一直排队而无法执行。",
-   "这类依赖等待不一定表现为对象锁死锁，线程转储可能显示等待 Future，任务队列却持续非空。",
-   "应重构依赖为异步组合、避免嵌套阻塞或使用适当的资源隔离；只增加线程数不能从根本上证明不会再次饥饿。"
+   "总：父任务占满线程池并阻塞等待同池子任务时，子任务无线程可用，形成线程饥饿死锁。",
+   "分：表现为线程都在 Future.get 且队列堆积；用父子线程池隔离、异步编排、超时来避免；调大线程池只是推迟问题。",
+   "实践：【结合你的项目】讲一次高峰期接口全部超时，jstack 发现线程都卡在 get 的排查经历。",
+   "总结：在线程池内部不要阻塞等待同一个线程池的任务。"
   ],
   "pitfalls": [
-   "只调整线程数，不检查依赖结构。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：用 jstack 特征识别饥饿死锁。"
   ]
  },
  "pack-h64": {
   "principle": [
-   "使用有界队列将生产与消费解耦，队列满时通过阻塞、超时拒绝或降级约束生产速度。",
-   "明确吞吐、延迟与容量边界，避免用无界队列把流量峰值转换成内存耗尽；队列满时的策略是业务设计的一部分。",
-   "停止时要处理消费者取消、队列剩余任务和失败重试；需要崩溃恢复的任务不能只保存在内存队列中。"
+   "背压（backpressure）是指当消费者处理不过来时，让生产者感知并降速，而不是无限堆积导致内存溢出或延迟飙升。最基础的实现是使用有界阻塞队列：队列满时生产者 put 阻塞，或 offer 超时失败后执行降级（丢弃、拒绝、返回繁忙）。",
+   "线程池场景中，有界队列加 CallerRunsPolicy 是一种天然背压：队列满时由提交任务的线程自己执行，从而减慢提交速度。消息队列中通过消费者拉取模式（Kafka poll）、控制预取数量（RabbitMQ prefetch）实现背压；响应式编程（Reactor、RxJava）通过 request(n) 让下游声明需求。",
+   "设计要点：一定要有界；明确队列满时的策略并记录指标（队列长度、拒绝数）；根据下游容量设置限流；不要用无界 LinkedBlockingQueue 隐藏问题。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "生产者 offer(task, timeout) → 队列 → 消费者处理；超时后返回明确的拒绝结果。"
+   "lang": "java",
+   "code": "BlockingQueue<Event> queue = new ArrayBlockingQueue<>(10_000);\n\n// 生产者：限时入队，失败则降级\nif (!queue.offer(event, 50, TimeUnit.MILLISECONDS)) {\n    metrics.counter(\"event.rejected\").increment();\n    return Response.busy();\n}\n\n// 线程池天然背压\nnew ThreadPoolExecutor(8, 8, 0, TimeUnit.SECONDS,\n    new ArrayBlockingQueue<>(500), new ThreadPoolExecutor.CallerRunsPolicy());\n\n// RabbitMQ：channel.basicQos(50); 最多 50 条未确认消息"
   },
   "asks": [
    "生产者消费者模式如何实现背压？",
-   "有界队列能保证业务一定处理完成吗？"
+   "为什么不能用无界队列？",
+   "线程池怎么实现背压？",
+   "消息队列中背压怎么做？"
   ],
   "followups": [
    {
-    "q": "有界队列能保证业务一定处理完成吗？",
-    "a": "不能，它只约束内存和排队，可靠完成需要持久化、确认及补偿。"
+    "q": "CallerRunsPolicy 有什么副作用？",
+    "a": "提交线程（如 Tomcat 请求线程）会被拖去执行任务，导致接口变慢，需要评估是否可以接受。"
+   },
+   {
+    "q": "队列容量怎么设定？",
+    "a": "根据可接受的最大排队延迟乘以消费速率估算，并结合内存占用，再通过压测调整。"
+   },
+   {
+    "q": "Kafka 为什么天然有背压？",
+    "a": "消费者主动 poll 拉取，处理不过来就不拉，消息留在 Broker 上，而不是被推送压垮消费者。"
    }
   ],
   "answer": [
-   "使用有界队列将生产与消费解耦，队列满时通过阻塞、超时拒绝或降级约束生产速度。",
-   "明确吞吐、延迟与容量边界，避免用无界队列把流量峰值转换成内存耗尽；队列满时的策略是业务设计的一部分。",
-   "停止时要处理消费者取消、队列剩余任务和失败重试；需要崩溃恢复的任务不能只保存在内存队列中。"
+   "总：背压就是让下游处理能力反向约束上游生产速度，核心是有界缓冲和满时策略。",
+   "分：有界阻塞队列阻塞或超时拒绝；线程池用有界队列加 CallerRunsPolicy；MQ 用拉取模式和预取限制；响应式用 request(n)。",
+   "实践：【结合你的项目】说明一个异步处理链路的队列容量、满时策略和监控指标。",
+   "总结：没有背压的异步系统只是把故障从延迟问题变成内存溢出问题。"
   ],
   "pitfalls": [
-   "队列满时静默丢弃重要任务。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：结合 Kafka 拉模式和 RabbitMQ prefetch 讲。"
   ]
  },
  "pack-h65": {
   "principle": [
-   "GC 按可达性识别存活对象，不理解对象在业务上是否还需要；长期持有的无用对象仍可能无法释放。",
-   "常见根源是无界缓存、未注销监听器、静态集合和线程相关引用。分析应观察负载稳定后的存活量与保留链，而非只看一次堆使用率。",
-   "结合堆转储、支配树和到 GC Roots 的引用路径定位持有者，修复释放与容量策略；采集转储前评估暂停、磁盘与敏感数据影响。"
+   "GC 只能回收不可达对象。所谓 Java 内存泄漏，是对象在业务上已经不再需要，却仍被某个 GC Root 可达的引用链持有，GC 无法回收，内存随时间不断增长，最终 Full GC 频繁甚至 OOM。",
+   "常见原因：静态集合（static Map 当缓存）只放不删；ThreadLocal 在线程池中使用后不 remove；监听器、回调注册后未注销；无上限的本地缓存；内部类或 Lambda 隐式持有外部对象；连接、流等资源未关闭；ClassLoader 泄漏（热部署时旧类加载器被引用）；HashMap 的 key 在放入后修改了 hashCode 相关字段导致无法删除。",
+   "排查：观察 Full GC 后老年代占用是否持续上升；jmap/jcmd 导出 heap dump，用 MAT 查看 Dominator Tree 和 Path to GC Roots 找到持有链；修复后对比内存曲线。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "请求结束但静态 Map 仍保存请求对象 → 对象可达 → GC 无法按业务需要回收。"
+   "lang": "java",
+   "code": "// 泄漏：静态 Map 只增不减\nstatic final Map<String, Session> SESSIONS = new HashMap<>();\n\n// 修复：有上限和过期的缓存\nCache<String, Session> cache = Caffeine.newBuilder()\n    .maximumSize(10_000).expireAfterAccess(Duration.ofMinutes(30)).build();\n\n// ThreadLocal 用完清理\ntry { CTX.set(user); handle(); } finally { CTX.remove(); }\n\n// 导出堆分析\n// jcmd <pid> GC.heap_dump /tmp/heap.hprof"
   },
   "asks": [
    "有垃圾回收为什么仍会发生内存泄漏？",
-   "堆占用高就一定是泄漏吗？"
+   "常见的内存泄漏原因有哪些？",
+   "如何排查内存泄漏？",
+   "内存泄漏和内存溢出有什么区别？"
   ],
   "followups": [
    {
-    "q": "堆占用高就一定是泄漏吗？",
-    "a": "不是，也可能是正常缓存、负载增加或暂时尚未回收；需要结合趋势与保留链判断。"
+    "q": "内存泄漏和 OOM 是一回事吗？",
+    "a": "不是，泄漏是不该存活的对象无法回收，长期积累可能导致 OOM；OOM 也可能只是数据量太大或堆设置太小。"
+   },
+   {
+    "q": "MAT 里怎么定位泄漏？",
+    "a": "看 Dominator Tree 找占用最大的对象，再用 Path to GC Roots 排除弱引用，找出是谁持有它。"
+   },
+   {
+    "q": "WeakHashMap 能解决缓存泄漏吗？",
+    "a": "只有 key 没有其他强引用时才会回收，若 value 引用了 key 仍会泄漏，一般更推荐 Caffeine 这类带淘汰策略的缓存。"
    }
   ],
   "answer": [
-   "GC 按可达性识别存活对象，不理解对象在业务上是否还需要；长期持有的无用对象仍可能无法释放。",
-   "常见根源是无界缓存、未注销监听器、静态集合和线程相关引用。分析应观察负载稳定后的存活量与保留链，而非只看一次堆使用率。",
-   "结合堆转储、支配树和到 GC Roots 的引用路径定位持有者，修复释放与容量策略；采集转储前评估暂停、磁盘与敏感数据影响。"
+   "总：GC 只回收不可达对象，无用对象仍被 GC Roots 引用链持有就会造成内存泄漏。",
+   "分：静态集合、ThreadLocal、未注销监听器、无界缓存、资源未关闭、ClassLoader 都是常见原因；用 heap dump 和 MAT 的 GC Roots 路径定位。",
+   "实践：【结合你的项目】讲一次老年代持续上涨，通过 MAT 找到静态 Map 或 ThreadLocal 泄漏并修复的经历。",
+   "总结：内存泄漏的本质是引用生命周期管理错误，修复关键是找到持有链。"
   ],
   "pitfalls": [
-   "把 GC 等同于自动释放所有业务无用对象。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：能描述 MAT 的 Path to GC Roots 分析。"
   ]
  },
  "pack-h66": {
   "principle": [
-   "从一组根引用出发遍历对象图，识别仍然可达的对象；单纯对象互相引用并不保证它们存活。",
-   "根来源包括活跃线程栈上的引用、静态字段所关联的引用以及 JNI 等运行时持有的引用；具体根集合与 JVM 实现和阶段有关。",
-   "不可达不代表立即回收，引用类型、回收时机和清理机制仍影响释放；不要依赖 finalize 或 System.gc 及时完成资源管理。"
+   "GC 要判断哪些对象可以回收。引用计数法简单，但无法处理循环引用（A 引用 B、B 引用 A 且都已不被外部使用），所以 HotSpot 使用可达性分析：从一组 GC Roots 出发，沿引用链遍历，能到达的对象是存活对象，不可达的就可以回收。",
+   "GC Roots 包括：虚拟机栈中局部变量引用的对象、方法区中类静态属性引用的对象、常量引用的对象、本地方法栈 JNI 引用的对象、被 synchronized 持有的对象、JVM 内部引用（如基本类型 Class 对象、系统类加载器）等。",
+   "可达性分析需要一致的快照，传统做法是 Stop The World 枚举根节点；现代收集器（CMS、G1、ZGC）用三色标记加写屏障实现并发标记，减少停顿。另外，引用强度分为强、软、弱、虚四种，软引用在内存不足时回收，弱引用在下次 GC 时回收。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "A 与 B 互相引用，但无任何根路径能到达它们 → 循环引用本身不会阻止回收。"
+   "lang": "java",
+   "code": "class Node { Node next; }\nNode a = new Node(), b = new Node();\na.next = b; b.next = a;   // 循环引用\na = null; b = null;       // 从 GC Roots 不可达 → 都可回收（引用计数法做不到）\n\n// 引用强度\nSoftReference<byte[]> soft = new SoftReference<>(new byte[1024]);  // 内存不足才回收\nWeakReference<Object> weak = new WeakReference<>(new Object());    // 下次 GC 回收\n// ThreadLocalMap 的 key 就是弱引用"
   },
   "asks": [
    "GC Roots 与可达性分析解决什么问题？",
-   "循环引用一定造成泄漏吗？"
+   "哪些对象可以作为 GC Roots？",
+   "为什么不用引用计数法？",
+   "四种引用类型有什么区别？"
   ],
   "followups": [
    {
-    "q": "循环引用一定造成泄漏吗？",
-    "a": "不一定，关键是是否仍可从根到达，业务不再需要但仍可达才是常见泄漏情形。"
+    "q": "对象不可达就一定立即被回收吗？",
+    "a": "不一定，回收时机取决于 GC 何时运行，重写了 finalize 的对象还可能经过一次额外标记。"
+   },
+   {
+    "q": "并发标记时引用变化怎么办？",
+    "a": "使用三色标记配合写屏障，CMS 用增量更新，G1 用原始快照（SATB），防止存活对象被漏标。"
+   },
+   {
+    "q": "ThreadLocal 为什么用弱引用？",
+    "a": "ThreadLocalMap 的 key 是弱引用，ThreadLocal 对象没有强引用时能被回收，但 value 仍是强引用，所以还需要 remove。"
    }
   ],
   "answer": [
-   "从一组根引用出发遍历对象图，识别仍然可达的对象；单纯对象互相引用并不保证它们存活。",
-   "根来源包括活跃线程栈上的引用、静态字段所关联的引用以及 JNI 等运行时持有的引用；具体根集合与 JVM 实现和阶段有关。",
-   "不可达不代表立即回收，引用类型、回收时机和清理机制仍影响释放；不要依赖 finalize 或 System.gc 及时完成资源管理。"
+   "总：可达性分析从 GC Roots 出发沿引用链标记存活对象，解决了引用计数无法处理循环引用的问题。",
+   "分：GC Roots 包括栈局部变量、静态变量、常量、JNI 引用、同步锁对象等；根节点枚举需要停顿，并发标记靠三色标记和写屏障；引用分强软弱虚。",
+   "实践：【结合你的项目】可以联系一次内存泄漏，通过 GC Roots 路径找到静态引用持有的对象。",
+   "总结：理解 GC Roots 是理解垃圾回收和排查内存泄漏的基础。"
   ],
   "pitfalls": [
-   "用引用计数直觉替代可达性分析。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲出三色标记与写屏障。"
   ]
  },
  "pack-h67": {
   "principle": [
-   "调用栈深度过大可能出现 StackOverflowError，常见于无限递归或异常深的调用；堆分配失败则需结合具体 OOM 消息分析。",
-   "栈大小、线程数量、进程内存限制和堆配置共同消耗进程资源，增大单线程栈并不总是安全。",
-   "先检查异常类型和重复栈帧；堆 OOM 还需观察存活对象与分配压力。直接内存、元空间或创建线程失败不能笼统归为堆不足。"
+   "StackOverflowError 是线程栈空间耗尽：每次方法调用都会压入一个栈帧（局部变量、操作数栈等），递归没有终止条件或调用层级过深、单帧局部变量过大，都会超过 -Xss 限制。它只影响当前线程，堆栈信息里能看到同一组方法反复出现。",
+   "堆 OOM（java.lang.OutOfMemoryError: Java heap space）是堆中存活对象太多、GC 后仍无法分配新对象，原因可能是内存泄漏、一次加载过多数据（大查询、大文件）、或堆设置过小。它通常伴随频繁 Full GC，影响整个进程。",
+   "区分方法：看错误类型和消息；SOE 看线程栈里的重复调用链；堆 OOM 用 -XX:+HeapDumpOnOutOfMemoryError 导出 dump 分析大对象。还要注意其他 OOM：Metaspace（类太多）、Direct buffer memory（堆外内存）、unable to create native thread（线程数过多）、GC overhead limit exceeded。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "无限递归调用 f() → 栈帧不断增长；持续保存大对象 → 堆存活量增长。"
+   "lang": "text",
+   "code": "# StackOverflowError：同一方法重复出现\njava.lang.StackOverflowError\n  at com.demo.TreeService.walk(TreeService.java:42)\n  at com.demo.TreeService.walk(TreeService.java:42)\n  ...\n# 修复：加终止条件 / 改迭代 / 必要时调大 -Xss\n\n# 堆 OOM\njava.lang.OutOfMemoryError: Java heap space\n# 启动参数\n-Xmx4g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/dump/\n# 再用 MAT 分析 dump"
   },
   "asks": [
    "StackOverflowError 与堆 OOM 如何区分？",
-   "栈越大越好吗？"
+   "StackOverflowError 常见原因是什么？",
+   "堆 OOM 怎么排查？",
+   "还有哪些类型的 OOM？"
   ],
   "followups": [
    {
-    "q": "栈越大越好吗？",
-    "a": "不是，可能掩盖递归问题并减少进程可承载的线程数量。"
+    "q": "StackOverflowError 会导致整个应用崩溃吗？",
+    "a": "通常只让当前线程的调用失败，其他线程不受影响，但如果发生在关键线程上会影响业务。"
+   },
+   {
+    "q": "调大 -Xss 是好办法吗？",
+    "a": "只适合合法的深层递归，无限递归调大也没用，而且每个线程栈变大会减少可创建的线程数。"
+   },
+   {
+    "q": "unable to create native thread 是堆不够吗？",
+    "a": "不是，是操作系统线程数或进程内存限制被触发，通常是线程创建过多，需要排查线程泄漏。"
    }
   ],
   "answer": [
-   "调用栈深度过大可能出现 StackOverflowError，常见于无限递归或异常深的调用；堆分配失败则需结合具体 OOM 消息分析。",
-   "栈大小、线程数量、进程内存限制和堆配置共同消耗进程资源，增大单线程栈并不总是安全。",
-   "先检查异常类型和重复栈帧；堆 OOM 还需观察存活对象与分配压力。直接内存、元空间或创建线程失败不能笼统归为堆不足。"
+   "总：StackOverflowError 是线程栈深度耗尽，堆 OOM 是堆中存活对象过多无法分配。",
+   "分：前者看重复调用链，修复递归或改迭代；后者导出 heap dump 分析泄漏或大对象；还要区分 Metaspace、直接内存、线程数等 OOM 类型。",
+   "实践：【结合你的项目】讲一次树形结构递归导致栈溢出或大查询导致堆 OOM 的处理经历。",
+   "总结：先看错误类型和消息，再选择看线程栈还是看堆 dump。"
   ],
   "pitfalls": [
-   "所有 OutOfMemoryError 都通过增大 Xmx 处理。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：列出不同 OOM 消息对应的原因。"
   ]
  },
  "pack-h68": {
   "principle": [
-   "javap 可展示类的方法、指令和常量池等信息，帮助理解编译器生成的调用、异常处理和同步结构。",
-   "局部变量表保存方法执行所需的局部值，操作数栈用于指令计算；字节码层面的结构不能直接等同于优化后的机器码执行方式。",
-   "反编译或反汇编结果依赖编译器和目标版本，分析时应记录版本；常量折叠、字符串拼接等优化不应照搬旧实现。"
+   "javap 是 JDK 自带的反汇编工具，可以查看 class 文件中的字节码、常量池、局部变量表、方法签名等。常用 javap -c 查看指令，-v（verbose）查看常量池和完整信息，-p 显示私有成员。",
+   "它能解决很多「代码看起来一样，实际行为不同」的问题：比如 i++ 为什么不是原子的（getfield、iadd、putfield 多条指令）；字符串 + 拼接被编译成 StringBuilder 或 invokedynamic（JDK9+ StringConcatFactory）；自动装箱调用 Integer.valueOf；Lambda 用 invokedynamic 生成；try-finally 中 finally 代码被复制到多个出口；switch 字符串用 hashCode 加 equals 实现。",
+   "在面试和排障中，用字节码解释语法糖背后的实际行为，比背结论更有说服力；排查依赖冲突时也可以确认编译后的方法签名。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "javap -c -v Example.class // 观察指令、常量池、异常表与方法属性"
+   "lang": "bash",
+   "code": "# Demo.java: public int inc() { return count++; }\njavac Demo.java\njavap -c -p Demo\n#   0: aload_0\n#   1: dup\n#   2: getfield      #7   // Field count:I\n#   5: dup_x1\n#   6: iconst_1\n#   7: iadd\n#   8: putfield      #7   // 读-改-写 多条指令，非原子\n#  11: ireturn\n\njavap -v Demo | grep -A3 \"Constant pool\""
   },
   "asks": [
-   "如何用 javap 阅读字节码，解决什么问题？",
-   "字节码看到 new 就能断言运行时必定分配堆对象吗？"
+   "如何用 javap 阅读字节码？",
+   "javap 常用参数有哪些？",
+   "字节码能解释哪些常见问题？",
+   "为什么 i++ 不是原子操作？"
   ],
   "followups": [
    {
-    "q": "字节码看到 new 就能断言运行时必定分配堆对象吗？",
-    "a": "不能仅凭这一点断言优化后的实际分配行为，还需考虑 JIT 优化与运行条件。"
+    "q": "字符串拼接在字节码里是什么样？",
+    "a": "JDK8 编译为 StringBuilder.append，JDK9 以后多用 invokedynamic 调用 StringConcatFactory。"
+   },
+   {
+    "q": "Lambda 在字节码中怎么实现？",
+    "a": "通过 invokedynamic 指令在运行时由 LambdaMetafactory 生成实现类，Lambda 体被编译为私有静态方法。"
+   },
+   {
+    "q": "finally 一定会执行在字节码里怎么体现？",
+    "a": "编译器把 finally 代码复制到正常返回和异常处理的每个出口路径上。"
    }
   ],
   "answer": [
-   "javap 可展示类的方法、指令和常量池等信息，帮助理解编译器生成的调用、异常处理和同步结构。",
-   "局部变量表保存方法执行所需的局部值，操作数栈用于指令计算；字节码层面的结构不能直接等同于优化后的机器码执行方式。",
-   "反编译或反汇编结果依赖编译器和目标版本，分析时应记录版本；常量折叠、字符串拼接等优化不应照搬旧实现。"
+   "总：javap 能反汇编 class 文件，查看指令和常量池，用来理解语法糖和代码的真实执行行为。",
+   "分：-c 看指令、-v 看常量池、-p 看私有成员；能解释 i++ 非原子、字符串拼接、自动装箱、Lambda、finally 等实现。",
+   "实践：【结合你的项目】可以讲一次通过 javap 确认依赖中方法签名、定位 NoSuchMethodError 的经历。",
+   "总结：读字节码能让你从「背结论」变成「看证据」解释 Java 行为。"
   ],
   "pitfalls": [
-   "把教学示例中的特定指令序列当作所有版本规范。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：现场写出 i++ 的字节码序列。"
   ]
  },
  "pack-h69": {
   "principle": [
-   "逃逸分析判断对象引用是否逃出方法或线程等范围，JIT 可据此进行部分优化。",
-   "满足条件时可能消除对象分配、把字段作为标量处理或消除不必要的锁；这不是 Java 语言层面保证的固定分配策略。",
-   "优化效果受代码形态、编译热度和 JVM 版本影响，需要结合实际基准与运行观测，不能声称所有不逃逸对象必定分配在栈上。"
+   "逃逸分析是 JIT 编译器的优化分析：判断一个对象的引用是否会逃出当前方法（被返回、赋值给字段或传给其他线程）。如果对象不逃逸，JIT 可以做三种优化。",
+   "标量替换：把对象拆成它的成员字段，作为局部变量直接放在栈帧或寄存器中，根本不在堆上创建对象，减少分配和 GC 压力（HotSpot 实际主要是标量替换而非真正的栈上分配）。锁消除：对不逃逸对象的同步操作（如局部 StringBuffer）去掉锁。",
+   "逃逸分析在 JDK 6u23 后默认开启（-XX:+DoEscapeAnalysis、-XX:+EliminateAllocations），只对 JIT 编译后的热点代码生效，解释执行阶段不生效；方法太大无法内联时分析效果会变差。所以写小而清晰的方法有利于 JIT 优化。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "方法内创建临时对象，只读取其两个字段 → JIT 可能将字段计算为独立标量。"
+   "lang": "java",
+   "code": "public int distance(int x1, int y1, int x2, int y2) {\n    Point p = new Point(x2 - x1, y2 - y1);   // p 不逃逸\n    return p.x * p.x + p.y * p.y;            // 标量替换后：int px=..., py=...; 不分配对象\n}\n\npublic String join(String a, String b) {\n    StringBuffer sb = new StringBuffer();     // 不逃逸 → 锁消除\n    return sb.append(a).append(b).toString();\n}\n// 对比实验：-XX:-DoEscapeAnalysis 关闭后观察 GC 次数与分配量"
   },
   "asks": [
    "逃逸分析和标量替换有什么作用？",
-   "逃逸分析等于栈上分配吗？"
+   "什么情况算对象逃逸？",
+   "逃逸分析能带来哪些优化？",
+   "有什么限制？"
   ],
   "followups": [
    {
-    "q": "逃逸分析等于栈上分配吗？",
-    "a": "不等于，标量替换可能直接消除对象，且是否优化取决于具体条件。"
+    "q": "HotSpot 真的会把对象分配在栈上吗？",
+    "a": "HotSpot 主要通过标量替换实现效果，对象被拆成字段放在栈帧或寄存器中，并非把完整对象放到栈上。"
+   },
+   {
+    "q": "为什么解释执行时没有效果？",
+    "a": "逃逸分析是 C2 编译器的优化，只有被 JIT 编译的热点方法才会进行分析和优化。"
+   },
+   {
+    "q": "写代码时需要刻意依赖它吗？",
+    "a": "不需要，它是 JVM 的自动优化，写小而清晰的方法有利于内联和分析即可，不要为此牺牲可读性。"
    }
   ],
   "answer": [
-   "逃逸分析判断对象引用是否逃出方法或线程等范围，JIT 可据此进行部分优化。",
-   "满足条件时可能消除对象分配、把字段作为标量处理或消除不必要的锁；这不是 Java 语言层面保证的固定分配策略。",
-   "优化效果受代码形态、编译热度和 JVM 版本影响，需要结合实际基准与运行观测，不能声称所有不逃逸对象必定分配在栈上。"
+   "总：逃逸分析判断对象是否逃出方法，不逃逸时 JIT 可以做标量替换和锁消除，减少堆分配与同步开销。",
+   "分：返回、赋值给字段、传给其他线程都算逃逸；HotSpot 主要靠标量替换；只对 JIT 编译的热点代码生效，依赖方法内联。",
+   "实践：【结合你的项目】可以说明通过 JMH 对比开关逃逸分析的分配率差异。",
+   "总结：这是 JVM 的自动优化，开发者只需写易于内联的代码。"
   ],
   "pitfalls": [
-   "用优化可能性代替性能验证。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：说明 HotSpot 并非真正栈上分配。"
   ]
  },
  "pack-h70": {
   "principle": [
-   "redo 用于 InnoDB 崩溃恢复等场景，记录可用于恢复页修改的信息；undo 支持事务回滚和一致性读所需的旧版本。",
-   "binlog 属于服务端日志，用于复制和基于日志的数据恢复等用途，与存储引擎的 redo 职责不同。",
-   "持久化与恢复效果受配置影响；日志之间的提交协调不能代替备份。恢复需结合正确的备份基点和日志链，并实际演练。"
+   "redo log 是 InnoDB 引擎层的物理日志，记录「某个数据页做了什么修改」，用于崩溃恢复，保证持久性：事务提交时先顺序写 redo（WAL），脏页可以之后再刷盘。它是固定大小循环写的。",
+   "undo log 也是 InnoDB 的日志，记录修改前的数据，用于事务回滚和 MVCC：其他事务读取时可以通过 undo 链构造历史版本。binlog 是 MySQL Server 层的逻辑日志，记录 SQL 语句或行变更（statement/row/mixed），追加写不覆盖，用于主从复制和基于时间点的恢复。",
+   "redo 与 binlog 通过两阶段提交保持一致：先写 redo（prepare），再写 binlog，最后 redo 标记 commit。崩溃恢复时如果 redo 处于 prepare 且 binlog 完整，就提交，否则回滚，保证主库和从库数据一致。刷盘参数 innodb_flush_log_at_trx_commit=1 与 sync_binlog=1（双一）提供最高可靠性。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "提交事务 → 引擎日志与服务端日志按协议协调；备份 + 后续 binlog 可支持按目标点恢复。"
+   "lang": "text",
+   "code": "UPDATE t SET a=2 WHERE id=1;\n1. 读页到 Buffer Pool，写 undo（旧值 a=1）\n2. 修改内存页，写 redo log（prepare）\n3. 写 binlog\n4. redo log 标记 commit\n-- 崩溃恢复：redo prepare + binlog 完整 → 提交；否则回滚\n\ninnodb_flush_log_at_trx_commit = 1\nsync_binlog = 1\nbinlog_format = ROW"
   },
   "asks": [
    "redo log、undo log 和 binlog 有什么区别？",
-   "只保留 binlog 可以完全替代 redo 吗？"
+   "为什么需要两阶段提交？",
+   "binlog 有哪几种格式？",
+   "双一配置是什么意思？"
   ],
   "followups": [
    {
-    "q": "只保留 binlog 可以完全替代 redo 吗？",
-    "a": "不能，两者用途、信息和恢复路径不同。"
+    "q": "只有 binlog 能做崩溃恢复吗？",
+    "a": "不能，binlog 不知道哪些修改已经刷到数据页，崩溃恢复依赖 redo log 的物理页修改记录。"
+   },
+   {
+    "q": "不做两阶段提交会出现什么问题？",
+    "a": "可能 redo 已提交但 binlog 没写，从库缺数据；或 binlog 写了但 redo 没提交，主库回滚后与从库不一致。"
+   },
+   {
+    "q": "binlog 为什么推荐 ROW 格式？",
+    "a": "STATEMENT 格式下 NOW()、UUID 等函数可能导致主从结果不同，ROW 记录具体行变化更安全。"
    }
   ],
   "answer": [
-   "redo 用于 InnoDB 崩溃恢复等场景，记录可用于恢复页修改的信息；undo 支持事务回滚和一致性读所需的旧版本。",
-   "binlog 属于服务端日志，用于复制和基于日志的数据恢复等用途，与存储引擎的 redo 职责不同。",
-   "持久化与恢复效果受配置影响；日志之间的提交协调不能代替备份。恢复需结合正确的备份基点和日志链，并实际演练。"
+   "总：redo 是引擎层物理日志保证持久性，undo 用于回滚和 MVCC，binlog 是 Server 层逻辑日志用于复制和恢复。",
+   "分：redo 循环写、binlog 追加写；两阶段提交保证二者一致；ROW 格式更安全；双一配置提供最高可靠性。",
+   "实践：【结合你的项目】说明你们的 binlog 格式、刷盘配置，以及是否用 binlog 做过数据同步或恢复。",
+   "总结：三种日志各司其职，持久、回滚和复制分别由它们负责。"
   ],
   "pitfalls": [
-   "认为开启日志就等于已经具备可用备份。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：完整讲出两阶段提交的崩溃恢复判断。"
   ]
  },
  "pack-h71": {
   "principle": [
-   "先定义可接受的数据丢失量与恢复时间，再选择全量、增量和日志保留策略，并检查备份一致性。",
-   "发现误删后先保护现场与日志，避免继续覆盖；在隔离环境从备份恢复并应用日志到正确位置，核对结果后再制定恢复上线方案。",
-   "必须定期演练、核对恢复耗时与数据完整性；复制副本会同步误删，不能自动替代独立备份。"
+   "备份恢复设计先定目标：RPO（最多能丢多少数据）和 RTO（多久恢复）。常用组合是定期全量备份加持续的 binlog 备份：全量可以用 mysqldump（逻辑备份，慢但通用）或 XtraBackup（物理热备份，快，适合大库），binlog 实时归档到独立存储。",
+   "误删恢复（基于时间点恢复 PITR）：找到最近一次全量备份，恢复到临时实例，再重放 binlog 到误操作之前的位置（用 mysqlbinlog --stop-datetime 或 --stop-position 跳过误删语句），然后把需要的数据导回线上。如果是 ROW 格式 binlog，也可以用 binlog2sql、MyFlash 等工具生成反向 SQL 快速闪回。",
+   "关键点：备份必须定期做恢复演练，没有演练过的备份等于没有；备份要异地存储并控制权限；可以保留延迟从库（延迟几小时复制）应对误删；线上危险操作要审批、先备份、先在测试环境执行。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "隔离实例加载昨日备份 → 重放到误删前的位置 → 核对数据 → 按审核方案恢复。"
+   "lang": "bash",
+   "code": "# 物理全量备份\nxtrabackup --backup --target-dir=/backup/full_20261031\n# 恢复到临时实例后，重放 binlog 到误删前\nmysqlbinlog --start-position=4 --stop-datetime=\"2026-10-31 14:29:59\"   mysql-bin.000123 | mysql -h tmp-db -u root -p\n\n# 延迟从库：落后主库 1 小时\nCHANGE REPLICATION SOURCE TO SOURCE_DELAY = 3600;"
   },
   "asks": [
    "数据库备份与误删恢复如何设计？",
-   "有主从复制就不需要备份了吗？"
+   "RPO 和 RTO 是什么？",
+   "误删数据后怎么恢复？",
+   "延迟从库有什么用？"
   ],
   "followups": [
    {
-    "q": "有主从复制就不需要备份了吗？",
-    "a": "需要，逻辑错误可能同步到副本，备份还需防止同一故障域失效。"
+    "q": "恢复为什么要先恢复到临时实例？",
+    "a": "避免直接覆盖线上数据造成二次事故，在临时实例确认数据正确后再按需导回。"
+   },
+   {
+    "q": "没有做过恢复演练的备份有什么风险？",
+    "a": "备份可能损坏、不完整或恢复耗时远超预期，真正出事时才发现无法恢复。"
+   },
+   {
+    "q": "DROP TABLE 能用 binlog 闪回吗？",
+    "a": "DDL 无法生成反向 SQL，只能用全量备份加 binlog 重放到 DROP 之前恢复。"
    }
   ],
   "answer": [
-   "先定义可接受的数据丢失量与恢复时间，再选择全量、增量和日志保留策略，并检查备份一致性。",
-   "发现误删后先保护现场与日志，避免继续覆盖；在隔离环境从备份恢复并应用日志到正确位置，核对结果后再制定恢复上线方案。",
-   "必须定期演练、核对恢复耗时与数据完整性；复制副本会同步误删，不能自动替代独立备份。"
+   "总：备份恢复以 RPO 和 RTO 为目标，用全量备份加 binlog 实现任意时间点恢复。",
+   "分：XtraBackup 物理备份快，mysqldump 通用；误删恢复先恢复到临时实例再重放 binlog 到误操作前；ROW 格式可闪回；延迟从库能争取时间。",
+   "实践：【结合你的项目】说明你们备份周期、保存位置，以及是否做过恢复演练。",
+   "总结：备份的价值在于能恢复，只有定期做恢复演练才能证明它真正可用。"
   ],
   "pitfalls": [
-   "直接在生产反向执行未经验证的恢复 SQL。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲出 PITR 的完整操作步骤。"
   ]
  },
  "pack-h72": {
   "principle": [
-   "DDL 可能需要元数据锁、数据重建或额外空间，在线能力取决于数据库版本、具体操作和参数。",
-   "长事务可能阻碍 DDL 获取元数据锁，排队的 DDL 又可能影响后续请求；需要观察阻塞链、复制延迟和资源用量。",
-   "在接近真实数据量的环境验证算法、耗时和空间，设定窗口与停止条件；回滚也需考虑数据和应用版本兼容。"
+   "线上直接 ALTER 大表有多种风险。锁与阻塞：虽然 MySQL 5.6+ 的 Online DDL 很多操作允许并发 DML，但开始和结束阶段需要获取元数据锁（MDL），如果此时有长事务或慢查询持有 MDL 读锁，ALTER 会等待，而它后面所有读写请求都会排队，造成雪崩。",
+   "其他风险：需要重建表的操作（改字段类型、加主键）耗时长、磁盘空间翻倍、IO 飙升影响线上；主从复制下 DDL 在从库串行执行，导致复制延迟；中途失败回滚时间同样长。",
+   "安全做法：使用 gh-ost 或 pt-online-schema-change（影子表加增量同步，最后原子切换）；设置 lock_wait_timeout 避免无限等待 MDL；先确认没有长事务；在低峰期执行并监控复制延迟；能用 ALGORITHM=INSTANT（MySQL 8 加列）就优先使用。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "发布前检查长事务与表大小 → 验证 DDL 算法 → 灰度执行 → 监测锁等待和副本延迟。"
+   "lang": "sql",
+   "code": "-- 先查长事务，避免 MDL 等待\nSELECT * FROM information_schema.innodb_trx ORDER BY trx_started LIMIT 5;\nSET SESSION lock_wait_timeout = 5;\n\n-- MySQL 8 秒级加列\nALTER TABLE t_order ADD COLUMN remark VARCHAR(255), ALGORITHM=INSTANT;\n\n-- 大表复杂变更用 gh-ost\n-- gh-ost --table=t_order --alter=\"MODIFY amount DECIMAL(18,2)\" --   --max-load=Threads_running=50 --execute"
   },
   "asks": [
    "线上修改大表结构有哪些风险？",
-   "ONLINE DDL 是否完全不加锁？"
+   "什么是 MDL 锁等待雪崩？",
+   "gh-ost 的原理是什么？",
+   "MySQL 8 的 INSTANT 有什么用？"
   ],
   "followups": [
    {
-    "q": "ONLINE DDL 是否完全不加锁？",
-    "a": "不是，仍可能在部分阶段获取元数据锁，具体限制需要按操作与版本确认。"
+    "q": "Online DDL 就完全不锁表了吗？",
+    "a": "不是，开始和结束阶段仍需短暂的 MDL 写锁，遇到长事务时会阻塞后续所有请求。"
+   },
+   {
+    "q": "gh-ost 和 pt-osc 有什么区别？",
+    "a": "pt-osc 用触发器同步增量，会增加写入开销；gh-ost 读取 binlog 同步增量，无触发器，可暂停和限流。"
+   },
+   {
+    "q": "加索引会影响线上吗？",
+    "a": "InnoDB 支持在线加索引，但大表会消耗大量 IO 和时间，并造成从库延迟，仍需低峰期执行并监控。"
    }
   ],
   "answer": [
-   "DDL 可能需要元数据锁、数据重建或额外空间，在线能力取决于数据库版本、具体操作和参数。",
-   "长事务可能阻碍 DDL 获取元数据锁，排队的 DDL 又可能影响后续请求；需要观察阻塞链、复制延迟和资源用量。",
-   "在接近真实数据量的环境验证算法、耗时和空间，设定窗口与停止条件；回滚也需考虑数据和应用版本兼容。"
+   "总：大表 DDL 的风险在于 MDL 锁等待引发请求堆积、长时间 IO 消耗、复制延迟和失败回滚。",
+   "分：执行前检查长事务并设置 lock_wait_timeout；优先用 INSTANT；复杂变更用 gh-ost 或 pt-osc；低峰执行并监控延迟。",
+   "实践：【结合你的项目】说明你们 DDL 的审批和执行流程，用什么工具变更过千万级大表。",
+   "总结：大表变更要把锁、资源和复制三方面风险都控制住。"
   ],
   "pitfalls": [
-   "看到 online 或 instant 就省略变更验证。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲清 MDL 锁排队的连锁反应。"
   ]
  },
  "pack-h73": {
   "principle": [
-   "InnoDB 支持事务、崩溃恢复和行级锁等能力；MyISAM 的事务与并发控制能力不同，不能直接互换。",
-   "选择存储引擎需要考虑一致性、并发写入、恢复、索引和运维条件，不应只比较单次读取速度。",
-   "现代业务系统通常以事务型需求为核心；迁移旧表时应核对约束、锁行为与恢复流程，并用真实负载评估。"
+   "InnoDB 是 MySQL 5.5 之后的默认引擎：支持事务（ACID）、行级锁、MVCC、外键、崩溃恢复（redo log），数据按主键聚簇存储，二级索引叶子节点存主键值，回表查询。适合绝大多数在线业务。",
+   "MyISAM 不支持事务和外键，只有表级锁，写操作会锁住整张表，并发写性能差；崩溃后容易损坏需要修复；索引是非聚簇的，数据和索引分开存储，索引叶子存数据文件地址；它会保存表的精确行数，所以无条件 COUNT(*) 很快。",
+   "因此现代业务几乎都应选择 InnoDB；MyISAM 只在极少数只读、无并发写、可容忍丢失的历史场景出现，MySQL 8 系统表也已全部改为 InnoDB。InnoDB 的 COUNT(*) 需要扫描（由于 MVCC 不同事务看到的行数不同），大表计数可以用汇总表或缓存。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "订单支付状态和库存变更要求事务原子性 → 优先选择满足事务要求的引擎。"
+   "lang": "sql",
+   "code": "SHOW TABLE STATUS LIKE 't_order';      -- 查看 Engine\nALTER TABLE t_log ENGINE = InnoDB;      -- 迁移到 InnoDB\n\n-- InnoDB 二级索引回表\n-- idx_user(user_id) 叶子节点存 id，再按 id 查聚簇索引\nSELECT * FROM t_order WHERE user_id = 1001;\n\n-- 大表计数优化：维护计数表\nUPDATE t_counter SET cnt = cnt + 1 WHERE name = 'order';"
   },
   "asks": [
    "InnoDB 与 MyISAM 如何比较？",
-   "InnoDB 使用行锁就不会锁大范围吗？"
+   "为什么 InnoDB 成为默认引擎？",
+   "两者索引结构有什么区别？",
+   "为什么 InnoDB 的 COUNT(*) 比 MyISAM 慢？"
   ],
   "followups": [
    {
-    "q": "InnoDB 使用行锁就不会锁大范围吗？",
-    "a": "不是，索引访问范围、隔离级别和具体语句会影响锁范围。"
+    "q": "MyISAM 现在还有使用场景吗？",
+    "a": "几乎没有，只在遗留系统或纯只读的历史数据中偶尔出现，新业务都用 InnoDB。"
+   },
+   {
+    "q": "InnoDB 没有主键会怎样？",
+    "a": "会选择第一个非空唯一索引作为聚簇索引，没有的话自动生成隐藏的 6 字节 row_id。"
+   },
+   {
+    "q": "为什么 InnoDB 不缓存总行数？",
+    "a": "因为 MVCC 下不同事务在同一时刻看到的行数可能不同，无法维护一个统一的精确计数。"
    }
   ],
   "answer": [
-   "InnoDB 支持事务、崩溃恢复和行级锁等能力；MyISAM 的事务与并发控制能力不同，不能直接互换。",
-   "选择存储引擎需要考虑一致性、并发写入、恢复、索引和运维条件，不应只比较单次读取速度。",
-   "现代业务系统通常以事务型需求为核心；迁移旧表时应核对约束、锁行为与恢复流程，并用真实负载评估。"
+   "总：InnoDB 支持事务、行锁、MVCC 和崩溃恢复，是在线业务的首选；MyISAM 无事务、表锁、易损坏，已基本淘汰。",
+   "分：InnoDB 聚簇索引、二级索引回表；MyISAM 非聚簇索引；MyISAM 计数快但 InnoDB 因 MVCC 需扫描。",
+   "实践：【结合你的项目】说明你们是否迁移过 MyISAM 表，以及大表计数怎么优化。",
+   "总结：选引擎几乎不用犹豫，重点是理解 InnoDB 的索引结构与事务实现。"
   ],
   "pitfalls": [
-   "以“读多用MyISAM”作为脱离业务条件的固定规则。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲清聚簇索引对主键设计的影响。"
   ]
  },
  "pack-h74": {
   "principle": [
-   "对较长字符串只索引前面一段，可以减少索引空间，但也可能降低区分度。",
-   "根据真实数据比较候选前缀的选择性及查询方式；若大量值共享相同前缀，过滤效果会很差。",
-   "前缀无法总是代替完整字段满足覆盖、排序或唯一性需求，应检查执行计划与实际返回结果。"
+   "前缀索引只索引字符串列的前 N 个字符，比如 INDEX(email(10))，好处是索引更小、占用内存和磁盘更少，适合很长的字符串列（URL、邮箱、长编码）且前缀已有足够区分度的场景。",
+   "选择前缀长度要看选择性：比较 COUNT(DISTINCT LEFT(col, N)) / COUNT(*) 与完整列的选择性，找一个接近完整选择性的最小 N。区分度太低时，前缀相同的行很多，查询需要回表逐个比较完整值，反而变慢。",
+   "局限：前缀索引无法用于覆盖索引（必须回表取完整值确认）；无法用于 ORDER BY 和 GROUP BY 的排序优化；对于前缀高度重复的数据（如都是 https://www.xxx.com/ 开头的 URL）效果差，可以改为存储反转字符串或哈希列（如 CRC32、MD5）再建索引。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "比较 LEFT(email, 8) 与 LEFT(email, 16) 的区分度，再决定是否值得节省空间。"
+   "lang": "sql",
+   "code": "-- 评估选择性\nSELECT COUNT(DISTINCT email) / COUNT(*)          AS full_sel,\n       COUNT(DISTINCT LEFT(email, 6)) / COUNT(*) AS p6,\n       COUNT(DISTINCT LEFT(email, 10)) / COUNT(*) AS p10\nFROM t_user;\n\nALTER TABLE t_user ADD INDEX idx_email (email(10));\n\n-- 前缀重复高：加哈希列\nALTER TABLE t_link ADD COLUMN url_crc INT UNSIGNED, ADD INDEX idx_crc(url_crc);\nSELECT * FROM t_link WHERE url_crc = CRC32(?) AND url = ?;"
   },
   "asks": [
    "MySQL 前缀索引适合什么场景？",
-   "前缀索引能保证完整字符串唯一吗？"
+   "如何选择前缀长度？",
+   "前缀索引有什么限制？",
+   "前缀区分度低怎么办？"
   ],
   "followups": [
    {
-    "q": "前缀索引能保证完整字符串唯一吗？",
-    "a": "唯一前缀约束的是前缀，可能拒绝完整值不同但前缀相同的数据，不能等同完整字段语义。"
+    "q": "前缀索引为什么不能覆盖索引？",
+    "a": "索引里只有部分字符，无法确认完整值是否匹配，必须回表读取整列再比较。"
+   },
+   {
+    "q": "用哈希列有什么注意点？",
+    "a": "哈希可能冲突，查询时要同时比较原始值；而且只能做等值查询，不支持范围和前缀匹配。"
+   },
+   {
+    "q": "身份证号适合前缀索引吗？",
+    "a": "身份证前几位是地区码，重复度高，可以考虑倒序存储后再建前缀索引，或直接对完整列建索引。"
    }
   ],
   "answer": [
-   "对较长字符串只索引前面一段，可以减少索引空间，但也可能降低区分度。",
-   "根据真实数据比较候选前缀的选择性及查询方式；若大量值共享相同前缀，过滤效果会很差。",
-   "前缀无法总是代替完整字段满足覆盖、排序或唯一性需求，应检查执行计划与实际返回结果。"
+   "总：前缀索引通过只索引字符串前 N 个字符节省空间，适合长字符串且前缀区分度足够的列。",
+   "分：用 DISTINCT 选择性对比选择长度；不能覆盖索引、不能用于排序分组；前缀重复高时用反转存储或哈希列。",
+   "实践：【结合你的项目】举邮箱或 URL 字段的索引设计，说明前缀长度如何确定。",
+   "总结：前缀索引是空间与选择性的折中，要用数据说话选长度。"
   ],
   "pitfalls": [
-   "只看字符串长度，不测选择性和业务约束。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：给出选择性计算 SQL。"
   ]
  },
  "pack-h75": {
   "principle": [
-   "DELETE 按条件删除行；TRUNCATE 清空表数据；DROP 删除表对象本身，三者对结构、事务和依赖的影响不同。",
-   "在 MySQL 中 TRUNCATE 和 DROP 属于具有隐式提交等语义的 DDL，不能把它们当作普通行删除一样依赖事务回滚。",
-   "执行前确认环境、影响范围和恢复方案；权限、备份、审核与最小化操作范围比记忆速度比较更重要。"
+   "DELETE 是 DML，逐行删除，可以带 WHERE 条件，会记录 undo log 和 binlog，可以在事务中回滚，会触发触发器；删除后自增值不重置，表空间不会立即释放（产生空洞，需要 OPTIMIZE TABLE 收缩）。大量 DELETE 速度慢，并产生大量日志和锁。",
+   "TRUNCATE 是 DDL，删除表中所有数据，实际上是重建表（drop + create），速度很快，不逐行记录日志，不能带 WHERE，在 MySQL 中不能回滚，不触发 DELETE 触发器，自增值重置，空间释放。",
+   "DROP 是 DDL，删除整张表，包括数据、表结构、索引、触发器和权限定义，无法回滚，只能通过备份恢复。生产中 TRUNCATE 和 DROP 必须审批并先确认备份；大表删除历史数据应分批 DELETE（按主键范围加 LIMIT）避免长事务和主从延迟。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "DELETE FROM orders WHERE id = ?：删除指定行；清表或删表需要独立审查其业务目的。"
+   "lang": "sql",
+   "code": "-- 分批删除历史数据，避免大事务\nDELETE FROM t_log WHERE created_at < '2026-01-01' ORDER BY id LIMIT 5000;\n-- 循环执行直到影响行数为 0\n\nTRUNCATE TABLE t_tmp_import;     -- 清空临时表，自增重置\nDROP TABLE IF EXISTS t_backup_old; -- 删除整个表\n\n-- 大表 DROP 前可先建硬链接，避免删除大文件时 IO 卡顿（运维手段）"
   },
   "asks": [
    "DELETE、TRUNCATE 和 DROP 如何区分？",
-   "TRUNCATE 后能按普通 DML 事务回滚吗？"
+   "哪个可以回滚？",
+   "为什么大表删除要分批？",
+   "生产环境执行要注意什么？"
   ],
   "followups": [
    {
-    "q": "TRUNCATE 后能按普通 DML 事务回滚吗？",
-    "a": "在 MySQL 中不能按普通 DELETE 的事务回滚方式理解，需依据 DDL 语义和备份恢复。"
+    "q": "DELETE 全表后空间会释放吗？",
+    "a": "不会立即释放，数据页被标记为可复用，需要 OPTIMIZE TABLE 或重建表才能收缩文件。"
+   },
+   {
+    "q": "TRUNCATE 会写 binlog 吗？",
+    "a": "会作为一条 DDL 语句写入 binlog，但不记录逐行数据，所以无法用行级 binlog 闪回。"
+   },
+   {
+    "q": "一次 DELETE 几百万行有什么问题？",
+    "a": "产生长事务和大量 undo，锁住大量行，导致主从延迟，失败回滚也很慢。"
    }
   ],
   "answer": [
-   "DELETE 按条件删除行；TRUNCATE 清空表数据；DROP 删除表对象本身，三者对结构、事务和依赖的影响不同。",
-   "在 MySQL 中 TRUNCATE 和 DROP 属于具有隐式提交等语义的 DDL，不能把它们当作普通行删除一样依赖事务回滚。",
-   "执行前确认环境、影响范围和恢复方案；权限、备份、审核与最小化操作范围比记忆速度比较更重要。"
+   "总：DELETE 是可回滚的逐行删除，TRUNCATE 是快速清空并重建表，DROP 删除整个表结构和数据。",
+   "分：DELETE 可带条件、写 undo、不重置自增；TRUNCATE 不可回滚、重置自增、释放空间；DROP 只能靠备份恢复；大表删除要分批。",
+   "实践：【结合你的项目】说明你们清理历史数据的方式，以及危险 DDL 的审批流程。",
+   "总结：越快的删除越难恢复，生产操作前先确认备份和影响范围。"
   ],
   "pitfalls": [
-   "认为把操作包在事务中就能撤销任何DDL。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲分批删除与空间回收。"
   ]
  },
  "pack-h76": {
   "principle": [
-   "本地缓存减少网络往返，但每个进程独立，容量和数据更新需要分别管理；Redis 提供共享访问和独立扩容的缓存服务。",
-   "多级缓存可以降低热点压力，但使失效传播更复杂。需要定义 TTL、更新通知及丢失通知后的最终收敛方式。",
-   "选型应看一致性容忍度、热点分布、延迟、容量和故障影响，不应断言共享缓存总是优于本地缓存。"
+   "本地缓存（Caffeine、Guava Cache）存在 JVM 堆内，访问是纳秒级，没有网络开销，适合热点高、数据量小、变化不频繁、允许短暂不一致的数据，如配置、字典、热门商品基础信息。缺点是每个实例各有一份，数据不一致，占用堆内存，实例重启即丢失。",
+   "Redis 是分布式缓存，多个实例共享一份数据，容量更大、一致性更好、可持久化，适合会话、库存、排行榜、分布式锁等需要共享的数据；代价是网络往返（亚毫秒到毫秒级）和序列化开销，也有单点或集群运维成本。",
+   "常见做法是多级缓存：本地缓存（短 TTL）→ Redis → 数据库。数据变更时通过 MQ 或 Redis Pub/Sub 广播让各实例失效本地缓存。对于极热 key（如秒杀商品），本地缓存可以挡住大部分流量，避免 Redis 单节点热点。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "本地热点缓存设置短TTL → 未命中查Redis → 再未命中查数据库，并控制回源并发。"
+   "lang": "java",
+   "code": "Cache<Long, Product> local = Caffeine.newBuilder()\n    .maximumSize(10_000).expireAfterWrite(Duration.ofSeconds(30)).build();\n\npublic Product get(long id) {\n    return local.get(id, k -> {\n        Product p = redis.get(\"product:\" + k);               // 二级\n        if (p == null) { p = db.find(k); redis.setex(\"product:\" + k, 600, p); }\n        return p;\n    });\n}\n// 更新后广播失效\n@RabbitListener(queues = \"product.invalidate\")\npublic void onChange(Long id) { local.invalidate(id); }"
   },
   "asks": [
    "本地缓存与 Redis 缓存如何选择？",
-   "广播失效消息丢了怎么办？"
+   "本地缓存有什么缺点？",
+   "多级缓存怎么设计？",
+   "多个实例本地缓存如何保持一致？"
   ],
   "followups": [
    {
-    "q": "广播失效消息丢了怎么办？",
-    "a": "应有TTL或版本校验等兜底，关键一致性需求不能只依赖不可靠广播。"
+    "q": "本地缓存 TTL 为什么要短？",
+    "a": "各实例无法实时同步，短 TTL 可以限制不一致的时间窗口，即使失效广播丢失也能自动纠正。"
+   },
+   {
+    "q": "热点 key 为什么适合本地缓存？",
+    "a": "热点 key 集中访问会压垮 Redis 单个分片，本地缓存能就地返回，分散压力。"
+   },
+   {
+    "q": "本地缓存会导致 GC 问题吗？",
+    "a": "会，缓存对象多会增加老年代占用和 GC 压力，必须设置容量上限，必要时使用堆外缓存。"
    }
   ],
   "answer": [
-   "本地缓存减少网络往返，但每个进程独立，容量和数据更新需要分别管理；Redis 提供共享访问和独立扩容的缓存服务。",
-   "多级缓存可以降低热点压力，但使失效传播更复杂。需要定义 TTL、更新通知及丢失通知后的最终收敛方式。",
-   "选型应看一致性容忍度、热点分布、延迟、容量和故障影响，不应断言共享缓存总是优于本地缓存。"
+   "总：本地缓存快但各实例独立、容量有限，Redis 共享且容量大但有网络开销，常组合成多级缓存。",
+   "分：本地缓存适合小量、热点、可短暂不一致的数据；Redis 适合需要共享和更强一致的数据；变更通过消息广播失效本地缓存。",
+   "实践：【结合你的项目】说明哪些数据放本地缓存、TTL 多长，以及如何失效。",
+   "总结：选择依据是数据量、一致性要求和访问热度，热点数据常用两级组合。"
   ],
   "pitfalls": [
-   "把本地缓存当成多实例共享状态。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲热点 key 用本地缓存分流。"
   ]
  },
  "pack-h77": {
   "principle": [
-   "发布订阅适合在线广播，订阅者断开时可能错过消息，不能把它当作持久待消费任务队列。",
-   "需要历史消费、确认、重试或崩溃恢复时，应选择有相应机制的数据结构或消息中间件，并设计消费幂等。",
-   "缓存失效通知可使用广播，但需要TTL、版本或定期校验兜底；过期事件也不能保证业务准时执行。"
+   "Redis Pub/Sub 是即时广播：发布者 PUBLISH 消息，当时在线订阅该频道的客户端立刻收到。消息不持久化，订阅者离线或断线期间的消息直接丢失；没有确认（ACK）机制，消费者处理失败也无法重试；订阅者消费太慢时，输出缓冲区超过限制会被服务器断开连接。",
+   "因此 Pub/Sub 不能替代可靠消息队列，只适合可丢失的实时通知，如本地缓存失效广播、配置变更通知、在线聊天的实时推送。",
+   "Redis 5.0 引入的 Stream 弥补了很多不足：消息持久化、消费者组、XACK 确认、Pending 列表可重新投递、可回溯消费，适合轻量级可靠队列。但在大规模、高可靠、长时间积压、严格顺序或事务消息场景，仍然推荐 Kafka、RocketMQ、RabbitMQ 等专业 MQ。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "订阅者离线 → 发布者发消息 → 订阅者重连；离线期间事件不自动补发。"
+   "lang": "text",
+   "code": "# Pub/Sub：在线才收到，不持久化\nSUBSCRIBE cache:invalidate\nPUBLISH cache:invalidate product:1001\n\n# Stream：持久化 + 消费者组 + 确认\nXADD orders * orderId 1001 amount 99\nXGROUP CREATE orders g1 0\nXREADGROUP GROUP g1 c1 COUNT 10 BLOCK 2000 STREAMS orders >\nXACK orders g1 1730000000000-0\nXPENDING orders g1           # 未确认消息，可重新认领"
   },
   "asks": [
    "Redis 发布订阅能替代可靠消息队列吗？",
-   "用过期通知关订单可靠吗？"
+   "Pub/Sub 有哪些可靠性问题？",
+   "Pub/Sub 适合什么场景？",
+   "Redis Stream 改进了什么？"
   ],
   "followups": [
    {
-    "q": "用过期通知关订单可靠吗？",
-    "a": "不能单独作为可靠关单依据，应记录业务截止时间并用扫描补偿。"
+    "q": "订阅者断线重连能收到之前的消息吗？",
+    "a": "收不到，Pub/Sub 不保存消息，只推送给当时在线的订阅者。"
+   },
+   {
+    "q": "Stream 能完全替代 Kafka 吗？",
+    "a": "中小规模可以，但在超大吞吐、长期积压存储、多副本可靠性和生态工具方面，Kafka 仍更合适。"
+   },
+   {
+    "q": "用 Pub/Sub 做缓存失效有什么风险？",
+    "a": "消息丢失会导致个别实例缓存不失效，所以要配合本地缓存较短的 TTL 兜底。"
    }
   ],
   "answer": [
-   "发布订阅适合在线广播，订阅者断开时可能错过消息，不能把它当作持久待消费任务队列。",
-   "需要历史消费、确认、重试或崩溃恢复时，应选择有相应机制的数据结构或消息中间件，并设计消费幂等。",
-   "缓存失效通知可使用广播，但需要TTL、版本或定期校验兜底；过期事件也不能保证业务准时执行。"
+   "总：Pub/Sub 不持久化、无确认、离线即丢，不能替代可靠消息队列，只适合可丢失的实时广播。",
+   "分：慢订阅者会被断开；Stream 提供持久化、消费者组、ACK 和 Pending 重投，可做轻量队列；大规模高可靠场景仍用专业 MQ。",
+   "实践：【结合你的项目】说明你们用 Pub/Sub 做缓存失效广播，并用 TTL 兜底的设计。",
+   "总结：选消息机制要先问消息能不能丢，不能丢就用 Stream 或专业 MQ。"
   ],
   "pitfalls": [
-   "把收到通知等同于业务可靠执行。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：对比 Stream 与 Kafka 的适用边界。"
   ]
  },
  "pack-h78": {
   "principle": [
-   "ZSet 为唯一成员维护分数，适合排名、按分数范围查询等场景；相同分数的成员仍可共存。",
-   "底层编码取决于版本、元素数量、长度及配置，小集合可使用紧凑表示，较大集合可能使用字典与跳表等结构。",
-   "选择数据结构时同时考虑更新、范围读取和内存成本；不要把旧ziplist阈值当作所有版本固定规则。"
+   "ZSet（有序集合）中每个成员唯一并带一个 score，按 score 排序，支持按分数或排名范围查询，增删改查复杂度 O(logN)。典型场景：排行榜（ZINCRBY 加分、ZREVRANGE 取前 N）、延迟队列（score 存执行时间戳，ZRANGEBYSCORE 取到期任务）、滑动窗口限流（score 存请求时间戳，删除窗口外的记录再计数）、按时间排序的时间线。",
+   "底层编码有两种：元素少且成员较短时使用 listpack（Redis 7 之前是 ziplist），连续内存、非常省空间，但操作是 O(N)；超过 zset-max-listpack-entries（默认 128）或成员超过 zset-max-listpack-value（默认 64 字节）就转换为 skiplist + dict，跳表支持范围查询，哈希表支持 O(1) 按成员查分。",
+   "编码转换是单向的，转成跳表后不会再变回去。大 ZSet（百万级成员）的 ZRANGE 全量和 DEL 都可能阻塞，需要分页查询和 UNLINK 异步删除。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "商品热度作为score，商品ID作为member；读取前N名并限制范围大小。"
+   "lang": "text",
+   "code": "# 排行榜\nZINCRBY rank:2026-10 10 user:1001\nZREVRANGE rank:2026-10 0 9 WITHSCORES     # Top10\nZREVRANK rank:2026-10 user:1001           # 我的排名\n\n# 延迟队列\nZADD delay:queue 1730361600 task:88\nZRANGEBYSCORE delay:queue 0 <now> LIMIT 0 100\n\n# 查看编码\nOBJECT ENCODING rank:2026-10              # listpack / skiplist"
   },
   "asks": [
-   "Redis ZSet 适合什么场景，编码有什么影响？",
-   "相同分数会覆盖另一个成员吗？"
+   "Redis ZSet 适合什么场景？",
+   "ZSet 底层有哪些编码？",
+   "为什么用跳表而不是红黑树？",
+   "大 ZSet 有什么风险？"
   ],
   "followups": [
    {
-    "q": "相同分数会覆盖另一个成员吗？",
-    "a": "不会，成员身份决定唯一性，分数可以相同。"
+    "q": "为什么 Redis 选跳表不选平衡树？",
+    "a": "跳表实现简单，范围查询只需沿底层链表遍历，插入删除不需要复杂旋转，并发和调试也更容易。"
+   },
+   {
+    "q": "分数相同时怎么排序？",
+    "a": "score 相同的成员按成员字符串字典序排序，排行榜需要时间先后可以把时间编码进 score。"
+   },
+   {
+    "q": "用 ZSet 做延迟队列有什么问题？",
+    "a": "多个消费者可能取到同一任务，需要用 Lua 原子地取出并删除；也没有 ACK，失败需自行重试。"
    }
   ],
   "answer": [
-   "ZSet 为唯一成员维护分数，适合排名、按分数范围查询等场景；相同分数的成员仍可共存。",
-   "底层编码取决于版本、元素数量、长度及配置，小集合可使用紧凑表示，较大集合可能使用字典与跳表等结构。",
-   "选择数据结构时同时考虑更新、范围读取和内存成本；不要把旧ziplist阈值当作所有版本固定规则。"
+   "总：ZSet 是带分数的有序唯一集合，适合排行榜、延迟队列、滑动窗口限流和时间线。",
+   "分：小数据用 listpack 省内存，超过阈值转为跳表加哈希表；转换单向；大 ZSet 要分页查询和异步删除。",
+   "实践：【结合你的项目】举排行榜或延迟任务的实现，说明数据量和如何避免大 key。",
+   "总结：用好 ZSet 要同时理解它的排序语义和编码带来的性能变化。"
   ],
   "pitfalls": [
-   "将score误当唯一键，或固定背诵旧编码阈值。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲跳表与哈希表组合的原因。"
   ]
  },
  "pack-h79": {
   "principle": [
-   "Cluster 将键映射到哈希槽，再由节点负责槽位；分片和副本复制解决的问题不同。",
-   "多键命令、事务或脚本可能要求涉及的键处于同一槽；哈希标签可让相关键映射到同槽，但也可能形成热点。",
-   "客户端需正确处理重定向与拓扑变化；扩缩容、故障切换和异步复制都可能影响延迟或一致性，不能承诺任意节点故障均无影响。"
+   "Redis Cluster 把数据分成 16384 个哈希槽，key 通过 CRC16(key) % 16384 计算槽位，每个主节点负责一部分槽。客户端会缓存槽到节点的映射，访问错误节点时收到 MOVED（槽已迁移）或 ASK（迁移中）重定向。",
+   "限制是多键操作要求所有 key 在同一个槽：MGET/MSET、事务 MULTI、Lua 脚本、SUNION、RENAME 等，跨槽会报 CROSSSLOT 错误。解决办法是使用 hash tag：key 中 {} 内的部分才参与计算，如 user:{1001}:cart 和 user:{1001}:profile 落在同一槽。",
+   "但 hash tag 用得过多会导致数据和流量集中在某个槽，形成热点与倾斜。另外 Cluster 只支持 db0，不能 SELECT；批量操作跨槽时需要客户端按槽分组并行执行；扩缩容迁移槽期间会有短暂的 ASK 重定向。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "order:{42}:state 与 order:{42}:items 使用相同哈希标签，将相关键放入同槽。"
+   "lang": "text",
+   "code": "CLUSTER KEYSLOT user:1001          # 查看槽位\nMGET user:1001 user:1002           # (error) CROSSSLOT\n\n# hash tag：只用 {} 内部分计算槽位\nSET order:{u1001}:cart  ...\nSET order:{u1001}:addr  ...\nMGET order:{u1001}:cart order:{u1001}:addr    # 同槽，可执行\n\nEVAL \"...\" 2 order:{u1001}:cart order:{u1001}:addr   # Lua 多 key 也需同槽"
   },
   "asks": [
-   "Redis Cluster 的哈希槽与多键操作有什么限制？",
-   "把所有键放在同一标签下可以吗？"
+   "Redis Cluster 的哈希槽是什么？",
+   "为什么多键操作会受限制？",
+   "hash tag 怎么用？",
+   "hash tag 有什么风险？"
   ],
   "followups": [
    {
-    "q": "把所有键放在同一标签下可以吗？",
-    "a": "虽可避免部分跨槽问题，却会破坏分片效果，造成单槽热点。"
+    "q": "为什么是 16384 个槽？",
+    "a": "槽信息以位图形式在节点心跳中传播，16384 位只占 2KB，足够分配到上千个节点又不会让心跳包过大。"
+   },
+   {
+    "q": "MOVED 和 ASK 有什么区别？",
+    "a": "MOVED 表示槽已永久迁移，客户端应更新映射；ASK 表示迁移进行中，只对这一次请求临时转向。"
+   },
+   {
+    "q": "跨槽批量查询怎么办？",
+    "a": "客户端按槽位或节点分组，分别执行 MGET 后合并结果，很多客户端（如 Lettuce）已内置支持。"
    }
   ],
   "answer": [
-   "Cluster 将键映射到哈希槽，再由节点负责槽位；分片和副本复制解决的问题不同。",
-   "多键命令、事务或脚本可能要求涉及的键处于同一槽；哈希标签可让相关键映射到同槽，但也可能形成热点。",
-   "客户端需正确处理重定向与拓扑变化；扩缩容、故障切换和异步复制都可能影响延迟或一致性，不能承诺任意节点故障均无影响。"
+   "总：Cluster 用 16384 个哈希槽分片，多键操作要求所有 key 在同一槽，否则报 CROSSSLOT。",
+   "分：hash tag 让相关 key 落到同槽，但过度使用会造成倾斜；客户端处理 MOVED 和 ASK 重定向；跨槽批量要分组执行。",
+   "实践：【结合你的项目】说明你们 Lua 扣库存或购物车如何设计 key 来满足同槽要求。",
+   "总结：在集群下设计 key 时要提前考虑哪些 key 需要一起操作。"
   ],
   "pitfalls": [
-   "把哈希槽数量等同于推荐节点数量。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：解释 16384 槽数的设计原因。"
   ]
  },
  "pack-h80": {
   "principle": [
-   "先发送暂不可消费的半消息，再执行业务本地事务，依据本地事务结果提交或回滚消息；结果不明确时需要回查机制。",
-   "回查必须能从持久业务状态判断结果，不能只依赖进程内变量；回查重复、延迟或进程重启都要能正确处理。",
-   "该方案协调业务事务与消息可见性，不自动把所有消费端数据库加入同一事务；消费者仍需幂等与失败补偿。"
+   "RocketMQ 事务消息用来解决「本地事务和发消息」的一致性问题。流程：生产者先发送半消息（half message），Broker 存储但对消费者不可见；发送成功后执行本地事务；根据结果向 Broker 提交 COMMIT（消息变为可消费）或 ROLLBACK（删除半消息）。",
+   "如果因为宕机或网络问题，Broker 长时间没收到二次确认，会主动回查生产者的 checkLocalTransaction，生产者根据本地事务的真实状态（通常查业务表或事务日志表）返回 COMMIT、ROLLBACK 或 UNKNOWN，回查有次数上限。",
+   "它保证的是本地事务成功则消息最终一定被投递、失败则不投递，即生产端的最终一致；消费端仍可能重复消费，需要幂等，且消费失败不会回滚生产者的本地事务，只能重试或人工补偿。回查逻辑必须可靠，因此本地事务中最好写一条事务记录用于回查判断。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "半消息发送成功 → 本地订单事务提交 → 确认消息；确认丢失 → broker回查 → 根据订单与事件记录返回结果。"
+   "lang": "java",
+   "code": "TransactionMQProducer producer = new TransactionMQProducer(\"order_tx_group\");\nproducer.setTransactionListener(new TransactionListener() {\n    public LocalTransactionState executeLocalTransaction(Message msg, Object arg) {\n        try { orderService.createWithTxLog((Order) arg, msg.getTransactionId());\n              return LocalTransactionState.COMMIT_MESSAGE; }\n        catch (Exception e) { return LocalTransactionState.ROLLBACK_MESSAGE; }\n    }\n    public LocalTransactionState checkLocalTransaction(MessageExt msg) {\n        return txLogRepo.exists(msg.getTransactionId())\n             ? LocalTransactionState.COMMIT_MESSAGE : LocalTransactionState.UNKNOW;\n    }\n});\nproducer.sendMessageInTransaction(new Message(\"order-created\", body), order);"
   },
   "asks": [
    "RocketMQ 事务消息如何协调本地事务？",
-   "消费者业务失败会自动回滚订单事务吗？"
+   "半消息是什么？",
+   "事务回查解决什么问题？",
+   "事务消息能保证消费端一致吗？"
   ],
   "followups": [
    {
-    "q": "消费者业务失败会自动回滚订单事务吗？",
-    "a": "不会，消费端失败需要重试、补偿或业务状态机处理。"
+    "q": "回查一直返回 UNKNOWN 会怎样？",
+    "a": "超过最大回查次数后 Broker 会丢弃该半消息，所以回查逻辑必须能明确判断本地事务结果。"
+   },
+   {
+    "q": "和本地消息表方案相比有什么区别？",
+    "a": "事务消息由 MQ 提供回查机制，业务侵入较少；本地消息表不依赖特定 MQ，但需要自己实现定时扫描和投递。"
+   },
+   {
+    "q": "消费者处理失败生产者会回滚吗？",
+    "a": "不会，事务消息只保证生产端一致，消费失败只能重试、进死信队列或人工补偿。"
    }
   ],
   "answer": [
-   "先发送暂不可消费的半消息，再执行业务本地事务，依据本地事务结果提交或回滚消息；结果不明确时需要回查机制。",
-   "回查必须能从持久业务状态判断结果，不能只依赖进程内变量；回查重复、延迟或进程重启都要能正确处理。",
-   "该方案协调业务事务与消息可见性，不自动把所有消费端数据库加入同一事务；消费者仍需幂等与失败补偿。"
+   "总：RocketMQ 事务消息通过半消息、本地事务、二次确认和回查，保证本地事务与消息发送的最终一致。",
+   "分：半消息先对消费者不可见；本地事务成功提交、失败回滚；未确认时 Broker 回查；消费端需幂等且失败不会回滚生产者。",
+   "实践：【结合你的项目】说明下单后通知积分或库存服务时，用事务消息还是本地消息表，以及回查依据。",
+   "总结：事务消息解决的是生产端双写一致，端到端可靠还需要消费幂等和补偿。"
   ],
   "pitfalls": [
-   "把事务消息宣传成跨所有服务的强一致事务。"
+   "只背结论讲不出原理与代价。",
+   "忽略线上验证与监控。",
+   "加分：讲清事务日志表支撑可靠回查。"
   ]
  },
  "pack-h81": {
