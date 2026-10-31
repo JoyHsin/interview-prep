@@ -325,5 +325,43 @@
   "pitfalls": [
    "只会 top。"
   ]
+ },
+ "p-t2": {
+  "principle": [
+   "CPU+Load 高：先分 user/sys/io wait；user 高看线程热点与 GC；io wait 看盘；load 高但 CPU 低可能大量 runnable 等内核或僵尸线程。工具：top、pidstat、jstack、perf。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "top -Hp <pid>; vmstat 1; iostat -x 1"
+  },
+  "asks": [
+   "CPU Load 都高看什么？",
+   "区分？",
+   "GC？",
+   "IO？"
+  ],
+  "followups": [
+   {
+    "q": "Load？",
+    "a": "可运行队列长度。"
+   },
+   {
+    "q": "Steal？",
+    "a": "虚拟化抢占。"
+   },
+   {
+    "q": "火焰图？",
+    "a": "最直观。"
+   }
+  ],
+  "answer": [
+   "总：先分类再工具下钻。",
+   "分：热点栈与 IO。",
+   "实践：排障清单。",
+   "总结：指标交叉验证。"
+  ],
+  "pitfalls": [
+   "只看 Load 重启。"
+  ]
  }
 }

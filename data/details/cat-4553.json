@@ -74,5 +74,81 @@
   "pitfalls": [
    "随意很多分片。"
   ]
+ },
+ "p-es2": {
+  "principle": [
+   "RAG：ES/OpenSearch 做 BM25 关键词；向量库做语义；融合 RRF/加权后再 Rerank。也可用 ES 同时存向量。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "query → BM25 Top20 + Vector Top20 → RRF → Rerank → LLM"
+  },
+  "asks": [
+   "ES 和向量库？",
+   "混合？",
+   "只 ES？",
+   "只向量？"
+  ],
+  "followups": [
+   {
+    "q": "型号错码？",
+    "a": "BM25 强。"
+   },
+   {
+    "q": "同义？",
+    "a": "向量强。"
+   },
+   {
+    "q": "运维？",
+    "a": "统一 ES 减组件。"
+   }
+  ],
+  "answer": [
+   "总：关键词+语义互补。",
+   "分：融合精排。",
+   "实践：【结合你的项目】。",
+   "总结：混合是标配。"
+  ],
+  "pitfalls": [
+   "只用向量。"
+  ]
+ },
+ "p2-38": {
+  "principle": [
+   "IK：ik_smart 粗粒、ik_max_word 细粒。相关性 BM25。同义词、停用词影响召回。中文搜索要调分析器。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "mapping: analyzer=ik_max_word, search_analyzer=ik_smart 常见组合"
+  },
+  "asks": [
+   "IK？",
+   "smart vs max？",
+   "BM25？",
+   "同义词？"
+  ],
+  "followups": [
+   {
+    "q": "建索与搜？",
+    "a": "可不同分析器。"
+   },
+   {
+    "q": "相关度调？",
+    "a": "boost。"
+   },
+   {
+    "q": "中文？",
+    "a": "必须分词。"
+   }
+  ],
+  "answer": [
+   "总：分词决定召回。",
+   "分：粗细搭配；BM25。",
+   "实践：搜商品。",
+   "总结：测 Query 效果。"
+  ],
+  "pitfalls": [
+   "标准分析器用中文。"
+  ]
  }
 }

@@ -401,5 +401,81 @@
   "pitfalls": [
    "UUID 当聚簇主键。"
   ]
+ },
+ "p-d4": {
+  "principle": [
+   "雪崩：依赖失败→线程打满→整站挂。防：超时、熔断、限流、舱壁隔离线程池、缓存降级、快速失败。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@CircuitBreaker(name=\"dep\", fallbackMethod=\"fb\")"
+  },
+  "asks": [
+   "雪崩？",
+   "怎么防？",
+   "舱壁？",
+   "超时？"
+  ],
+  "followups": [
+   {
+    "q": "舱壁？",
+    "a": "池隔离依赖。"
+   },
+   {
+    "q": "重试？",
+    "a": "放大灾难，要谨慎。"
+   },
+   {
+    "q": "演练？",
+    "a": "故障注入。"
+   }
+  ],
+  "answer": [
+   "总：超时熔断隔离降级。",
+   "分：别无限重试。",
+   "实践：Resilience4j/Sentinel。",
+   "总结：失败要可控。"
+  ],
+  "pitfalls": [
+   "依赖挂了还狂重试。"
+  ]
+ },
+ "p2-32": {
+  "principle": [
+   "链路追踪：traceId 全链路，spanId 每跨度；采样率控量；注入日志 MDC 关联。SkyWalking/Zipkin/OTel。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "MDC.put(\"traceId\", id); // 网关生成下传"
+  },
+  "asks": [
+   "追踪字段？",
+   "采样？",
+   "和日志？",
+   "AI？"
+  ],
+  "followups": [
+   {
+    "q": "透传？",
+    "a": "HTTP header。"
+   },
+   {
+    "q": "存储？",
+    "a": "后端集中。"
+   },
+   {
+    "q": "性能？",
+    "a": "采样。"
+   }
+  ],
+  "answer": [
+   "总：trace/span+日志关联。",
+   "分：采样；标准头。",
+   "实践：排障神器。",
+   "总结：微服务必备。"
+  ],
+  "pitfalls": [
+   "无 ID 无法串。"
+  ]
  }
 }

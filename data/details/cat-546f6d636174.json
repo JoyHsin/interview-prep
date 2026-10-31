@@ -1,0 +1,40 @@
+{
+ "p2-40": {
+  "principle": [
+   "Tomcat：NIO 连接器；maxThreads 工作线程；acceptCount 队列。Boot 内嵌可配 server.tomcat.*。线程满→拒绝；可开虚拟线程（新版本）。"
+  ],
+  "example": {
+   "lang": "yaml",
+   "code": "server.tomcat.threads.max: 200\nserver.tomcat.accept-count: 100"
+  },
+  "asks": [
+   "线程模型？",
+   "参数？",
+   "和 Netty？",
+   "虚拟线程？"
+  ],
+  "followups": [
+   {
+    "q": "阻塞？",
+    "a": "一请求一线程经典。"
+   },
+   {
+    "q": "满？",
+    "a": "监控。"
+   },
+   {
+    "q": "APR？",
+    "a": "历史。"
+   }
+  ],
+  "answer": [
+   "总：NIO 接收+线程池处理。",
+   "分：maxThreads。",
+   "实践：调参压测。",
+   "总结：容量规划。"
+  ],
+  "pitfalls": [
+   "无限调大线程。"
+  ]
+ }
+}

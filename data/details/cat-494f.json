@@ -360,5 +360,43 @@
   "pitfalls": [
    "任意 new Direct。"
   ]
+ },
+ "p2-16": {
+  "principle": [
+   "ByteBuf 池化：复用减分配与 GC；引用计数 release；泄漏检测。忘 release 堆外涨。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "buf.release(); // SimpleChannelInboundHandler 常自动释放"
+  },
+  "asks": [
+   "池化好处？",
+   "引用计数？",
+   "泄漏？",
+   "堆外？"
+  ],
+  "followups": [
+   {
+    "q": "retain？",
+    "a": "传递所有权。"
+   },
+   {
+    "q": "检测？",
+    "a": "leakDetectionLevel。"
+   },
+   {
+    "q": "池参数？",
+    "a": "allocator 配置。"
+   }
+  ],
+  "answer": [
+   "总：池化+引用计数。",
+   "分：谁最后 release。",
+   "实践：查泄漏。",
+   "总结：Netty 内存纪律。"
+  ],
+  "pitfalls": [
+   "不 release。"
+  ]
  }
 }

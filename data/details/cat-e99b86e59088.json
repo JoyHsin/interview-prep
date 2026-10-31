@@ -517,5 +517,81 @@
   "pitfalls": [
    "当通用缓存。"
   ]
+ },
+ "p2-6": {
+  "principle": [
+   "COWArrayList：写复制整数组，读无锁；适合读远多于写；迭代弱一致快照；写多性能差。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "CopyOnWriteArrayList<Listener> ls=new CopyOnWriteArrayList<>();"
+  },
+  "asks": [
+   "适用？",
+   "原理？",
+   "缺点？",
+   "Set？"
+  ],
+  "followups": [
+   {
+    "q": "Set？",
+    "a": "CopyOnWriteArraySet。"
+   },
+   {
+    "q": "大数组？",
+    "a": "写成本高。"
+   },
+   {
+    "q": "替代？",
+    "a": "并发队列等。"
+   }
+  ],
+  "answer": [
+   "总：读多写少。",
+   "分：写贵。",
+   "实践：监听器。",
+   "总结：同 j-col5。"
+  ],
+  "pitfalls": [
+   "写频繁用 COW。"
+  ]
+ },
+ "p2-50": {
+  "principle": [
+   "IdentityHashMap：用 == 比键引用而非 equals；允许“相等但不同引用”作不同键；特殊场景（序列化图、调试），日常少用。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Map<Object,String> m=new IdentityHashMap<>();"
+  },
+  "asks": [
+   "特点？",
+   "和 HashMap？",
+   "场景？",
+   "hash？"
+  ],
+  "followups": [
+   {
+    "q": "equals？",
+    "a": "不用。"
+   },
+   {
+    "q": "系统身份哈希？",
+    "a": "是。"
+   },
+   {
+    "q": "通用？",
+    "a": "否。"
+   }
+  ],
+  "answer": [
+   "总：引用相等地图。",
+   "分：特殊用途。",
+   "实践：了解。",
+   "总结：别当普通 Map。"
+  ],
+  "pitfalls": [
+   "误当 HashMap。"
+  ]
  }
 }

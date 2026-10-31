@@ -524,5 +524,81 @@
   "pitfalls": [
    "一律原生。"
   ]
+ },
+ "p-s3": {
+  "principle": [
+   "FactoryBean：自己的 getObject 创建复杂对象；容器中 &beanName 才是 FactoryBean 本身。区别于 BeanFactory（容器）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class MyFB implements FactoryBean<Client> {\n  public Client getObject(){ return build(); }\n  public Class<?> getObjectType(){ return Client.class; }\n}"
+  },
+  "asks": [
+   "FactoryBean？",
+   "和 BeanFactory？",
+   "&？",
+   "场景？"
+  ],
+  "followups": [
+   {
+    "q": "&？",
+    "a": "取工厂。"
+   },
+   {
+    "q": "MyBatis？",
+    "a": "MapperFactoryBean。"
+   },
+   {
+    "q": "是否单例？",
+    "a": "isSingleton。"
+   }
+  ],
+  "answer": [
+   "总：用工厂方法暴露产品 Bean。",
+   "分：别和容器接口混。",
+   "实践：集成中间件。",
+   "总结：框架常见扩展点。"
+  ],
+  "pitfalls": [
+   "名字混淆。"
+  ]
+ },
+ "p2-20": {
+  "principle": [
+   "DispatcherServlet 初始化：加载 WebApplicationContext、HandlerMapping、Adapter、ExceptionResolver、ViewResolver 等；Boot 自动配置注册。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "onRefresh → initStrategies"
+  },
+  "asks": [
+   "初始化做什么？",
+   "Boot？",
+   "策略？",
+   "上下文？"
+  ],
+  "followups": [
+   {
+    "q": "父子容器？",
+    "a": "根与 Web。"
+   },
+   {
+    "q": "映射？",
+    "a": "RequestMappingHandlerMapping。"
+   },
+   {
+    "q": "启动慢？",
+    "a": "查初始化 Bean。"
+   }
+  ],
+  "answer": [
+   "总：装配九大组件。",
+   "分：Boot 自动化。",
+   "实践：排启动。",
+   "总结：前端控制器就绪过程。"
+  ],
+  "pitfalls": [
+   "说不清职责。"
+  ]
  }
 }

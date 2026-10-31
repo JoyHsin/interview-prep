@@ -886,5 +886,43 @@
   "pitfalls": [
    "当 wait 用却无锁。"
   ]
+ },
+ "p2-10": {
+  "principle": [
+   "as-if-serial：单线程优化外观如按序。happens-before：跨线程可见顺序规则。二者共同构成 JMM 理解基础。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "单线程：重排但不能改结果；多线程：靠 HB/同步"
+  },
+  "asks": [
+   "HB 与 as-if-serial？",
+   "JMM？",
+   "例子？",
+   "volatile？"
+  ],
+  "followups": [
+   {
+    "q": "重排？",
+    "a": "单线程允许。"
+   },
+   {
+    "q": "指令级？",
+    "a": "硬件也重排。"
+   },
+   {
+    "q": "工具？",
+    "a": "jcstress。"
+   }
+  ],
+  "answer": [
+   "总：单线程外观串行，多线程靠 HB。",
+   "分：JMM 核心。",
+   "实践：解释可见性 bug。",
+   "总结：同 j-c9。"
+  ],
+  "pitfalls": [
+   "混为一谈。"
+  ]
  }
 }

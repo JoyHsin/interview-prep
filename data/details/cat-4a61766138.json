@@ -156,5 +156,43 @@
   "pitfalls": [
    "Optional.get 到处用。"
   ]
+ },
+ "p-j84": {
+  "principle": [
+   "CF 坑：默认 ForkJoin 公共池易被堵；异常包装成 CompletionException；忘超时；链式中忘记返回；在公共池做阻塞 IO。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "supplyAsync(this::io, myPool).orTimeout(3,SECONDS).exceptionally(e->\"x\");"
+  },
+  "asks": [
+   "CF 坑？",
+   "公共池？",
+   "异常？",
+   "超时？"
+  ],
+  "followups": [
+   {
+    "q": "包装？",
+    "a": "get 时解开 cause。"
+   },
+   {
+    "q": "thenCompose？",
+    "a": "扁平化 Future。"
+   },
+   {
+    "q": "allOf？",
+    "a": "异常要自己处理。"
+   }
+  ],
+  "answer": [
+   "总：自备池、超时、正确处理异常。",
+   "分：忌阻塞公共池。",
+   "实践：并行下游调用。",
+   "总结：编排要稳健。"
+  ],
+  "pitfalls": [
+   "无超时无池。"
+  ]
  }
 }

@@ -510,5 +510,81 @@
   "pitfalls": [
    "说只有一种。"
   ]
+ },
+ "p2-1": {
+  "principle": [
+   "final：类不可继承/方法不可覆写/变量不可再赋值。finally：试块结束必执行（极端除外）。finalize：GC 前调用已弃用，勿依赖。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "try{...}finally{close();} // 优先 try-with-resources"
+  },
+  "asks": [
+   "三者区别？",
+   "finalize？",
+   "finally 一定？",
+   "final 引用？"
+  ],
+  "followups": [
+   {
+    "q": "引用？",
+    "a": "引用不可变，对象可变。"
+   },
+   {
+    "q": "弃用？",
+    "a": "Cleaner 替代。"
+   },
+   {
+    "q": "return？",
+    "a": "finally 仍执行。"
+   }
+  ],
+  "answer": [
+   "总：修饰符、清理块、废弃钩子。",
+   "分：别混。",
+   "实践：面试概念。",
+   "总结：finally≠finalize。"
+  ],
+  "pitfalls": [
+   "用 finalize 释资源。"
+  ]
+ },
+ "p2-3": {
+  "principle": [
+   "接口：多实现、定义能力；抽象类：复用字段与模板方法。Java8+ 接口 default/static；优先接口组合，抽象类给真正 is-a 复用。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "interface Pay{ void pay(); default void log(){} }\nabstract class AbstractPay{ void template(){ prepare(); doPay(); } }"
+  },
+  "asks": [
+   "接口 vs 抽象类？",
+   "default？",
+   "怎么选？",
+   "多继承？"
+  ],
+  "followups": [
+   {
+    "q": "状态？",
+    "a": "抽象类可有实例字段。"
+   },
+   {
+    "q": "演进？",
+    "a": "default 兼容。"
+   },
+   {
+    "q": "密封？",
+    "a": "permits 限制。"
+   }
+  ],
+  "answer": [
+   "总：能力用接口，复用骨架用抽象类。",
+   "分：组合优于继承。",
+   "实践：设计 API。",
+   "总结：多实现选接口。"
+  ],
+  "pitfalls": [
+   "一律抽象类。"
+  ]
  }
 }
