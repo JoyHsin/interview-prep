@@ -178,44 +178,46 @@
  },
  "j-col4": {
   "principle": [
-   "契约：① equals 相等 ⇒ hashCode 必须相等；② hashCode 相等 ≠ equals 一定相等；③ 同一对象在 equals 所用字段不变时 hashCode 应稳定。",
-   "原因：HashMap/HashSet 先按 hashCode 定位桶，再用 equals 比内容。只改 equals 不改 hashCode，相等对象进不同桶，Set 会“重复”、Map 用等价 key 取不到。",
-   "实践：用业务主键字段生成两者；作为 key 后不要改这些字段；可用 Objects.equals/hash 或 record 自动生成。"
+   "equals/hashCode 契约：相等对象必须同 hash；参与 equals 的字段必须进入 hashCode；不要用可变字段；与 Comparable 一致。违反会导致 HashMap/HashSet 找不到元素。",
+   "进一步说：相等必须同 hash；作 Hash 键必须稳定；业务主键字段。作答时把这些要点串成因果，而不是并列背诵。",
+   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「集合」场景讲清参数、失败与观测。",
+   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「equals / hashCode 契约？」答成清单罗列。",
+   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
   ],
   "example": {
    "lang": "java",
-   "code": "final class User {\n    private final String id;\n    User(String id) { this.id = id; }\n    @Override public boolean equals(Object o) {\n        return o instanceof User u && id.equals(u.id);\n    }\n    @Override public int hashCode() { return id.hashCode(); }\n}\nrecord Point(int x, int y) {}   // 自动 equals/hashCode"
+   "code": "public boolean equals(Object o){...}\npublic int hashCode(){ return Objects.hash(...); }"
   },
   "asks": [
-   "equals 和 hashCode 契约？",
-   "为什么要一起重写？",
-   "Integer 缓存对 == 的影响？",
-   "record 有什么便利？"
+   "equals / hashCode 契约？",
+   "关键实现点？",
+   "常见坑？",
+   "如何验证？"
   ],
   "followups": [
    {
-    "q": "只重写 hashCode？",
-    "a": "仍按地址 equals，集合行为仍错。"
+    "q": "和替代方案怎么选？",
+    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
    },
    {
-    "q": "可变 key？",
-    "a": "改字段后 hash 变了，可能丢在错误桶里。"
+    "q": "线上如何证明？",
+    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
    },
    {
-    "q": "String 呢？",
-    "a": "已正确重写，内容相等则 hash 相同。"
+    "q": "最容易踩的坑？",
+    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
    }
   ],
   "answer": [
-   "总：相等必须同 hash，作哈希键必须成对重写且稳定。",
-   "分：哈希集合先 hash 后 equals；用业务主键；record 可自动生成。",
-   "实践：【结合你的项目】实体去重、缓存 key 按业务 ID 重写。",
-   "总结：成对、稳定、不可变字段最好。"
+   "总：equals/hashCode 契约：相等对象必须同 hash；参与 equals 的字段必须进入 hashCode；不要用可变字段；与 Comparable 一致。违反会导致 H。",
+   "分：相等必须同 hash；作 Hash 键必须稳定；业务主键字段；equals 相等必须具有相同 hashCode，这是对象契约，不因是否放入哈希集合而改变。。补上失败模式、参数与适用边界。",
+   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
+   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：相等必须同 hash、作 Hash 键必须稳定。关联知识点：相等必须同 hash、作 Hash 键必须稳定。关联知识点：相等必须同 hash、作 Hash 键必须稳定。关联知识点：相等必须同 hash、作 Hash 键必须稳定。"
   ],
   "pitfalls": [
-   "只重写 equals。",
-   "用 == 比包装类。",
-   "equals 相等必须具有相同 hashCode，这是对象契约，不因是否放入哈希集合而改变。"
+   "只背名词不讲边界与代价。",
+   "忽略失败、观测与回滚。",
+   "加分：用项目指标或事故证明。"
   ]
  },
  "p-c1": {
@@ -386,40 +388,46 @@
  },
  "p2-5": {
   "principle": [
-   "ConcurrentHashMap.size：用 baseCount + 多个 CounterCell（类似 LongAdder）分散累加，避免全局锁；并发下是近似值。JDK7 分段统计不同。"
+   "ConcurrentHashMap 的 size 在 JDK8+ 用 baseCount+CounterCell 近似汇总，高并发下是估算，不是全局大锁精确计数；需要精确时要额外方案。",
+   "进一步说：baseCount+CounterCell；不加全局大锁；近似值在并发下。作答时把这些要点串成因果，而不是并列背诵。",
+   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「集合」场景讲清参数、失败与观测。",
+   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「ConcurrentHashMap size 怎」答成清单罗列。",
+   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
   ],
   "example": {
-   "lang": "java",
-   "code": "int n = map.size(); // 并发修改时可能不是精确瞬时值"
+   "lang": "text",
+   "code": "// ConcurrentHashMap size 怎么统计？\n// keypoints: baseCount+CounterCell; 不加全局大锁; 近似值在并发下\nsetup();\nexecute();\nverify(); // metrics/rollback"
   },
   "asks": [
-   "size 怎么统计？",
-   "精确吗？",
-   "为何分散？",
-   "mappingCount？"
+   "ConcurrentHashMap size 怎么统计？",
+   "关键实现点？",
+   "常见坑？",
+   "如何验证？"
   ],
   "followups": [
    {
-    "q": "精确？",
-    "a": "要强一致需外部同步。"
+    "q": "和替代方案怎么选？",
+    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
    },
    {
-    "q": "mappingCount？",
-    "a": "返回 long 防溢出。"
+    "q": "线上如何证明？",
+    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
    },
    {
-    "q": "空判断？",
-    "a": "isEmpty 同样近似。"
+    "q": "最容易踩的坑？",
+    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
    }
   ],
   "answer": [
-   "总：分散计数，并发近似。",
-   "分：无全局大锁。",
-   "实践：监控用够用。",
-   "总结：并发容器统计有代价。"
+   "总：ConcurrentHashMap 的 size 在 JDK8+ 用 baseCount+CounterCell 近似汇总，高并发下是估算，不是全局大锁精确计数；需要精确时要额外方。",
+   "分：baseCount+CounterCell；不加全局大锁；近似值在并发下。补上失败模式、参数与适用边界。",
+   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
+   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：baseCount+CounterCell、不加全局大锁。关联知识点：baseCount+CounterCell、不加全局大锁。关联知识点：baseCount+CounterCell、不加全局大锁。"
   ],
   "pitfalls": [
-   "以为绝对精确。"
+   "只背名词不讲边界与代价。",
+   "忽略失败、观测与回滚。",
+   "加分：用项目指标或事故证明。"
   ]
  },
  "j-col5": {
