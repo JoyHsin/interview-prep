@@ -258,5 +258,119 @@
    "同类自调用导致传播失效。",
    "混淆 NESTED 与 REQUIRES_NEW。"
   ]
+ },
+ "p-s1": {
+  "principle": [
+   "三级缓存解决字段/setter 循环依赖：singletonFactories 暴露 ObjectFactory，可提前生成引用（含 AOP 代理）；earlySingletonObjects；singletonObjects。构造器循环无法解决。Boot 2.6+ 默认禁止循环，应重构。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "A 创建中 → 工厂入三级 → 注入 B → B 需 A → 取早期 A → 完成"
+  },
+  "asks": [
+   "三级缓存？",
+   "为何三级？",
+   "构造器？",
+   "Boot 默认？"
+  ],
+  "followups": [
+   {
+    "q": "二级不够？",
+    "a": "AOP 需工厂延迟生成代理。"
+   },
+   {
+    "q": "@Lazy？",
+    "a": "可打破构造器环。"
+   },
+   {
+    "q": "最好？",
+    "a": "消除循环依赖。"
+   }
+  ],
+  "answer": [
+   "总：单例字段循环靠三级缓存。",
+   "分：构造器不行；应重构。",
+   "实践：遇到先拆职责。",
+   "总结：框架兜底不是设计目标。"
+  ],
+  "pitfalls": [
+   "依赖循环当正常。"
+  ]
+ },
+ "p-s2": {
+  "principle": [
+   "Filter：Servlet 容器级，最先，可改请求响应。Interceptor：Spring MVC，可访问 Handler，更宜业务鉴权/日志。顺序：Filter → DispatcherServlet → Interceptor → Controller。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Component class AuthInterceptor implements HandlerInterceptor {\n  public boolean preHandle(...) { ... }\n}"
+  },
+  "asks": [
+   "过滤器和拦截器？",
+   "顺序？",
+   "用哪个？",
+   "异常？"
+  ],
+  "followups": [
+   {
+    "q": "静态资源？",
+    "a": "注意排除。"
+   },
+   {
+    "q": "Filter 注入 Bean？",
+    "a": "注册方式注意。"
+   },
+   {
+    "q": "响应包装？",
+    "a": "Filter 常见。"
+   }
+  ],
+  "answer": [
+   "总：Filter 容器，Interceptor Spring。",
+   "分：鉴权多用拦截器。",
+   "实践：登录态拦截器。",
+   "总结：分层清晰。"
+  ],
+  "pitfalls": [
+   "两者混淆。"
+  ]
+ },
+ "p-s4": {
+  "principle": [
+   "@Async 经代理把方法提交到线程池；同类自调用失效；需 @EnableAsync 与自定义 AsyncConfigurer 线程池（否则默认简单池）。返回 Future/CompletableFuture；异常处理器。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@EnableAsync\n@Bean TaskExecutor taskExecutor(){ var e=new ThreadPoolTaskExecutor(); e.setCorePoolSize(8); e.initialize(); return e; }\n@Async public CompletableFuture<Void> send(){...}"
+  },
+  "asks": [
+   "@Async 原理？",
+   "坑？",
+   "线程池？",
+   "事务？"
+  ],
+  "followups": [
+   {
+    "q": "自调用？",
+    "a": "拆 Bean。"
+   },
+   {
+    "q": "事务？",
+    "a": "异步在新线程，事务不传播。"
+   },
+   {
+    "q": "请求上下文？",
+    "a": "要自己传或 TaskDecorator。"
+   }
+  ],
+  "answer": [
+   "总：代理异步 + 自备线程池。",
+   "分：自调用、上下文、异常。",
+   "实践：发邮件通知异步。",
+   "总结：别用默认执行器上生产。"
+  ],
+  "pitfalls": [
+   "同类 this.async()。"
+  ]
  }
 }

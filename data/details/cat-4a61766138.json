@@ -42,5 +42,119 @@
    "说 Lambda 就是匿名内部类的语法糖（实现机制不同）。",
    "搞错 this 指向。"
   ]
+ },
+ "p-j81": {
+  "principle": [
+   "中间操作惰性：map/filter/flatMap/distinct/sorted/peek；终端触发：collect/forEach/reduce/count/anyMatch。流只能消费一次；优先 collect 到集合。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "List<String> r = list.stream().filter(s->!s.isBlank()).map(String::trim).distinct().toList();"
+  },
+  "asks": [
+   "中间和终端？",
+   "惰性？",
+   "flatMap？",
+   "复用？"
+  ],
+  "followups": [
+   {
+    "q": "惰性？",
+    "a": "终端才计算。"
+   },
+   {
+    "q": "并行？",
+    "a": "parallel() 另论。"
+   },
+   {
+    "q": "null？",
+    "a": "小心 NPE。"
+   }
+  ],
+  "answer": [
+   "总：惰性链 + 终端触发。",
+   "分：常用 map/filter/collect。",
+   "实践：替代手写循环。",
+   "总结：清晰但注意可读性。"
+  ],
+  "pitfalls": [
+   "流用完再操作。"
+  ]
+ },
+ "p-j82": {
+  "principle": [
+   "并行流用公共 ForkJoinPool；任务需无状态线程安全；拆分有开销，小列表可能更慢；阻塞 IO/锁竞争不适合；可自定义池（JDK18+ parallel 有限手段，或自己 submit）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "long c = list.parallelStream().filter(...).count(); // 占用公共池"
+  },
+  "asks": [
+   "并行流注意？",
+   "何时用？",
+   "公共池？",
+   "线程安全？"
+  ],
+  "followups": [
+   {
+    "q": "IO？",
+    "a": "别用并行流。"
+   },
+   {
+    "q": "顺序？",
+    "a": "forEachOrdered 有代价。"
+   },
+   {
+    "q": "替代？",
+    "a": "自己线程池。"
+   }
+  ],
+  "answer": [
+   "总：CPU 密集大数据才考虑。",
+   "分：安全、开销、公共池。",
+   "实践：默认串行够用。",
+   "总结：测量后再并行。"
+  ],
+  "pitfalls": [
+   "到处 parallel。"
+  ]
+ },
+ "p-j83": {
+  "principle": [
+   "Optional 表达可能为空的返回值；忌 get() 无判断；用 orElseGet（懒）、orElseThrow、map/flatMap/ifPresent；不要作字段/参数到处传；不要 Optional.of(null)。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "return Optional.ofNullable(user).map(User::getName).orElse(\"anonymous\");"
+  },
+  "asks": [
+   "Optional 最佳实践？",
+   "orElse vs orElseGet？",
+   "作字段？",
+   "of vs ofNullable？"
+  ],
+  "followups": [
+   {
+    "q": "orElse？",
+    "a": "参数总计算；Get 懒。"
+   },
+   {
+    "q": "字段？",
+    "a": "增加包装噪音。"
+   },
+   {
+    "q": "序列化？",
+    "a": "需注意。"
+   }
+  ],
+  "answer": [
+   "总：返回值防 NPE，别滥用。",
+   "分：函数式链；忌裸 get。",
+   "实践：API 返回用。",
+   "总结：清晰表达缺值。"
+  ],
+  "pitfalls": [
+   "Optional.get 到处用。"
+  ]
  }
 }

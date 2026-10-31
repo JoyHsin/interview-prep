@@ -211,5 +211,43 @@
    "盲目调大池。",
    "事务里调外部 HTTP。"
   ]
+ },
+ "p-t1": {
+  "principle": [
+   "内存飙升：监控曲线→ jstat/ dump → MAT 支配树与 GC Roots 链 → 常见缓存无界、List 攒爆、监听器未卸、字节缓冲。对比 Full GC 后是否回落区分泄漏。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "jmap -histo:live <pid> | head -30\n# MAT: Dominator Tree / Leak Suspects"
+  },
+  "asks": [
+   "内存飙升怎么查？",
+   "泄漏特征？",
+   "常见原因？",
+   "止血？"
+  ],
+  "followups": [
+   {
+    "q": "回落？",
+    "a": "能回落可能峰值；不回落泄漏。"
+   },
+   {
+    "q": "堆外？",
+    "a": "另查 Direct。"
+   },
+   {
+    "q": "止血？",
+    "a": "限流、清缓存、扩容、重启留 dump。"
+   }
+  ],
+  "answer": [
+   "总：曲线+dump+支配树定位。",
+   "分：缓存无界最常见。",
+   "实践：【结合你的项目】。",
+   "总结：先留证据。"
+  ],
+  "pitfalls": [
+   "不 dump 就重启。"
+  ]
  }
 }

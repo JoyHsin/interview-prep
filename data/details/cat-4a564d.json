@@ -298,5 +298,157 @@
    "说三色只是概念与实现无关。",
    "混淆增量更新和 SATB。"
   ]
+ },
+ "p-v1": {
+  "principle": [
+   "堆外 OOM（Direct buffer memory）：DirectByteBuffer、Netty ByteBuf 等走本地内存，受 MaxDirectMemorySize 限制（常默认近似堆大小）。原因：泄漏未 release、池过大、文件映射。排查：看 NIO/Buffer 相关异常；用 NMT、arthas memory、Netty ResourceLeakDetector；检查是否有未关闭的 DirectByteBuffer。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "java -XX:MaxDirectMemorySize=1g -XX:NativeMemoryTracking=summary -jar app.jar\njcmd <pid> VM.native_memory summary\n# Netty: -Dio.netty.leakDetection.level=PARANOID"
+  },
+  "asks": [
+   "堆外 OOM 怎么查？",
+   "和堆 OOM 区别？",
+   "Netty 泄漏？",
+   "参数？"
+  ],
+  "followups": [
+   {
+    "q": "区别？",
+    "a": "堆看 heap dump；堆外要 NMT/泄漏检测。"
+   },
+   {
+    "q": "release？",
+    "a": "引用计数归零归还池。"
+   },
+   {
+    "q": "映射文件？",
+    "a": "MappedByteBuffer 难主动释放。"
+   }
+  ],
+  "answer": [
+   "总：Direct 内存泄漏或超限。",
+   "分：限大小、查泄漏、Netty 检测。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：堆外也要监控。"
+  ],
+  "pitfalls": [
+   "只调大堆。"
+  ]
+ },
+ "p-v2": {
+  "principle": [
+   "常用：-Xms/-Xmx 同值防缩放；-Xmn 或 -XX:NewRatio；-XX:+UseG1GC/-XX:MaxGCPauseMillis；-Xlog:gc*；-XX:MaxMetaspaceSize；-XX:+HeapDumpOnOutOfMemoryError；-Xss 栈大小。容器注意 -XX:+UseContainerSupport（较新 JDK 默认）。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "java -Xms4g -Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200  -Xlog:gc*:file=gc.log:time,uptime -XX:+HeapDumpOnOutOfMemoryError -jar app.jar"
+  },
+  "asks": [
+   "常用 JVM 参数？",
+   "Xms=Xmx？",
+   "容器？",
+   "GC 日志？"
+  ],
+  "followups": [
+   {
+    "q": "同值？",
+    "a": "避免运行时扩容停顿。"
+   },
+   {
+    "q": "元空间？",
+    "a": "防无限涨。"
+   },
+   {
+    "q": "日志？",
+    "a": "JDK9+ 用 -Xlog。"
+   }
+  ],
+  "answer": [
+   "总：堆、GC、元空间、日志、OOM dump。",
+   "分：容器感知；G1 常见。",
+   "实践：【结合你的项目】启动脚本参数。",
+   "总结：参数要有监控配套。"
+  ],
+  "pitfalls": [
+   "乱抄参数不压测。"
+  ]
+ },
+ "p-v3": {
+  "principle": [
+   "读 jstack：先看死锁段；统计线程状态；BLOCKED 看锁竞争；WAITING 在 AQS/park 看等什么；CPU 高线程对照 nid 的 RUNNABLE 栈；多次采样。结合 top -Hp。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "jstack <pid> > t.txt\ngrep -c \"BLOCKED\\|WAITING\\|RUNNABLE\" t.txt\n# 死锁关键字 Found one Java-level deadlock"
+  },
+  "asks": [
+   "怎么读线程 dump？",
+   "CPU 高？",
+   "死锁？",
+   "多次采样？"
+  ],
+  "followups": [
+   {
+    "q": "nid？",
+    "a": "十六进制线程 id。"
+   },
+   {
+    "q": "无 dump？",
+    "a": "jcmd Thread.print。"
+   },
+   {
+    "q": "Arthas？",
+    "a": "thread -n。"
+   }
+  ],
+  "answer": [
+   "总：状态统计 + 热点栈 + 死锁段。",
+   "分：对照 CPU；多次确认。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：dump 是案发现场。"
+  ],
+  "pitfalls": [
+   "看一眼就重启。"
+  ]
+ },
+ "p-v6": {
+  "principle": [
+   "新对象优先 Eden（经 TLAB 无锁分配）；过大（超过阈值）直接老年代；Survivor 放不下或年龄到阈值晋升。逃逸分析下可能标量替换不在堆分配。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "Eden → Survivor → Old\n大对象：-XX:PretenureSizeThreshold（部分收集器）\nTLAB：线程本地缓冲加速分配"
+  },
+  "asks": [
+   "对象分配在哪？",
+   "大对象？",
+   "TLAB？",
+   "逃逸分析？"
+  ],
+  "followups": [
+   {
+    "q": "晋升？",
+    "a": "年龄/动态年龄/空间担保。"
+   },
+   {
+    "q": "栈上分配？",
+    "a": "标量替换优化，非显式。"
+   },
+   {
+    "q": "观察？",
+    "a": "GC 日志分配速率。"
+   }
+  ],
+  "answer": [
+   "总：Eden 优先，大对象与晋升进老年代。",
+   "分：TLAB；逃逸优化。",
+   "实践：减少短命大数组。",
+   "总结：分配路径影响 GC。"
+  ],
+  "pitfalls": [
+   "以为都在堆且无优化。"
+  ]
  }
 }

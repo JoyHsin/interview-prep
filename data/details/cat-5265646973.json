@@ -253,5 +253,119 @@
    "所有对象都塞 String。",
    "忽视大 key。"
   ]
+ },
+ "p-rd1": {
+  "principle": [
+   "过期：惰性删（访问时）+ 定期抽样删。内存满按 maxmemory-policy：volatile-lru/lfu/ttl、allkeys-lru/lfu、noeviction 等。热数据用 allkeys-lru 常见。"
+  ],
+  "example": {
+   "lang": "bash",
+   "code": "CONFIG GET maxmemory-policy\nredis-cli --hotkeys   # 或 SCAN + OBJECT FREQ"
+  },
+  "asks": [
+   "过期怎么删？",
+   "淘汰策略？",
+   "LRU vs LFU？",
+   "noeviction？"
+  ],
+  "followups": [
+   {
+    "q": "写失败？",
+    "a": "noeviction 达上限报错。"
+   },
+   {
+    "q": "定期？",
+    "a": "主动抽样，非准时。"
+   },
+   {
+    "q": "大 key？",
+    "a": "淘汰前先拆。"
+   }
+  ],
+  "answer": [
+   "总：惰性+定期，满则按策略淘汰。",
+   "分：选 volatile 还是 allkeys。",
+   "实践：缓存用 allkeys-lru。",
+   "总结：策略与业务匹配。"
+  ],
+  "pitfalls": [
+   "不设 maxmemory。"
+  ]
+ },
+ "p-rd2": {
+  "principle": [
+   "哨兵：主从 + 故障转移，数据不自动分片，单主写。Cluster：16384 slot 分片，多主多从，客户端/代理路由，扩展容量。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "哨兵：高可用，容量≈单机\nCluster：水平扩展，注意跨 slot 事务限制与迁移"
+  },
+  "asks": [
+   "哨兵 vs Cluster？",
+   "slot？",
+   "何时哨兵够用？",
+   "脑裂？"
+  ],
+  "followups": [
+   {
+    "q": "多 key？",
+    "a": "同 slot 或 hash tag。"
+   },
+   {
+    "q": "代理？",
+    "a": "可经中间件。"
+   },
+   {
+    "q": "运维？",
+    "a": "Cluster 更复杂。"
+   }
+  ],
+  "answer": [
+   "总：哨兵保活，Cluster 分片扩容。",
+   "分：按容量选。",
+   "实践：【结合你的项目】。",
+   "总结：先算数据量再架构。"
+  ],
+  "pitfalls": [
+   "小数据上复杂 Cluster。"
+  ]
+ },
+ "p-rd3": {
+  "principle": [
+   "Pipeline：批量发命令减 RTT，非原子。MULTI/EXEC：事务排队执行，无回滚，watch 乐观锁。Lua：服务器端原子脚本，复杂逻辑首选。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "redis.opsForValue().multiGet(keys); // 或 SessionCallback pipeline\nDefaultRedisScript<Long> script = ...; redis.execute(script, keys, args);"
+  },
+  "asks": [
+   "Pipeline 和事务？",
+   "Lua？",
+   "回滚？",
+   "何时用？"
+  ],
+  "followups": [
+   {
+    "q": "事务？",
+    "a": "无回滚，错误仍继续或失败取决于版本/配置。"
+   },
+   {
+    "q": "Pipeline 原子？",
+    "a": "否。"
+   },
+   {
+    "q": "锁？",
+    "a": "SET NX + Lua 释放。"
+   }
+  ],
+  "answer": [
+   "总：Pipeline 提速，Lua 保原子。",
+   "分：事务能力弱于 DB。",
+   "实践：批量读 Pipeline，扣库存 Lua。",
+   "总结：选对批与原子。"
+  ],
+  "pitfalls": [
+   "Pipeline 当事务。"
+  ]
  }
 }

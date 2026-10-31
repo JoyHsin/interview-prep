@@ -1,0 +1,40 @@
+{
+ "p-mb1": {
+  "principle": [
+   "#{} 预编译占位，防注入。${} 字符串替换，用于动态表名/列名且必须白名单校验。误用 ${} 拼用户输入=SQL 注入。"
+  ],
+  "example": {
+   "lang": "xml",
+   "code": "<select>SELECT * FROM user WHERE id=#{id}</select>\n<!-- 表名白名单后 --> FROM ${tableName}"
+  },
+  "asks": [
+   "#{} ${}？",
+   "注入？",
+   "表名？",
+   "order by？"
+  ],
+  "followups": [
+   {
+    "q": "排序字段？",
+    "a": "白名单映射，勿 ${} 用户输入。"
+   },
+   {
+    "q": " alike？",
+    "a": "CONCAT 与 #{}。"
+   },
+   {
+    "q": "原理？",
+    "a": "PreparedStatement。"
+   }
+  ],
+  "answer": [
+   "总：默认 #{}，${} 仅可信标识符。",
+   "分：白名单。",
+   "实践：Code Review 查 ${}。",
+   "总结：安全第一。"
+  ],
+  "pitfalls": [
+   "${} 拼搜索词。"
+  ]
+ }
+}

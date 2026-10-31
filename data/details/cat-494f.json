@@ -170,5 +170,119 @@
    "说 JDK NIO 使用 ET。",
    "ET 模式只读一次。"
   ]
+ },
+ "p-io3": {
+  "principle": [
+   "select：fd 集合有限、每次内核拷贝并遍历。poll：类似无数量限制仍遍历。epoll：事件就绪队列，几乎 O(就绪数)，支持 LT/ET，Linux 高并发首选。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "C10K：select/poll 难撑；epoll/kqueue 支撑海量连接\nJava NIO Selector 在 Linux 用 epoll"
+  },
+  "asks": [
+   "select poll epoll？",
+   "为何 epoll 快？",
+   "LT/ET？",
+   "跨平台？"
+  ],
+  "followups": [
+   {
+    "q": "拷贝？",
+    "a": "select 每次传全集合。"
+   },
+   {
+    "q": "惊群？",
+    "a": "新内核有缓解。"
+   },
+   {
+    "q": "Windows？",
+    "a": "IOCP 不同模型。"
+   }
+  ],
+  "answer": [
+   "总：epoll 事件驱动避免无脑遍历。",
+   "分：Linux 首选；NIO 封装。",
+   "实践：Netty 用 epoll。",
+   "总结：多路复用实现决定上限。"
+  ],
+  "pitfalls": [
+   "说三者没区别。"
+  ]
+ },
+ "p-io4": {
+  "principle": [
+   "零拷贝：减少用户态/内核态之间数据拷贝次数。sendfile 文件→socket；mmap 映射；splice 等。Kafka、Nginx 静态文件、Netty FileRegion 常用。并非零次拷贝，而是更少。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "FileChannel.in.transferTo(0, size, socketChannel); // 可能走 sendfile"
+  },
+  "asks": [
+   "零拷贝是什么？",
+   "sendfile？",
+   "谁在用？",
+   "适用？"
+  ],
+  "followups": [
+   {
+    "q": "DMA？",
+    "a": "部分路径可 DMA。"
+   },
+   {
+    "q": "加密？",
+    "a": "要改数据则难零拷贝。"
+   },
+   {
+    "q": "Java？",
+    "a": "transferTo/transferFrom。"
+   }
+  ],
+  "answer": [
+   "总：少拷贝降 CPU 与延迟。",
+   "分：sendfile/mmap；静态发文件场景。",
+   "实践：【结合你的项目】。",
+   "总结：吞吐优化利器。"
+  ],
+  "pitfalls": [
+   "说完全没有拷贝。"
+  ]
+ },
+ "p-io6": {
+  "principle": [
+   "TCP 流无消息边界→粘包/半包。解决：定长；分隔符；长度前缀（常用）。Netty LengthFieldBasedFrameDecoder 等。设计协议时明确帧格式。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "pipeline.addLast(new LengthFieldBasedFrameDecoder(1<<20,0,4,0,4));\npipeline.addLast(new LengthFieldPrepender(4));"
+  },
+  "asks": [
+   "粘包半包？",
+   "怎么处理？",
+   "Netty？",
+   "HTTP？"
+  ],
+  "followups": [
+   {
+    "q": "HTTP？",
+    "a": "靠 Content-Length/chunk。"
+   },
+   {
+    "q": "分隔符？",
+    "a": "内容需转义。"
+   },
+   {
+    "q": "只靠 read 一次？",
+    "a": "不够。"
+   }
+  ],
+  "answer": [
+   "总：应用层定义帧。",
+   "分：长度字段最常见；Decoder 处理。",
+   "实践：自定义协议必做。",
+   "总结：别假设一次 read 一条消息。"
+  ],
+  "pitfalls": [
+   "忽略半包。"
+  ]
  }
 }
