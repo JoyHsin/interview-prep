@@ -178,313 +178,296 @@
  },
  "j-s4": {
   "principle": [
-   "Spring AOP：有接口时默认 JDK 动态代理；否则 CGLIB 子类代理（Spring Boot 常默认 CGLIB）。自调用不走代理导致 AOP 失效；需注入自身或 AspectJ。",
-   "final 类/方法、私有方法限制需清楚。",
-   "进一步说：接口代理 vs 子类；final 限制；@EnableAspectJAutoProxy。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「Spring」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「AOP：JDK 动态代理 vs CGLIB？」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "Spring AOP 基于代理实现，在运行时为目标 Bean 创建代理对象，调用代理方法时执行切面逻辑（事务、日志、权限）后再调用目标方法。代理有两种实现：JDK 动态代理基于接口，通过 Proxy.newProxyInstance 生成实现目标接口的代理类，方法调用转发给 InvocationHandler，要求目标类必须实现接口，只能代理接口中的方法。",
+   "CGLIB 基于继承，使用字节码技术在运行时生成目标类的子类，重写父类的方法插入增强逻辑，不需要接口；但无法代理 final 类和 final、private、static 方法。Spring 的选择规则：proxyTargetClass 为 false 且目标类实现了接口时使用 JDK 代理，否则使用 CGLIB；Spring Boot 2.x 起默认 proxyTargetClass=true，统一使用 CGLIB，避免按实现类注入时出现类型转换错误。Spring 4 起借助 Objenesis 创建 CGLIB 代理时不会调用两次构造器。",
+   "无论哪种方式，都存在同类自调用不生效的问题：类内部的方法 A 通过 this 调用方法 B，调用的是目标对象本身而不是代理，B 上的 @Transactional、@Async 等注解不会生效。解决方式是把方法拆到另一个 Bean 中、注入自身代理，或者使用 AopContext.currentProxy()（需开启 exposeProxy）。性能方面，新版 JDK 中两者差距已经很小，选择主要基于功能约束。"
   ],
   "example": {
    "lang": "java",
-   "code": "@Transactional\npublic void a(){ this.b(); } // 自调用，b 的事务/AOP 可能不生效\n// 应注入自身代理或拆分 Bean"
+   "code": "@Service\npublic class OrderService {\n    @Autowired @Lazy private OrderService self;       // 注入自身代理\n\n    public void placeOrder(Cmd c) {\n        this.saveOrder(c);   // 自调用：不经过代理，事务不生效\n        self.saveOrder(c);   // 经过代理：事务生效\n    }\n    @Transactional\n    public void saveOrder(Cmd c) { /* ... */ }\n\n    @Transactional\n    private void bad() { }   // private 方法无法被代理，注解无效\n}\n// spring.aop.proxy-target-class=true（Spring Boot 默认）"
   },
   "asks": [
-   "JDK 代理与 CGLIB？",
-   "何时用哪个？",
-   "自调用为何失效？",
-   "final 方法呢？"
+   "JDK 动态代理和 CGLIB 有什么区别？",
+   "Spring 如何选择代理方式？",
+   "为什么 Spring Boot 默认使用 CGLIB？",
+   "同类自调用为什么导致 AOP 失效？"
   ],
   "followups": [
    {
-    "q": "Spring Boot 默认策略？",
-    "a": "现代版本常偏好 CGLIB，具体以版本与配置为准，面试讲清两种机制更重要。"
+    "q": "CGLIB 为什么不能代理 final 方法？",
+    "a": "CGLIB 通过生成子类并重写方法实现增强，final 方法不能被重写，所以调用时直接执行原方法。"
    },
    {
-    "q": "接口代理的限制？",
-    "a": "只能拦截接口方法；拿到实现类强制转型可能出问题。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "如何解决自调用导致事务不生效？",
+    "a": "把方法移到另一个 Bean，或注入自身的代理对象调用，也可以开启 exposeProxy 后使用 AopContext.currentProxy。"
    },
    {
-    "q": "如何强制走代理？",
-    "a": "暴露代理注入、AopContext、或拆 Bean。"
+    "q": "JDK 代理时按实现类注入会怎样？",
+    "a": "容器中的 Bean 是实现接口的代理类而不是实现类，按实现类类型注入会找不到 Bean 或报类型转换错误。"
    }
   ],
   "answer": [
-   "总：Spring AOP：有接口时默认 JDK 动态代理；否则 CGLIB 子类代理（Spring Boot 常默认 CGLIB）。自调用不走代理导致 AOP 失效。",
-   "分：接口代理 vs 子类；final 限制；@EnableAspectJAutoProxy。并补上失败模式与适用边界。",
-   "实践：【结合你的项目】说明你怎么落地、看哪些指标、如何排障与回滚。",
-   "总结：把原理讲清楚后，一定落到可验证的工程行为与取舍理由。关联知识点：接口代理 vs 子类、final 限制。关联知识点：接口代理 vs 子类、final 限制。关联知识点：接口代理 vs 子类、final 限制。"
+   "总：Spring AOP 通过代理实现，JDK 代理基于接口，CGLIB 基于生成子类。",
+   "分：JDK 代理要求接口；CGLIB 不需要接口但不能代理 final、private、static 方法；Spring Boot 默认 CGLIB 避免注入类型问题；同类自调用不经过代理，需拆分 Bean 或注入自身代理。",
+   "实践：【结合你的项目】讲一次因自调用或 private 方法导致事务注解失效的排查和修复过程。",
+   "总结：理解代理机制是排查事务、异步、缓存等注解失效问题的关键。"
   ],
   "pitfalls": [
-   "只背概念不讲取舍与失败处理。",
-   "忽略观测、回滚与并发边界。",
-   "加分：用项目指标或事故证明落地。"
+   "在 private 方法上使用 @Transactional。",
+   "类内部 this 调用带注解的方法却期望增强生效。",
+   "加分：说明 exposeProxy 和 AopContext 的用法。"
   ]
  },
  "j-s5": {
   "principle": [
-   "REQUIRED：有事务加入，无则新建。REQUIRES_NEW：挂起外层，新开独立事务，内层提交/回滚不影响外层（反之亦然，注意异常传播）。",
-   "用于审计日志等「外层回滚也要留下」的场景。注意数据源与代理失效问题。",
-   "进一步说：加入现有 vs 挂起新开；审计日志独立提交；回滚边界。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「Spring」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「事务传播 REQUIRED vs REQUIRE」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "REQUIRED 是默认的传播行为：如果当前存在事务就加入该事务，不存在则新建一个。内外方法共享同一个物理事务，任何一处抛出异常导致回滚，整个事务都会回滚。常见陷阱是内层方法抛出异常被外层 try-catch 吞掉，内层已经把事务标记为 rollback-only，外层提交时会抛出 UnexpectedRollbackException。",
+   "REQUIRES_NEW：无论当前是否有事务，都挂起当前事务，新建一个独立的事务执行，执行完提交或回滚后再恢复外层事务。内外事务互不影响：内层提交后，外层回滚不会撤销内层；内层回滚只要异常被外层捕获，也不会影响外层。典型场景是记录操作日志、审计记录，无论主业务成功与否都要保存；或者发号等需要立即提交的操作。",
+   "使用 REQUIRES_NEW 的注意事项：它会占用一个新的数据库连接，外层连接在此期间被挂起但仍然占用，高并发时可能导致连接池耗尽甚至死锁（外层持有连接等待内层获取连接）；内外事务是两个独立事务，如果都操作同一行数据，内层可能因为外层持有的行锁而等待，造成死锁。和所有事务注解一样，它只在通过代理调用时生效，同类自调用无效。"
   ],
   "example": {
    "lang": "java",
-   "code": "@Transactional(REQUIRED)\nvoid placeOrder(){ audit(); }\n@Transactional(REQUIRES_NEW)\nvoid audit(){ /* 外层回滚也保留审计 */ }"
+   "code": "@Service\nclass OrderService {\n    @Autowired AuditService audit;\n\n    @Transactional                                  // REQUIRED\n    public void place(Cmd c) {\n        orderDao.insert(c);\n        audit.record(\"PLACE\", c);                   // 独立事务，立即提交\n        if (c.amount() > LIMIT) throw new BizException(\"超限\");   // 订单回滚，审计保留\n    }\n}\n@Service\nclass AuditService {\n    @Transactional(propagation = Propagation.REQUIRES_NEW)\n    public void record(String op, Cmd c) { auditDao.insert(op, c); }\n}"
   },
   "asks": [
-   "REQUIRED 与 REQUIRES_NEW？",
-   "什么场景要新事务？",
-   "异常怎么传播？",
-   "常见坑？"
+   "REQUIRED 和 REQUIRES_NEW 有什么区别？",
+   "REQUIRES_NEW 适合什么场景？",
+   "什么情况下会出现 UnexpectedRollbackException？",
+   "使用 REQUIRES_NEW 有哪些风险？"
   ],
   "followups": [
    {
-    "q": "内外层互相影响吗？",
-    "a": "REQUIRES_NEW 内层独立；外层回滚默认不回滚已提交内层。注意异常若继续上抛仍可能影响外层。"
+    "q": "外层回滚会影响 REQUIRES_NEW 的内层吗？",
+    "a": "不会，内层是独立事务且已经提交，外层回滚只撤销外层自己的操作。"
    },
    {
-    "q": "NESTED 呢？",
-    "a": "基于保存点，与新事务不同，需底层支持。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "REQUIRES_NEW 为什么可能导致连接池耗尽？",
+    "a": "外层事务挂起时仍占用连接，内层需要再获取一个连接，高并发下每个请求占两个连接，连接池容易被耗尽。"
    },
    {
-    "q": "私有方法加注解？",
-    "a": "通常无效，因为代理拦不到。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "内层异常被外层捕获后为什么还会回滚？",
+    "a": "在 REQUIRED 下内外共享事务，内层异常已把事务标记为只能回滚，外层即使捕获异常，提交时也会回滚并报错。"
    }
   ],
   "answer": [
-   "总：REQUIRED：有事务加入，无则新建。REQUIRES_NEW：挂起外层，新开独立事务，内层提交/回滚不影响外层（反之亦然，注意异常传播）。",
-   "分：加入现有 vs 挂起新开；审计日志独立提交；回滚边界。并补上失败模式与适用边界。",
-   "实践：【结合你的项目】说明你怎么落地、看哪些指标、如何排障与回滚。",
-   "总结：把原理讲清楚后，一定落到可验证的工程行为与取舍理由。关联知识点：加入现有 vs 挂起新开、审计日志独立提交。关联知识点：加入现有 vs 挂起新开、审计日志独立提交。关联知识点：加入现有 vs 挂起新开、审计日志独立提交。"
+   "总：REQUIRED 加入或新建事务、内外共享，REQUIRES_NEW 挂起外层并新建独立事务。",
+   "分：REQUIRED 下内层异常会导致整体回滚，吞掉异常会出现 UnexpectedRollbackException；REQUIRES_NEW 适合审计日志等需要独立提交的操作；它会额外占用连接，操作同一行可能死锁；都需要通过代理调用。",
+   "实践：【结合你的项目】说明审计日志或操作记录是如何保证在主业务回滚时仍然保存的。",
+   "总结：选择传播行为的依据是内外操作是否需要同生共死，并要评估连接占用和锁冲突。"
   ],
   "pitfalls": [
-   "只背概念不讲取舍与失败处理。",
-   "忽略观测、回滚与并发边界。",
-   "加分：用项目指标或事故证明落地。"
+   "在 REQUIRED 中吞掉内层异常导致 UnexpectedRollbackException。",
+   "高并发链路大量使用 REQUIRES_NEW 导致连接池耗尽。",
+   "加分：说明 REQUIRES_NEW 与 NESTED 的区别。"
   ]
  },
  "p-s1": {
   "principle": [
-   "Spring 单例循环依赖：A 构造注入 B，B 构造注入 A 会失败；属性/setter 注入可通过三级缓存解决。三级缓存：singletonFactories（ObjectFactory）、earlySingletonObjects（早期暴露）、singletonObjects（成品）。",
-   "创建过程：实例化后通过 ObjectFactory 提前暴露引用，对方注入的是早期引用，再填充属性与初始化。构造器循环无法靠三级缓存解决，需重构或 @Lazy。",
-   "面试讲清「为何要三级」：允许生成代理的回调，不只是两个 Map。",
-   "进一步说：earlyReference；单例才支持；构造器循环无法解。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「Spring」场景讲清参数、失败与观测。"
+   "循环依赖指 A 依赖 B、B 又依赖 A。Spring 能够解决单例 Bean 通过属性或 setter 注入形成的循环依赖，依靠的是三级缓存：一级缓存 singletonObjects 存放完全初始化好的 Bean；二级缓存 earlySingletonObjects 存放提前暴露的早期引用；三级缓存 singletonFactories 存放创建早期引用的 ObjectFactory。",
+   "流程：创建 A 时，实例化后（尚未填充属性）把一个 ObjectFactory 放入三级缓存；填充属性时发现需要 B，于是创建 B；B 填充属性需要 A，依次查一、二、三级缓存，在三级缓存中找到 A 的工厂，调用 getEarlyBeanReference 得到 A 的早期引用（如果 A 需要 AOP 代理，这里会提前生成代理），放入二级缓存并删除三级缓存；B 完成初始化放入一级缓存；回到 A 完成属性填充和初始化，最终放入一级缓存。",
+   "为什么需要三级而不是两级：三级缓存的工厂可以延迟决定是否提前创建 AOP 代理，只有真正发生循环依赖时才提前生成代理，保证注入给 B 的和最终放入容器的是同一个代理对象。无法解决的情况：构造器注入的循环依赖（实例化前就需要对方）、prototype 作用域的循环依赖，以及部分 @Async 代理场景。Spring Boot 2.6 起默认禁止循环依赖（spring.main.allow-circular-references=false），推荐通过重构消除循环，必要时使用 @Lazy 注入代理打破循环。"
   ],
   "example": {
-   "lang": "text",
-   "code": "一级 singletonObjects\n二级 earlySingletonObjects\n三级 singletonFactories\n属性注入可提前暴露；构造器注入环失败"
+   "lang": "java",
+   "code": "// 构造器注入的循环依赖：启动报错 BeanCurrentlyInCreationException\n@Service class A { A(B b) {} }\n@Service class B { B(A a) {} }\n\n// 用 @Lazy 打破：注入的是延迟解析的代理\n@Service class A2 { A2(@Lazy B2 b) { this.b = b; } private final B2 b; }\n@Service class B2 { B2(A2 a) {} }\n\n// DefaultSingletonBeanRegistry.getSingleton(name, allowEarlyReference)\n// singletonObjects -> earlySingletonObjects -> singletonFactories.getObject()"
   },
   "asks": [
-   "循环依赖怎么解决？",
-   "三级缓存各层？",
-   "构造器循环怎么办？",
-   "为何需要三级？"
+   "Spring 如何解决循环依赖？",
+   "三级缓存分别存放什么？",
+   "为什么需要三级缓存而不是两级？",
+   "哪些循环依赖无法解决？"
   ],
   "followups": [
    {
-    "q": "构造注入循环能三级缓存解决吗？",
-    "a": "不能。构造阶段还无法安全提前暴露成品，需要 @Lazy 或打破循环依赖设计。"
+    "q": "构造器注入的循环依赖为什么无法解决？",
+    "a": "构造器注入在实例化时就需要依赖对象，此时 Bean 还没有被创建出来，无法提前暴露早期引用。"
    },
    {
-    "q": "二级缓存为什么不够？",
-    "a": "若需要生成 AOP 代理，要用三级 ObjectFactory 回调，在早期暴露代理而非原始对象。"
+    "q": "Spring Boot 2.6 之后循环依赖会怎样？",
+    "a": "默认不允许循环依赖，启动时直接报错，需要重构代码，或者显式设置 allow-circular-references 为 true。"
    },
    {
-    "q": "循环依赖一定是坏设计吗？",
-    "a": "常常是信号，应优先重构职责；框架能力只是兜底。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+    "q": "@Lazy 为什么能解决循环依赖？",
+    "a": "它注入的是一个延迟解析的代理对象，真正使用时才从容器获取目标 Bean，从而打破创建时的循环。"
    }
   ],
   "answer": [
-   "总：Spring 单例循环依赖：A 构造注入 B，B 构造注入 A 会失败；属性/setter 注入可通过三级缓存解决。三级缓存：singletonFactories（ObjectFa。",
-   "分：earlyReference；单例才支持；构造器循环无法解。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：earlyReference、单例才支持。关联知识点：earlyReference、单例才支持。"
+   "总：Spring 通过三级缓存提前暴露单例 Bean 的早期引用，解决属性注入形成的循环依赖。",
+   "分：一级存成品、二级存早期引用、三级存工厂；三级缓存的工厂可以按需提前创建 AOP 代理，保证引用一致；构造器注入和 prototype 循环依赖无法解决；Spring Boot 2.6 起默认禁止。",
+   "实践：【结合你的项目】说明升级 Spring Boot 后遇到循环依赖报错时是如何重构或使用 @Lazy 解决的。",
+   "总结：三级缓存是兜底机制，循环依赖本身往往说明设计需要重构。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "认为 Spring 能解决所有类型的循环依赖。",
+   "说不清第三级缓存与 AOP 代理的关系。",
+   "加分：提到 Spring Boot 2.6 默认禁止循环依赖。"
   ]
  },
  "p-s2": {
   "principle": [
-   "Filter 是 Servlet 规范，在进入 DispatcherServlet 前后工作，可改请求响应，与 Spring 容器关系较弱（可用委托注册）。Interceptor 是 Spring MVC 机制，可访问 Handler，更适合登录鉴权、细粒度 MVC 逻辑。",
-   "顺序：Filter → DispatcherServlet → Interceptor.preHandle → Controller → postHandle → afterCompletion。异常与静态资源路径要注意。",
-   "进一步说：Filter Servlet 容器；Interceptor Spring；顺序与场景。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「Spring」场景讲清参数、失败与观测。"
+   "过滤器（Filter）是 Servlet 规范定义的组件，由 Servlet 容器（Tomcat）管理，在请求进入 DispatcherServlet 之前和响应返回之后执行，作用于所有进入容器的请求，包括静态资源。它只能拿到 ServletRequest 和 ServletResponse，不知道请求将由哪个 Controller 处理。适合做与框架无关的通用处理：字符编码、CORS、请求日志、XSS 过滤、压缩、包装请求体以便重复读取，Spring Security 也是基于过滤器链实现的。",
+   "拦截器（HandlerInterceptor）是 Spring MVC 的组件，由 Spring 容器管理，可以直接注入其他 Bean。它在 DispatcherServlet 内部执行，只拦截经过 MVC 映射的请求，并且可以拿到 handler（HandlerMethod），从而读取 Controller 方法上的注解。提供 preHandle（返回 false 中断请求）、postHandle（Controller 执行后、视图渲染前）、afterCompletion（请求完成后，适合清理 ThreadLocal）三个时机。适合登录校验、权限注解判断、接口耗时统计、用户上下文设置。",
+   "执行顺序：Filter 前置处理、DispatcherServlet、拦截器 preHandle、Controller、拦截器 postHandle、视图渲染、拦截器 afterCompletion、Filter 后置处理。另外，AOP 切面作用于 Bean 的方法层面，粒度更细。选择原则：与 Servlet 和请求原始数据相关的用过滤器，需要 Spring Bean 或 Controller 方法信息的用拦截器。需要注意 postHandle 对 @ResponseBody 接口无法修改已写出的响应，修改响应体应使用 ResponseBodyAdvice。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// Spring MVC 拦截器与过滤器？\n// keypoints: Filter Servlet 容器; Interceptor Spring; 顺序与场景\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "@Component\npublic class AuthInterceptor implements HandlerInterceptor {\n    @Autowired TokenService tokens;                       // 可注入 Spring Bean\n    public boolean preHandle(HttpServletRequest req, HttpServletResponse resp, Object handler) {\n        if (handler instanceof HandlerMethod hm && hm.hasMethodAnnotation(Anonymous.class)) return true;\n        UserCtx.set(tokens.verify(req.getHeader(\"Authorization\")));\n        return true;\n    }\n    public void afterCompletion(HttpServletRequest r, HttpServletResponse s, Object h, Exception e) {\n        UserCtx.clear();                                  // 清理 ThreadLocal\n    }\n}\n// 注册：registry.addInterceptor(auth).addPathPatterns(\"/api/**\").excludePathPatterns(\"/api/login\");"
   },
   "asks": [
-   "Spring MVC 拦截器与过滤器？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "拦截器和过滤器有什么区别？",
+   "两者的执行顺序是怎样的？",
+   "各自适合哪些场景？",
+   "拦截器的三个方法分别在什么时候执行？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "为什么拦截器能读取 Controller 方法上的注解？",
+    "a": "拦截器在 DispatcherServlet 找到处理器之后执行，handler 参数就是 HandlerMethod，可以获取方法和注解信息。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "过滤器中能注入 Spring Bean 吗？",
+    "a": "可以，在 Spring Boot 中把过滤器声明为 Bean 或用 FilterRegistrationBean 注册，就由 Spring 管理并可以注入依赖。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "为什么要在 afterCompletion 中清理 ThreadLocal？",
+    "a": "无论请求成功还是异常，afterCompletion 都会执行，在这里清理能避免线程复用时用户上下文串号。"
    }
   ],
   "answer": [
-   "总：Filter 是 Servlet 规范，在进入 DispatcherServlet 前后工作，可改请求响应，与 Spring 容器关系较弱（可用委托注册）。Interceptor 。",
-   "分：Filter Servlet 容器；Interceptor Spring；顺序与场景。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：Filter Servlet 容器、Interceptor Spring。"
+   "总：过滤器属于 Servlet 规范，作用于所有请求；拦截器属于 Spring MVC，能访问处理器信息和 Spring Bean。",
+   "分：执行顺序为 Filter、DispatcherServlet、preHandle、Controller、postHandle、afterCompletion、Filter；过滤器适合编码、CORS、日志、安全；拦截器适合登录、权限注解和上下文；修改响应体用 ResponseBodyAdvice。",
+   "实践：【结合你的项目】说明登录校验、跨域、请求日志分别放在过滤器还是拦截器中，以及原因。",
+   "总结：处理原始请求用过滤器，处理与 Controller 相关的逻辑用拦截器。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "在 postHandle 中修改 @ResponseBody 接口的响应体。",
+   "在拦截器中设置 ThreadLocal 却不在 afterCompletion 中清理。",
+   "加分：结合 Spring Security 过滤器链说明。"
   ]
  },
  "p-s4": {
   "principle": [
-   "@Async 通过代理把方法提交到 TaskExecutor 异步执行。坑：同类自调用不生效；返回值要用 CompletableFuture 等；默认执行器可能不合适；异常处理需 AsyncUncaughtExceptionHandler；事务与异步边界要分清。",
-   "生产应自定义线程池并命名，避免用简单默认池。",
-   "进一步说：代理异步；同类自调用失效；需线程池配置。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「Spring」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「@Async 原理与坑？」答成清单罗列。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。",
-   "如果面试官要深度，就补一块源码/协议/执行路径层面的关键节点，并说明你是如何验证结论的。"
+   "@Async 基于 AOP 代理实现：通过 @EnableAsync 开启后，Spring 为带有 @Async 的 Bean 创建代理，调用方法时由 AsyncExecutionInterceptor 把方法调用封装成任务提交给线程池执行，调用方立即返回。方法返回值可以是 void、Future 或 CompletableFuture，通过返回值获取执行结果。",
+   "常见的坑：一是线程池，Spring Boot 2.1 之后默认使用自动配置的 ThreadPoolTaskExecutor（核心 8 线程、队列无界），更早的版本或未配置时可能使用每次新建线程的 SimpleAsyncTaskExecutor，都应该自定义有界线程池并按业务隔离，在 @Async(\"orderExecutor\") 中指定。二是失效场景，同类自调用不经过代理、方法为 private 或 final、类不是 Spring Bean，@Async 都不会生效；与 @Transactional 一起用时，异步方法在新线程中运行，不会加入调用方的事务。",
+   "三是异常，返回 void 的方法抛出异常调用方无法感知，需要实现 AsyncUncaughtExceptionHandler 记录；返回 Future 的异常在 get 时抛出。四是上下文丢失，ThreadLocal 中的用户信息、MDC 中的 traceId、SecurityContext 不会自动传递到异步线程，需要用 TaskDecorator 复制。五是优雅关闭，应用停止时线程池中的任务可能丢失，需要配置等待任务完成，重要任务应该使用 MQ 保证可靠性。"
   ],
   "example": {
    "lang": "java",
-   "code": "@EnableAsync\n@Async(\"bizExecutor\")\npublic CompletableFuture<String> go(){ return CompletableFuture.completedFuture(doIt()); }"
+   "code": "@Configuration @EnableAsync\nclass AsyncConfig implements AsyncConfigurer {\n    @Bean(\"orderExecutor\")\n    public ThreadPoolTaskExecutor orderExecutor() {\n        ThreadPoolTaskExecutor e = new ThreadPoolTaskExecutor();\n        e.setCorePoolSize(8); e.setMaxPoolSize(16); e.setQueueCapacity(500);\n        e.setThreadNamePrefix(\"order-async-\");\n        e.setTaskDecorator(r -> { var mdc = MDC.getCopyOfContextMap();\n            return () -> { if (mdc != null) MDC.setContextMap(mdc); try { r.run(); } finally { MDC.clear(); } }; });\n        e.setWaitForTasksToCompleteOnShutdown(true); e.setAwaitTerminationSeconds(30);\n        return e;\n    }\n    public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {\n        return (ex, m, args) -> log.error(\"async {} failed\", m.getName(), ex);\n    }\n}\n@Async(\"orderExecutor\") public CompletableFuture<Void> notifyUser(long uid) { ... }"
   },
   "asks": [
-   "@Async 原理与坑？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "@Async 的原理是什么？",
+   "@Async 默认使用什么线程池？",
+   "哪些情况下 @Async 会失效？",
+   "异步方法的异常和上下文怎么处理？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "@Async 和 @Transactional 一起使用有什么问题？",
+    "a": "异步方法在新线程执行，无法加入调用方的事务，如果需要事务应在异步方法内部开启新的事务。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "为什么要按业务隔离线程池？",
+    "a": "共用一个线程池时，某类慢任务会占满线程和队列，导致其他业务的异步任务也被阻塞或拒绝。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "返回 void 的异步方法抛出异常会怎样？",
+    "a": "调用方无法感知，异常交给 AsyncUncaughtExceptionHandler 处理，未配置时只会打印日志。"
    }
   ],
   "answer": [
-   "总：@Async 通过代理把方法提交到 TaskExecutor 异步执行。坑：同类自调用不生效；返回值要用 CompletableFuture 等；默认执行器可能不合适；异常处理需 。",
-   "分：代理异步；同类自调用失效；需线程池配置。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：代理异步、同类自调用失效。关联知识点：代理异步、同类自调用失效。关联知识点：代理异步、同类自调用失效。关联知识点：代理异步、同类自调用失效。"
+   "总：@Async 通过 AOP 代理把方法调用提交到线程池异步执行。",
+   "分：要自定义有界线程池并按业务隔离；自调用、private、非 Bean 会导致失效；不会加入调用方事务；void 方法异常需要异常处理器；用 TaskDecorator 传递 MDC 和用户上下文；配置优雅关闭，重要任务用 MQ。",
+   "实践：【结合你的项目】说明异步通知或日志写入使用的线程池配置，以及 traceId 如何传递到异步线程。",
+   "总结：@Async 使用简单，但线程池、异常、上下文和可靠性都需要显式处理。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "使用默认线程池且队列无界。",
+   "在同一个类中调用 @Async 方法却期望异步执行。",
+   "加分：说明 TaskDecorator 传递上下文的方式。"
   ]
  },
  "p2-18": {
   "principle": [
-   "REQUIRED 加入或创建事务；NESTED 在当前事务内嵌套保存点，子回滚可回到保存点而不一定整事务回滚。与 REQUIRES_NEW（独立事务）不同。需要底层 DataSource 支持保存点。",
-   "传播失败常见原因：非 public、自调用、检查异常未 rollbackFor。",
-   "进一步说：REQUIRED 同一事务；NESTED 保存点；失败回滚范围不同。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「Spring」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「@Transactional 传播 REQUIR」答成清单罗列。"
+   "REQUIRED（默认）：当前有事务就加入，没有则新建。内外方法属于同一个物理事务，内层方法抛出异常会把整个事务标记为回滚，外层即使捕获了异常，提交时也会因为 rollback-only 而回滚并抛出 UnexpectedRollbackException，内外的修改全部撤销。",
+   "NESTED：当前有事务时，在当前事务中创建一个保存点（savepoint）执行嵌套事务；内层失败只回滚到保存点，撤销内层的修改，外层捕获异常后可以继续执行并提交其他操作；而外层回滚时，内层的修改也会一起回滚，因为它们本质上是同一个物理事务，内层并没有独立提交。当前没有事务时，NESTED 的行为和 REQUIRED 相同，新建一个事务。",
+   "NESTED 依赖 JDBC 3.0 的保存点功能，DataSourceTransactionManager 支持，JPA 的 JpaTransactionManager 默认不支持。它与 REQUIRES_NEW 的区别：REQUIRES_NEW 是独立的新事务，使用新的连接，内层提交后不受外层回滚影响；NESTED 共用同一个连接和事务，内层的提交依赖外层。适用场景：主流程中有可选的子步骤，例如下单时尝试赠送优惠券，赠券失败不影响下单，但下单失败时赠券也应撤销。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// @Transactional 传播 REQUIRED 与 NESTED？\n// keypoints: REQUIRED 同一事务; NESTED 保存点; 失败回滚范围不同\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "@Transactional\npublic void placeOrder(Cmd c) {\n    orderDao.insert(c);\n    try {\n        couponService.grant(c.userId());     // NESTED：失败只回滚到保存点\n    } catch (Exception e) {\n        log.warn(\"赠券失败，不影响下单\", e);\n    }\n    // 若此处抛异常，订单和已赠送的优惠券一起回滚\n}\n\n@Transactional(propagation = Propagation.NESTED)\npublic void grant(long uid) { couponDao.insert(uid); riskCheck(uid); }"
   },
   "asks": [
-   "@Transactional 传播 REQUIRED 与 NESTED？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "REQUIRED 和 NESTED 有什么区别？",
+   "NESTED 是如何实现的？",
+   "NESTED 和 REQUIRES_NEW 有什么区别？",
+   "NESTED 适合什么场景？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "外层回滚时 NESTED 的内层修改会保留吗？",
+    "a": "不会，内层和外层属于同一个物理事务，内层只是一个保存点，外层回滚会把内层的修改一起撤销。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "为什么 JPA 下 NESTED 可能不生效？",
+    "a": "NESTED 依赖 JDBC 保存点，JpaTransactionManager 默认不支持保存点，使用时会抛出异常或无法达到预期效果。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "REQUIRED 下内层失败为什么外层也回滚？",
+    "a": "内外共享同一事务，内层异常会把事务标记为只能回滚，外层即使捕获异常也无法提交。"
    }
   ],
   "answer": [
-   "总：REQUIRED 加入或创建事务；NESTED 在当前事务内嵌套保存点，子回滚可回到保存点而不一定整事务回滚。与 REQUIRES_NEW（独立事务）不同。需要底层 DataSou。",
-   "分：REQUIRED 同一事务；NESTED 保存点；失败回滚范围不同。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：REQUIRED 同一事务、NESTED 保存点。关联知识点：REQUIRED 同一事务、NESTED 保存点。关联知识点：REQUIRED 同一事务、NESTED 保存点。"
+   "总：REQUIRED 让内外共享事务、一损俱损，NESTED 通过保存点让内层可以单独回滚而外层继续。",
+   "分：REQUIRED 内层异常导致整体回滚；NESTED 内层失败回滚到保存点，外层回滚时内层也撤销；依赖 JDBC 保存点，JPA 默认不支持；REQUIRES_NEW 是独立事务和独立连接。",
+   "实践：【结合你的项目】说明下单时赠券、积分等可选步骤失败时，如何保证不影响主流程。",
+   "总结：子步骤可以失败但必须随主流程回滚时用 NESTED，需要独立提交时用 REQUIRES_NEW。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "认为 NESTED 的内层提交后不受外层回滚影响。",
+   "在 JPA 环境下使用 NESTED 却不检查事务管理器是否支持。",
+   "加分：用保存点解释 NESTED 的实现原理。"
   ]
  },
  "p2-19": {
   "principle": [
-   "Spring Boot Starter 通过自动配置：classpath 有条件时加载 @Configuration，结合 spring.factories 或 AutoConfiguration.imports 注册。约定大于配置，用 @ConditionalOn* 控制。",
-   "自定义 starter：写自动配置类 + 配置属性 + 导出文件，供业务依赖。",
-   "进一步说：约定依赖；AutoConfiguration；条件装配。作答时把这些要点串成因果，而不是并列背诵。",
-   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「Spring」场景讲清参数、失败与观测。",
-   "和相近概念对比时，先说相同点再强调差异与选型条件，避免把「Spring Boot starter 原理？」答成清单罗列。"
+   "Spring Boot starter 是把某个功能所需的依赖和自动配置打包在一起的模块，使用者只需要引入一个依赖，就能获得开箱即用的功能。它通常由两部分组成：starter 模块本身只是一个依赖聚合的 pom，xxx-autoconfigure 模块包含自动配置类、配置属性类，以及注册自动配置的元数据文件。",
+   "自动配置的加载原理：@SpringBootApplication 包含 @EnableAutoConfiguration，它通过 AutoConfigurationImportSelector 读取 classpath 下所有 jar 中的 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports 文件（Spring Boot 2.7 之前是 META-INF/spring.factories），得到候选的自动配置类列表；然后根据条件注解进行过滤，只有条件满足的配置类才会生效。",
+   "常用条件注解：@ConditionalOnClass（classpath 中存在某个类，即引入了相关依赖）、@ConditionalOnMissingBean（用户没有自定义该 Bean 时才创建，使用户可以覆盖默认配置）、@ConditionalOnProperty（配置项满足条件，例如开关）、@ConditionalOnWebApplication 等。配合 @ConfigurationProperties 把 application.yml 中的配置绑定到属性类。自定义 starter 时应遵循命名规范（第三方用 xxx-spring-boot-starter），默认 Bean 一定要加 @ConditionalOnMissingBean，并可以用 debug=true 或 /actuator/conditions 查看哪些自动配置生效。"
   ],
   "example": {
-   "lang": "text",
-   "code": "// Spring Boot starter 原理？\n// keypoints: 约定依赖; AutoConfiguration; 条件装配\nsetup();\nexecute();\nverify(); // metrics/rollback"
+   "lang": "java",
+   "code": "@AutoConfiguration\n@ConditionalOnClass(SmsClient.class)\n@EnableConfigurationProperties(SmsProperties.class)\npublic class SmsAutoConfiguration {\n    @Bean\n    @ConditionalOnMissingBean                                   // 用户可覆盖\n    @ConditionalOnProperty(prefix = \"sms\", name = \"enabled\", havingValue = \"true\", matchIfMissing = true)\n    public SmsClient smsClient(SmsProperties p) {\n        return new SmsClient(p.getEndpoint(), p.getAccessKey());\n    }\n}\n// META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports\n// com.demo.sms.SmsAutoConfiguration"
   },
   "asks": [
-   "Spring Boot starter 原理？",
-   "关键实现点？",
-   "常见坑？",
-   "如何验证？"
+   "Spring Boot starter 的原理是什么？",
+   "自动配置类是如何被加载的？",
+   "常用的条件注解有哪些？",
+   "如何自定义一个 starter？"
   ],
   "followups": [
    {
-    "q": "和替代方案怎么选？",
-    "a": "对照一致性、复杂度、性能与运维成本，用业务约束拍板，并保留回滚。"
+    "q": "为什么默认 Bean 要加 @ConditionalOnMissingBean？",
+    "a": "让使用者定义自己的 Bean 时自动配置的默认 Bean 不再创建，从而可以覆盖默认行为而不产生冲突。"
    },
    {
-    "q": "线上如何证明？",
-    "a": "看关键指标、压测对比与失败注入结果，避免只靠感觉。"
+    "q": "如何查看哪些自动配置生效了？",
+    "a": "启动时设置 debug=true 打印条件评估报告，或者通过 actuator 的 conditions 端点查看匹配和未匹配的原因。"
    },
    {
-    "q": "最容易踩的坑？",
-    "a": "忽略边界与并发，缺少超时/幂等/观测，导致偶发故障难查。"
+    "q": "spring.factories 和 AutoConfiguration.imports 有什么区别？",
+    "a": "前者是 2.7 之前注册自动配置的方式，后者是 2.7 引入、3.0 起唯一支持的自动配置注册文件。"
    }
   ],
   "answer": [
-   "总：Spring Boot Starter 通过自动配置：classpath 有条件时加载 @Configuration，结合 spring.factories 或 AutoConfi。",
-   "分：约定依赖；AutoConfiguration；条件装配。补上失败模式、参数与适用边界。",
-   "实践：【结合你的项目】说明落地、指标与排障方式，准备可回滚方案。",
-   "总结：把原理落到可验证工程行为，并主动提监控、并发与易错点。关联知识点：约定依赖、AutoConfiguration。关联知识点：约定依赖、AutoConfiguration。关联知识点：约定依赖、AutoConfiguration。"
+   "总：starter 把依赖和自动配置打包在一起，Spring Boot 通过读取元数据文件和条件注解按需装配 Bean。",
+   "分：@EnableAutoConfiguration 读取 AutoConfiguration.imports 得到候选配置类；@ConditionalOnClass、OnMissingBean、OnProperty 等过滤；@ConfigurationProperties 绑定配置；自定义 starter 要允许用户覆盖并遵循命名规范。",
+   "实践：【结合你的项目】说明是否封装过公司内部的 starter，例如统一日志、鉴权或短信客户端，以及如何设计开关和覆盖。",
+   "总结：自动配置的核心是约定加条件判断，用户配置始终优先于默认配置。"
   ],
   "pitfalls": [
-   "只背名词不讲边界与代价。",
-   "忽略失败、观测与回滚。",
-   "加分：用项目指标或事故证明。"
+   "自定义 starter 的默认 Bean 不加 @ConditionalOnMissingBean。",
+   "Spring Boot 3 中仍然只在 spring.factories 中注册自动配置。",
+   "加分：会用条件评估报告排查自动配置问题。"
   ]
  },
  "j-s6": {
