@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>知识体系 · 面试备考</title>
+<link rel="stylesheet" href="./css/style.css"/>
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="./index.html">求职<span> · 面试备考</span></a>
+  <div class="links">
+    <a href="./index.html">首页</a>
+    <a href="./questions.html">题库</a>
+    <a href="./practice.html">刷题</a>
+    <a href="./progress.html">进度</a>
+    <a href="./knowledge.html">知识体系</a>
+    <a href="./guide/timeline.html">时间线</a>
+    <a href="./guide/projects.html">项目 STAR</a>
+    <a href="./guide/system-design.html">系统设计</a>
+    <a href="./guide/study-path.html">学习路径</a>
+    <a href="./guide/resume.html">简历/学历</a>
+    <a href="./guide/job-market.html">广州行情</a>
+  </div>
+  <div class="tools"><button type="button" class="ghost" id="themeBtn">主题</button></div>
+</nav>
+<main class="wrap">
+
+<h1>知识体系（映射 pdai.tech）</h1>
+<p class="muted">以下为主题树与原文链接，便于对照复习。本站<strong>不复制</strong> pdai 文章正文。sitemap 约 795 页；本地图收录面试相关分支约 <span id="kCount"></span> 页；抽样抓取了约 53 个真实标题。</p>
+<p><a href="https://pdai.tech/" target="_blank" rel="noopener">打开 pdai.tech 首页</a></p>
+<div class="tree" id="tree"></div>
+
+</main>
+<div class="footer wrap">
+  <p>个人面试备考站 · 进度保存在本机浏览器 localStorage，可用导入/导出迁移。</p>
+  <p>知识外链：<a href="https://pdai.tech/" target="_blank" rel="noopener">pdai.tech</a>；本站不收录其正文。</p>
+</div>
+
+<script src="./data/questions.js"></script>
+<script src="./data/guide.js"></script>
+<script src="./data/knowledge.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/knowledge.js"></script>
+<script>
+document.getElementById('themeBtn')?.addEventListener('click', () => {
+  const cur = AppCommon.state.settings.theme || 'system';
+  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
+  AppCommon.setTheme(next);
+  AppCommon.toast('主题：' + ({light:'浅色',dark:'深色',system:'跟随系统'})[next]);
+});
+</script>
+</body>
+</html>

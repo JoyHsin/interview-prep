@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>刷题 · 面试备考</title>
+<link rel="stylesheet" href="./css/style.css"/>
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="./index.html">求职<span> · 面试备考</span></a>
+  <div class="links">
+    <a href="./index.html">首页</a>
+    <a href="./questions.html">题库</a>
+    <a href="./practice.html">刷题</a>
+    <a href="./progress.html">进度</a>
+    <a href="./knowledge.html">知识体系</a>
+    <a href="./guide/timeline.html">时间线</a>
+    <a href="./guide/projects.html">项目 STAR</a>
+    <a href="./guide/system-design.html">系统设计</a>
+    <a href="./guide/study-path.html">学习路径</a>
+    <a href="./guide/resume.html">简历/学历</a>
+    <a href="./guide/job-market.html">广州行情</a>
+  </div>
+  <div class="tools"><button type="button" class="ghost" id="themeBtn">主题</button></div>
+</nav>
+<main class="wrap">
+
+<h1>刷题 / 背题</h1>
+<p class="muted">卡片模式：先看题，再揭晓要点，标记不会 / 模糊 / 会。默认优先未学与模糊（简易间隔）。</p>
+<div class="filters">
+  <select id="pSection"><option value="">全部章节</option></select>
+  <select id="pCat"><option value="">全部分类</option></select>
+  <select id="pPri"><option value="">全部优先级</option><option>必背</option><option>重点</option><option>了解</option></select>
+  <label><input type="checkbox" id="pPrioritize" checked/> 优先未学/模糊</label>
+  <button type="button" id="pShuffle">重洗牌</button>
+</div>
+<div class="card flash" id="flash">
+  <div class="meta" id="fMeta"></div>
+  <div class="q" id="fQ">加载中…</div>
+  <div id="fPoints" class="hidden" style="text-align:left"></div>
+  <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center">
+    <button type="button" id="fReveal" class="primary">显示要点</button>
+    <button type="button" data-mark="未学">不会</button>
+    <button type="button" data-mark="模糊">模糊</button>
+    <button type="button" data-mark="掌握">会了</button>
+    <button type="button" id="fNext">下一题</button>
+  </div>
+  <p class="tiny" id="fProgress"></p>
+</div>
+
+</main>
+<div class="footer wrap">
+  <p>个人面试备考站 · 进度保存在本机浏览器 localStorage，可用导入/导出迁移。</p>
+  <p>知识外链：<a href="https://pdai.tech/" target="_blank" rel="noopener">pdai.tech</a>；本站不收录其正文。</p>
+</div>
+
+<script src="./data/questions.js"></script>
+<script src="./data/guide.js"></script>
+<script src="./data/knowledge.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/practice.js"></script>
+<script>
+document.getElementById('themeBtn')?.addEventListener('click', () => {
+  const cur = AppCommon.state.settings.theme || 'system';
+  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
+  AppCommon.setTheme(next);
+  AppCommon.toast('主题：' + ({light:'浅色',dark:'深色',system:'跟随系统'})[next]);
+});
+</script>
+</body>
+</html>

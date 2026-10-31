@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>进度 · 面试备考</title>
+<link rel="stylesheet" href="./css/style.css"/>
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="./index.html">求职<span> · 面试备考</span></a>
+  <div class="links">
+    <a href="./index.html">首页</a>
+    <a href="./questions.html">题库</a>
+    <a href="./practice.html">刷题</a>
+    <a href="./progress.html">进度</a>
+    <a href="./knowledge.html">知识体系</a>
+    <a href="./guide/timeline.html">时间线</a>
+    <a href="./guide/projects.html">项目 STAR</a>
+    <a href="./guide/system-design.html">系统设计</a>
+    <a href="./guide/study-path.html">学习路径</a>
+    <a href="./guide/resume.html">简历/学历</a>
+    <a href="./guide/job-market.html">广州行情</a>
+  </div>
+  <div class="tools"><button type="button" class="ghost" id="themeBtn">主题</button></div>
+</nav>
+<main class="wrap">
+
+<h1>进度看板</h1>
+<div class="grid cols-3" id="pMetrics"></div>
+<div class="card"><h3>分章节掌握度</h3><div id="secBars"></div></div>
+<div class="card"><h3>月度里程碑</h3><ul class="list-check" id="miles"></ul></div>
+<div class="card">
+  <h3>导入 / 导出</h3>
+  <button type="button" id="exportBtn2" class="primary">导出进度 JSON</button>
+  <label class="btn">导入<input type="file" id="importFile2" accept="application/json,.json" hidden/></label>
+</div>
+
+</main>
+<div class="footer wrap">
+  <p>个人面试备考站 · 进度保存在本机浏览器 localStorage，可用导入/导出迁移。</p>
+  <p>知识外链：<a href="https://pdai.tech/" target="_blank" rel="noopener">pdai.tech</a>；本站不收录其正文。</p>
+</div>
+
+<script src="./data/questions.js"></script>
+<script src="./data/guide.js"></script>
+<script src="./data/knowledge.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/progress.js"></script>
+<script>
+document.getElementById('themeBtn')?.addEventListener('click', () => {
+  const cur = AppCommon.state.settings.theme || 'system';
+  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
+  AppCommon.setTheme(next);
+  AppCommon.toast('主题：' + ({light:'浅色',dark:'深色',system:'跟随系统'})[next]);
+});
+</script>
+</body>
+</html>

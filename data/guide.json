@@ -1,0 +1,219 @@
+{
+  "timeline": [
+    {
+      "month": "2026.11",
+      "title": "打地基",
+      "items": [
+        "并发+JVM+Redis 必背过一轮",
+        "写 2 个项目故事骨架（Dify、DeerFlow）",
+        "简历先加真实 AI 关键词"
+      ]
+    },
+    {
+      "month": "2026.12",
+      "title": "AI 主线",
+      "items": [
+        "RAG 全链路与 Agent/MCP 必背",
+        "对照项目补为什么选/怎么集成/翻车",
+        "每周日默写 10 道必背"
+      ]
+    },
+    {
+      "month": "2027.1",
+      "title": "Java 原生补洞",
+      "items": [
+        "Spring AI / LangChain4j 最小 RAG+Tool Agent",
+        "MySQL/场景题/排障",
+        "系统设计口述"
+      ]
+    },
+    {
+      "month": "2027.2",
+      "title": "模拟与投递准备",
+      "items": [
+        "模拟面 4–6 场",
+        "补齐【待填】指标",
+        "刷广州新岗；简历两版：纯 Java / Java+AI"
+      ]
+    },
+    {
+      "month": "2027.3",
+      "title": "投递面试",
+      "items": [
+        "主投目标薪资以上的后端岗位",
+        "AI 岗可冲但不死守对口",
+        "当天只复习必背+自己的项目故事"
+      ]
+    }
+  ],
+  "weekly": {
+    "weekday": "工作日 60–90 分钟：30min 题库 + 30–60min 项目",
+    "sat": "周六 3–4h：传统专题或系统设计",
+    "sun": "周日 3–4h：AI 专题 + 默写必背"
+  },
+  "prioritySplit": [
+    {
+      "name": "传统 Java",
+      "pct": "40%",
+      "note": "广州多数 JD 仍考这个"
+    },
+    {
+      "name": "AI Agent / RAG",
+      "pct": "30%",
+      "note": "对口岗深挖；不对口当加分"
+    },
+    {
+      "name": "项目讲述",
+      "pct": "20%",
+      "note": "DeerFlow/Dify + Claude Code"
+    },
+    {
+      "name": "系统设计",
+      "pct": "10%",
+      "note": "知识库、客服、秒杀、网关"
+    }
+  ],
+  "studyPath": [
+    {
+      "when": "2026.11",
+      "repo": "Layer 1：并发/Spring/MySQL；高频题",
+      "focus": "传统必背 + JDK 21 虚拟线程"
+    },
+    {
+      "when": "2026.12",
+      "repo": "LLM、Prompt、RAG、向量库",
+      "focus": "RAG 全链路"
+    },
+    {
+      "when": "2027.1",
+      "repo": "Spring AI / LangChain4j / Agent / MCP；code/spring-demo",
+      "focus": "动手补洞项目"
+    },
+    {
+      "when": "2027.2",
+      "repo": "Redis/MQ/分布式；系统设计",
+      "focus": "分布式复习 + AI 系统设计"
+    },
+    {
+      "when": "2027.3",
+      "repo": "架构 / A2A / 2026 新增题",
+      "focus": "冲刺"
+    }
+  ],
+  "demoProject": {
+    "name": "spring-demo（Spring AI + Ollama + RAG）",
+    "url": "https://github.com/xiaomozhang/java-ai-engineer-roadmap/tree/main/code/spring-demo",
+    "note": "适合当起点；建议 fork 后升到 Spring AI 1.x、换 PGvector、加 @Tool 与 SSE。"
+  },
+  "jobMarket": {
+    "summary": "广州 BOSS 直聘观察（2026-10，大专+5-10 年 Java）：第一页约 60 个里，月薪下限能到 15K 的大约 20 个左右（约三分之一量级）；Java+AI/Agent 对口岗很少。数字以你当天在 App 看到的为准。",
+    "examples": [
+      "途世科技 Java 18-25K·14薪（海珠）",
+      "天琴信息 中高级 Java 16-22K·13薪（天河）",
+      "广东超腾 Java（大模型/Agent/RAG/MCP）12-18K（对口但起薪偏低）",
+      "CLPS 华钦 外资银行全栈/AI 13-15K（LangChain 等，顶薪触 15）"
+    ],
+    "target": "主攻 Java + AI Agent，同时保住传统后端基本盘。"
+  },
+  "resumeTips": {
+    "education": "承认学历 → 用 7–8 年交付证明学习力 → 落到 AI 实践 → 表达可快速上手。避免攻击筛选。",
+    "keywords": [
+      "Java / Spring Boot / 微服务 / Redis / MySQL / MQ",
+      "大模型应用 / RAG / Agent / Tool Calling",
+      "Spring AI 或 LangChain4j（做完再写）",
+      "Dify / DeerFlow / MCP / SSE",
+      "智能客服 / 知识库问答"
+    ],
+    "do": [
+      "业务结果 + 你的决策",
+      "AI 落地集成与工程化",
+      "AI 编程工具提效的可验证例子"
+    ],
+    "dont": [
+      "只写熟悉 ChatGPT 无项目",
+      "未做的框架名堆砌",
+      "期望远超能力证明"
+    ]
+  },
+  "projects": [
+    {
+      "id": "dify",
+      "title": "故事 A · Dify 接入 Java 业务",
+      "situation": "业务需要【待填：智能客服/知识问答/内部助手】，原人工或规则成本高。",
+      "task": "把 Dify 工作流/知识库接到现有 Java 服务，保证鉴权、租户隔离与可观测。",
+      "action": "选型 Dify（低代码快）而非一上来自研；Java 网关鉴权→Dify API/SSE→写回业务；检索侧按租户过滤；超时重试与兜底。",
+      "result": "上线【待填】周；日均调用【待填】；人工处理量【待填↓%】；P95【待填】；事故【待填/无】。",
+      "followups": [
+        "为什么选 Dify 不自研/不选 Coze？",
+        "Java 怎么集成？会话怎么绑用户？",
+        "多租户与文档权限？",
+        "幻觉怎么发现与降级？",
+        "一次失败案例"
+      ]
+    },
+    {
+      "id": "deerflow",
+      "title": "故事 B · DeerFlow 多 Agent / 深研",
+      "situation": "任务需要多步研究/汇总（【待填】），单次 Chat 完不成。",
+      "task": "评估并接入 DeerFlow（子 Agent、记忆、沙箱、MCP）。",
+      "action": "主 Agent 拆任务→子 Agent→汇总；MCP 配置；与 Java 边界；对比 Dify：长程偏 DeerFlow，可视化应用偏 Dify。",
+      "result": "时长【待填】→【待填】；人工复核【待填】；踩坑【待填】。",
+      "followups": [
+        "和 LangGraph/Dify 差别？",
+        "上下文隔离？",
+        "MCP 安全",
+        "长任务取消",
+        "Human-in-the-loop"
+      ]
+    },
+    {
+      "id": "aicoding",
+      "title": "故事 C · Claude Code / Codex 提效",
+      "situation": "日常有大量样板、单测、排障与跨文件修改。",
+      "task": "用工具提效同时守住质量与安全。",
+      "action": "你负责拆解与架构；AI 辅助样板/测试；你做 Review；沉淀规则提示词。",
+      "result": "耗时【待填↓%】；单测【待填】；缺陷【待填】。强调决策与责任在你。",
+      "followups": [
+        "AI 写错你怎么发现？",
+        "哪些任务不适合交给 AI？"
+      ]
+    }
+  ],
+  "milestones": [
+    {
+      "id": "m1",
+      "month": "2026.11",
+      "text": "并发/JVM/Redis 必背过完一轮"
+    },
+    {
+      "id": "m2",
+      "month": "2026.11",
+      "text": "两份项目 STAR 骨架写完"
+    },
+    {
+      "id": "m3",
+      "month": "2026.12",
+      "text": "RAG/Agent/MCP 必背过完"
+    },
+    {
+      "id": "m4",
+      "month": "2027.1",
+      "text": "Spring AI 小项目可演示"
+    },
+    {
+      "id": "m5",
+      "month": "2027.2",
+      "text": "模拟面试 ≥4 场"
+    },
+    {
+      "id": "m6",
+      "month": "2027.2",
+      "text": "【待填】指标补齐，简历两版"
+    },
+    {
+      "id": "m7",
+      "month": "2027.3",
+      "text": "开始正式投递"
+    }
+  ]
+}
