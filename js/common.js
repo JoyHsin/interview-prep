@@ -1,10 +1,19 @@
 (function () {
   function applyTheme(mode) {
-    const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.classList.toggle('dark', dark);
+    const isDark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', isDark);
+    updateThemeBtn(mode, isDark);
   }
   const state = Store.load();
-  applyTheme(state.settings.theme || 'system');
+  
+  function updateThemeBtn(mode, isDark) {
+    const btn = document.getElementById('themeBtn');
+    if (!btn) return;
+    const effectiveDark = isDark != null ? isDark : document.documentElement.classList.contains('dark');
+    const sunIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`;
+    const moonIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
+    btn.innerHTML = `${effectiveDark ? sunIcon : moonIcon}<span>${mode === 'system' ? '跟随' : (effectiveDark ? '浅色' : '深色')}</span>`;
+  }
 
   window.AppCommon = {
     state,
@@ -19,7 +28,11 @@
       const el = document.createElement('div');
       el.className = 'toast'; el.textContent = msg;
       document.body.appendChild(el);
-      setTimeout(() => el.remove(), 2200);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 0.2s ease';
+        setTimeout(() => el.remove(), 200);
+      }, 2200);
     },
     masteryOf(id) { return this.state.mastery[id] || '未学'; },
     setMastery(id, m) {
@@ -51,13 +64,61 @@
     },
   };
 
+  applyTheme(state.settings.theme || 'system');
+
+  // Enhance brand logo
+  const brand = document.querySelector('.nav .brand');
+  if (brand && !brand.querySelector('.brand-badge')) {
+    const badge = document.createElement('span');
+    badge.className = 'brand-badge';
+    badge.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
+    brand.insertBefore(badge, brand.firstChild);
+  }
+
+  // Group guide links into a dropdown if there are many links
+  const linksBox = document.querySelector('.nav .links');
+  if (linksBox) {
+    const guideLinks = Array.from(linksBox.querySelectorAll('a')).filter(a => {
+      const h = a.getAttribute('href') || '';
+      return h.includes('/guide/') || h.includes('guide/');
+    });
+    if (guideLinks.length >= 3) {
+      const dropdown = document.createElement('div');
+      dropdown.className = 'nav-dropdown';
+      const dropBtn = document.createElement('button');
+      dropBtn.type = 'button';
+      dropBtn.className = 'nav-dropdown-btn';
+      dropBtn.innerHTML = '备考指南 <span style="font-size:10px;opacity:0.7">▼</span>';
+      
+      const dropMenu = document.createElement('div');
+      dropMenu.className = 'nav-dropdown-menu';
+
+      let isGuideActive = false;
+      guideLinks.forEach(a => {
+        if (a.classList.contains('active')) isGuideActive = true;
+        dropMenu.appendChild(a);
+      });
+      if (isGuideActive) dropdown.classList.add('active');
+
+      dropdown.appendChild(dropBtn);
+      dropdown.appendChild(dropMenu);
+      linksBox.appendChild(dropdown);
+
+      dropBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('open');
+      });
+      document.addEventListener('click', () => dropdown.classList.remove('open'));
+    }
+  }
+
   // Hamburger for mobile
   const nav = document.querySelector('.nav');
   if (nav && !nav.querySelector('.nav-toggle')) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'nav-toggle';
-    btn.setAttribute('aria-label', '菜单');
+    btn.setAttribute('aria-label', '切换菜单');
     btn.textContent = '☰';
     const tools = nav.querySelector('.tools');
     if (tools) nav.insertBefore(btn, tools);
@@ -72,12 +133,28 @@
     }));
   }
 
+  // Active link highlight
   document.querySelectorAll('.nav .links a').forEach(a => {
     const href = a.getAttribute('href');
     if (!href) return;
     try {
       const url = new URL(href, location.href);
-      if (url.pathname.replace(/\/$/, '') === location.pathname.replace(/\/$/, '')) a.classList.add('active');
+      if (url.pathname.replace(/\/$/, '') === location.pathname.replace(/\/$/, '')) {
+        a.classList.add('active');
+        const parentDropdown = a.closest('.nav-dropdown');
+        if (parentDropdown) parentDropdown.classList.add('active');
+      }
     } catch (e) {}
   });
+
+  // Setup theme button toggle listener
+  const themeBtn = document.getElementById('themeBtn');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const cur = AppCommon.state.settings.theme || 'system';
+      const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
+      AppCommon.setTheme(next);
+      AppCommon.toast('已切换主题：' + ({light:'浅色', dark:'深色', system:'跟随系统'})[next]);
+    });
+  }
 })();
