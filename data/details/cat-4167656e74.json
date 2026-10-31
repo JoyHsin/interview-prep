@@ -461,5 +461,122 @@
    "一个工具包办所有。",
    "参数全是自由文本。"
   ]
+ },
+ "r-a3": {
+  "principle": [
+   "LangGraph Checkpoint：把图执行的 State 持久化（内存/Sqlite/Postgres/Redis 等），每步或每超级步保存。",
+   "用途：① 进程挂了可恢复；② human-in-the-loop——节点前暂停，人工审批后继续；③ 时间旅行调试、从某 checkpoint 分叉对比策略。是长任务 Agent 的关键能力。"
+  ],
+  "example": {
+   "lang": "python",
+   "code": "from langgraph.checkpoint.memory import MemorySaver\ngraph = builder.compile(checkpointer=MemorySaver())\ncfg = {\"configurable\": {\"thread_id\": \"u-1\"}}\ngraph.invoke({\"x\": 1}, cfg)          # 状态可跨调用恢复\n# 生产换 PostgresSaver / RedisSaver"
+  },
+  "asks": [
+   "Checkpoint 是什么？",
+   "用在哪里？",
+   "和会话记忆区别？",
+   "thread_id？"
+  ],
+  "followups": [
+   {
+    "q": "和 ChatMemory？",
+    "a": "Checkpoint 是整图状态；ChatMemory 多指对话消息。"
+   },
+   {
+    "q": "审批？",
+    "a": "interrupt 后等外部更新再 invoke。"
+   },
+   {
+    "q": "存储选型？",
+    "a": "开发 Memory，生产 DB/Redis。"
+   }
+  ],
+  "answer": [
+   "总：状态持久化支撑恢复、审批、调试。",
+   "分：按 thread 隔离；生产用可靠存储。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：长任务没有 checkpoint 很难做稳。"
+  ],
+  "pitfalls": [
+   "当成只存聊天记录。"
+  ]
+ },
+ "r-a4": {
+  "principle": [
+   "ReAct：边想边做，每步 Thought→Action→Observation，灵活，适合工具路径不明；步数多、成本高、易偏航。",
+   "Plan-and-Execute：先产出完整计划再逐步执行，必要时根据观察重规划；长任务、步骤清晰时更稳、更好展示进度；计划错了要能重规划。",
+   "实践可混合：高层 Plan，步骤内 ReAct。"
+  ],
+  "example": {
+   "lang": "text",
+   "code": "Plan: 1查库 2分析 3写报告\nExecute step1 → observe → (ok) step2 …\n若失败：Replan 后继续\n对比 ReAct：每步都重新决策，无显式全局计划"
+  },
+  "asks": [
+   "Plan-and-Execute 和 ReAct？",
+   "何时用哪个？",
+   "重规划？",
+   "成本？"
+  ],
+  "followups": [
+   {
+    "q": "长报告？",
+    "a": "偏 Plan。"
+   },
+   {
+    "q": "工具探索？",
+    "a": "偏 ReAct。"
+   },
+   {
+    "q": "混合？",
+    "a": "常见。"
+   }
+  ],
+  "answer": [
+   "总：先计划后执行更稳，边想边做更灵活。",
+   "分：长任务 Plan；未知路径 ReAct；可重规划。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：按任务确定性选型。"
+  ],
+  "pitfalls": [
+   "只会背名字。"
+  ]
+ },
+ "r-a5": {
+  "principle": [
+   "MCP 工具安全：最小权限（只读与写分离）；参数校验（路径规范化防穿越、SQL 参数化）；密钥不进模型上下文；破坏性操作二次确认；沙箱目录/网络策略；完整审计；限流超时；工具描述防投毒（来源可信）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Tool(description=\"删除指定租户下的临时文件，需 confirm=true\")\npublic String deleteTemp(String relativePath, boolean confirm) {\n  if (!confirm) return \"需要 confirm=true\";\n  Path p = sandboxRoot.resolve(relativePath).normalize();\n  if (!p.startsWith(sandboxRoot)) return \"路径非法\";\n  Files.deleteIfExists(p);\n  audit.log(\"delete\", p);\n  return \"ok\";\n}"
+  },
+  "asks": [
+   "MCP 工具怎么保证安全？",
+   "路径穿越？",
+   "工具投毒？",
+   "人工确认？"
+  ],
+  "followups": [
+   {
+    "q": "投毒？",
+    "a": "恶意描述诱导模型；只用可信 Server。"
+   },
+   {
+    "q": "多租户？",
+    "a": "工具内强制租户上下文。"
+   },
+   {
+    "q": "审计？",
+    "a": "谁在何时调了什么参数。"
+   }
+  ],
+  "answer": [
+   "总：最小权限、校验、确认、沙箱、审计。",
+   "分：防穿越与注入；描述来源可信。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：假设模型会被骗。"
+  ],
+  "pitfalls": [
+   "只靠 Prompt 说不要乱来。"
+  ]
  }
 }

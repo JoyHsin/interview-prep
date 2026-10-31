@@ -333,5 +333,44 @@
   "pitfalls": [
    "贬低未用过的平台。"
   ]
+ },
+ "r-f1": {
+  "principle": [
+   "LangGraph4j、Spring AI Alibaba Graph 等：在 Java 侧用 State/Node/Edge（含条件边）编排多步 Agent，类似 LangGraph 思想——显式状态、分支循环、可测试。",
+   "适合要留在 JVM、与 Spring 服务集成的团队；生态成熟度对照 Python LangGraph 仍在追赶，选型前看版本与示例。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 概念示意：State → nodeA → (cond) → nodeB/nodeC → END\n// 条件边根据 state 字段路由；循环要设最大次数\n// 具体 API 以所用库当前文档为准"
+  },
+  "asks": [
+   "Java 图编排是什么？",
+   "和 LangGraph？",
+   "何时用？",
+   "和纯 ChatClient 链？"
+  ],
+  "followups": [
+   {
+    "q": "简单链？",
+    "a": "ChatClient+Advisor 够用。"
+   },
+   {
+    "q": "要循环审批？",
+    "a": "上图编排。"
+   },
+   {
+    "q": "成熟度？",
+    "a": "跟文档与社区，避免早期 API 大变。"
+   }
+  ],
+  "answer": [
+   "总：Java 也可用状态图做多步 Agent。",
+   "分：State/Node/条件边；复杂才上；核对文档。",
+   "实践：【结合你的项目】【待填】。",
+   "总结：编排复杂度匹配工具。"
+  ],
+  "pitfalls": [
+   "简单问答也上图。"
+  ]
  }
 }

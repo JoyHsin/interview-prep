@@ -468,5 +468,195 @@
    "只说重启。",
    "不知道 jstack 能直接检测。"
   ]
+ },
+ "p-th2": {
+  "principle": [
+   "wait/notify 必须在 synchronized 持锁下调用；等待用 while 防虚假唤醒；notify 唤醒一个，notifyAll 全部。Condition 与 Lock 绑定，可多条件队列（精确唤醒），await/signal 对应。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "synchronized(lock) {\n  while (!ready) lock.wait();\n  // ...\n  lock.notifyAll();\n}\nlock.lock();\ntry { while (!ready) cond.await(); cond.signal(); }\nfinally { lock.unlock(); }"
+  },
+  "asks": [
+   "wait/notify 注意？",
+   "和 Condition？",
+   "虚假唤醒？",
+   "sleep 区别？"
+  ],
+  "followups": [
+   {
+    "q": "虚假唤醒？",
+    "a": "应用 while 重检条件。"
+   },
+   {
+    "q": "notify 丢信号？",
+    "a": "先改条件再 notify。"
+   },
+   {
+    "q": "sleep？",
+    "a": "不释放锁。"
+   }
+  ],
+  "answer": [
+   "总：持锁等待，while 判条件；Condition 更灵活。",
+   "分：多条件精确唤醒。",
+   "实践：阻塞队列源码即范本。",
+   "总结：等待/通知要成对设计。"
+  ],
+  "pitfalls": [
+   "用 if 代替 while。"
+  ]
+ },
+ "p-th3": {
+  "principle": [
+   "ReadWriteLock：读共享写独占，读多写少提吞吐。写锁获取时无读者；注意写饥饿（读不断流）；一般不支持锁升级（读→写易死锁），可降级（写→读）。ReentrantReadWriteLock 可公平。StampedLock 提供乐观读。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "ReentrantReadWriteLock rw = new ReentrantReadWriteLock();\nrw.readLock().lock(); try { /* read */ } finally { rw.readLock().unlock(); }\nrw.writeLock().lock(); try { /* write */ } finally { rw.writeLock().unlock(); }"
+  },
+  "asks": [
+   "读写锁场景？",
+   "饥饿？",
+   "升级？",
+   "StampedLock？"
+  ],
+  "followups": [
+   {
+    "q": "缓存？",
+    "a": "典型读多写少。"
+   },
+   {
+    "q": "升级？",
+    "a": "不支持直接升级，需释放读锁再取写锁（窗口期）。"
+   },
+   {
+    "q": "公平？",
+    "a": "构造 true 防写饥饿。"
+   }
+  ],
+  "answer": [
+   "总：读共享写独占，适合读多写少。",
+   "分：防饥饿；谨慎升级。",
+   "实践：本地缓存地图。",
+   "总结：写少才划算。"
+  ],
+  "pitfalls": [
+   "写密集用读写锁。"
+  ]
+ },
+ "p-th4": {
+  "principle": [
+   "ForkJoinPool：工作窃取，把大任务递归拆成子任务，空闲线程偷其他双端队列任务。适合 CPU 密集可拆分（计算、排序）。parallelStream 默认公共池；阻塞 IO 会占满公共池，宜自定义池或避免。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "long sum = ForkJoinPool.commonPool().submit(\n  () -> LongStream.rangeClosed(1, 1_000_000).parallel().sum()).get();\n// 自定义并行度 new ForkJoinPool(n)"
+  },
+  "asks": [
+   "ForkJoin 是什么？",
+   "工作窃取？",
+   "并行流坑？",
+   "虚拟线程关系？"
+  ],
+  "followups": [
+   {
+    "q": "公共池？",
+    "a": "parallelStream 共用，被堵影响全局。"
+   },
+   {
+    "q": "IO？",
+    "a": "不适合放公共池。"
+   },
+   {
+    "q": "阈值？",
+    "a": "任务太小拆分得不偿失。"
+   }
+  ],
+  "answer": [
+   "总：偷功调度做可拆分并行计算。",
+   "分：并行流用公共池要小心；IO 隔离。",
+   "实践：纯计算可并行；IO 用专用执行器。",
+   "总结：拆分粒度与任务类型匹配。"
+  ],
+  "pitfalls": [
+   "并行流里调 HTTP。"
+  ]
+ },
+ "p-th5": {
+  "principle": [
+   "Future：异步结果，get 阻塞取结果。CompletableFuture：可编排 thenApply/thenCompose/thenCombine、异常 exceptionally/handle、超时 orTimeout，默认 ForkJoin 公共池，可指定 Executor。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "CompletableFuture<String> f = CompletableFuture\n  .supplyAsync(() -> callA(), pool)\n  .thenCombine(CompletableFuture.supplyAsync(() -> callB(), pool), String::concat)\n  .orTimeout(2, TimeUnit.SECONDS)\n  .exceptionally(e -> \"fallback\");"
+  },
+  "asks": [
+   "Future 和 CF？",
+   "常用编排？",
+   "线程池？",
+   "异常？"
+  ],
+  "followups": [
+   {
+    "q": "get 坑？",
+    "a": "阻塞；用 then* 链式。"
+   },
+   {
+    "q": "allOf？",
+    "a": "等一组完成。"
+   },
+   {
+    "q": "取消？",
+    "a": "cancel 可能只设标志。"
+   }
+  ],
+  "answer": [
+   "总：CF 是可组合的异步编排。",
+   "分：指定池；处理异常与超时。",
+   "实践：并行调多个下游。",
+   "总结：别嵌套阻塞 get。"
+  ],
+  "pitfalls": [
+   "supplyAsync 不传池打满公共池。"
+  ]
+ },
+ "p-th7": {
+  "principle": [
+   "线程池工作队列缓冲来不及执行的任务。有界队列：线程到 core 后先入队，队满再扩到 max，再满拒绝——背压清晰。无界队列：永远入队，max 形同虚设，易 OOM。SynchronousQueue：不排队，直接移交或建线程。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "new ThreadPoolExecutor(4, 8, 60, SECONDS, new ArrayBlockingQueue<>(200),\n  new ThreadPoolExecutor.CallerRunsPolicy());"
+  },
+  "asks": [
+   "队列在池中作用？",
+   "有界无界？",
+   "和拒绝策略？",
+   "怎么选？"
+  ],
+  "followups": [
+   {
+    "q": "Fixed+无界？",
+    "a": "Executors.newFixed 风险。"
+   },
+   {
+    "q": "监控？",
+    "a": "queue size、拒绝次数。"
+   },
+   {
+    "q": "优先级？",
+    "a": "PriorityBlockingQueue 慎用。"
+   }
+  ],
+  "answer": [
+   "总：队列决定何时扩容与拒绝。",
+   "分：有界+拒绝策略生产标配。",
+   "实践：不用 Executors 默认无界。",
+   "总结：背压靠有界队列。"
+  ],
+  "pitfalls": [
+   "无界当缓冲。"
+  ]
  }
 }

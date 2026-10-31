@@ -206,5 +206,195 @@
    "说运行时完全拿不到任何泛型信息（签名上可以）。",
    "混淆 extends 和 super 的读写能力。"
   ]
+ },
+ "p-b4": {
+  "principle": [
+   "浅拷贝：复制对象，引用字段仍指向同一对象。深拷贝：递归复制引用图。Cloneable/clone 易错（浅拷贝默认、检查异常、final 字段）；更推荐拷贝构造、手工、序列化（注意性能与Transient）、或 record/不可变设计减少需求。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "class Node { int v; Node next;\n  Node deep() { Node n=new Node(); n.v=v; n.next=next==null?null:next.deep(); return n; }\n}"
+  },
+  "asks": [
+   "深拷贝浅拷贝？",
+   "Cloneable 坑？",
+   "怎么做深拷贝？",
+   "不可变？"
+  ],
+  "followups": [
+   {
+    "q": "坑？",
+    "a": "默认浅拷贝；需每个类正确实现。"
+   },
+   {
+    "q": "序列化？",
+    "a": "简单但慢，要 Serializable。"
+   },
+   {
+    "q": "循环引用？",
+    "a": "注意图拷贝标记。"
+   }
+  ],
+  "answer": [
+   "总：浅共享引用，深递归复制。",
+   "分：少用 clone；偏好不可变与拷贝构造。",
+   "实践：【结合你的项目】DTO 转换而非 clone。",
+   "总结：能不可变就不拷贝。"
+  ],
+  "pitfalls": [
+   "直接 clone 当深拷贝。"
+  ]
+ },
+ "p-b6": {
+  "principle": [
+   "try-with-resources：资源实现 AutoCloseable/Closeable，try 结束（正常或异常）自动 close。编译器生成 finally，多资源逆序关闭；close 异常通过 addSuppressed 挂到主异常上，不会丢失。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "try (InputStream in = Files.newInputStream(p);\n     OutputStream out = Files.newOutputStream(q)) {\n  in.transferTo(out);\n} // 先关 out 再关 in；异常带 suppressed"
+  },
+  "asks": [
+   "try-with-resources 原理？",
+   "抑制异常？",
+   "必须实现什么？",
+   "多个资源顺序？"
+  ],
+  "followups": [
+   {
+    "q": "抑？",
+    "a": "主异常 addSuppressed(close异常)。"
+   },
+   {
+    "q": "手动 finally？",
+    "a": "易丢异常或关漏。"
+   },
+   {
+    "q": "返回？",
+    "a": "try 返回前会 close。"
+   }
+  ],
+  "answer": [
+   "总：语法糖生成 finally close，抑异常不丢。",
+   "分：AutoCloseable；多资源逆序。",
+   "实践：连接、流、HTTP 客户端一律用。",
+   "总结：别手写 close。"
+  ],
+  "pitfalls": [
+   "空 catch 吞 close 异常。"
+  ]
+ },
+ "p-b8": {
+  "principle": [
+   "反射：运行时获取类信息、构造实例、调方法、访字段；Spring、序列化、注解处理大量用。代价：慢（可缓存 Method）、突破封装、安全模块限制、难优化（JIT）。能不用则不用在业务热路径。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Method m = User.class.getDeclaredMethod(\"getId\");\nm.setAccessible(true); // 模块系统下可能失败\nObject id = m.invoke(user);"
+  },
+  "asks": [
+   "反射能做什么？",
+   "代价？",
+   "Spring 为何用？",
+   "替代？"
+  ],
+  "followups": [
+   {
+    "q": "替代？",
+    "a": "方法句柄、编译期代码生成、接口多态。"
+   },
+   {
+    "q": "setAccessible？",
+    "a": "JPMS 可能禁止。"
+   },
+   {
+    "q": "性能？",
+    "a": "热点缓存 Method/Constructor。"
+   }
+  ],
+  "answer": [
+   "总：强大但慢且破封装，框架用业务慎用。",
+   "分：热路径避免；注意模块限制。",
+   "实践：业务偏好接口注入。",
+   "总结：反射是工具不是默认。"
+  ],
+  "pitfalls": [
+   "业务里到处反射。"
+  ]
+ },
+ "p-b9": {
+  "principle": [
+   "注解是元数据：@Retention(SOURCE/CLASS/RUNTIME) 决定存活阶段；@Target 限制位置；@Documented/@Inherited。自定义后运行时反射读，或编译期 APT 生成代码（如 MapStruct、Dagger）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\npublic @interface RateLimit { int qps() default 10; }\n\nRateLimit rl = method.getAnnotation(RateLimit.class);"
+  },
+  "asks": [
+   "注解是什么？",
+   "怎么自定义？",
+   "Retention？",
+   "APT？"
+  ],
+  "followups": [
+   {
+    "q": "SOURCE？",
+    "a": "如 @Override 编译后丢。"
+   },
+   {
+    "q": "RUNTIME？",
+    "a": "Spring @Transactional 等。"
+   },
+   {
+    "q": "参数？",
+    "a": "只能基本类型/Class/枚举/注解数组。"
+   }
+  ],
+  "answer": [
+   "总：元数据 + 保留策略 + 处理器。",
+   "分：运行时反射或编译期生成。",
+   "实践：【结合你的项目】自定义权限/限流注解。",
+   "总结：注解本身不做逻辑。"
+  ],
+  "pitfalls": [
+   "以为注解能直接执行代码。"
+  ]
+ },
+ "p-b10": {
+  "principle": [
+   "String 不可变：内部 byte[]/coder 且类 final，无改字符 API；好处：线程安全、常量池共享、hash 缓存可作可靠 key。拼接循环用 StringBuilder；+ 在编译期可能优化但循环仍可能多次建对象。常量池：字面量入池，intern 可入池（慎用）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "String a = \"hi\"; String b = \"hi\"; // 同池\nString c = new String(\"hi\");      // 堆中另对象\nassert a == b && a != c && a.equals(c);\nString s = new StringBuilder().append(\"a\").append(\"b\").toString();"
+  },
+  "asks": [
+   "为何不可变？",
+   "常量池？",
+   "拼接？",
+   "intern？"
+  ],
+  "followups": [
+   {
+    "q": "安全？",
+    "a": "作锁或 key 不会被改。"
+   },
+   {
+    "q": "新 String？",
+    "a": "一般不必要。"
+   },
+   {
+    "q": "Builder 线程安全？",
+    "a": "不，StringBuffer 同步。"
+   }
+  ],
+  "answer": [
+   "总：不可变利安全与池化，拼接用 Builder。",
+   "分：常量池共享字面量；忌滥用 intern。",
+   "实践：日志与循环拼接查 Builder。",
+   "总结：理解不可变才能用好 String。"
+  ],
+  "pitfalls": [
+   "循环里用 + 大量拼接。"
+  ]
  }
 }

@@ -213,5 +213,157 @@
    "只重写 equals。",
    "用 == 比包装类。"
   ]
+ },
+ "p-c1": {
+  "principle": [
+   "HashSet 内部是 HashMap，元素作 key，固定 dummy value；无序、唯一、允许一个 null；复杂度均摊 O(1)。TreeSet 基于 TreeMap 红黑树，有序（自然序或 Comparator），O(log n)；元素需可比且 compareTo 与 equals 一致。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Set<String> h = new HashSet<>();\nSet<Integer> t = new TreeSet<>(); // 有序\n// LinkedHashSet 保持插入序"
+  },
+  "asks": [
+   "HashSet 底层？",
+   "和 TreeSet？",
+   "null？",
+   "同步？"
+  ],
+  "followups": [
+   {
+    "q": "equals 与 compareTo？",
+    "a": "不一致会导致 TreeSet 行为怪。"
+   },
+   {
+    "q": "线程安全？",
+    "a": "ConcurrentHashMap.newKeySet。"
+   },
+   {
+    "q": "用途？",
+    "a": "去重 Hash；要排序 Tree。"
+   }
+  ],
+  "answer": [
+   "总：HashSet→HashMap，TreeSet 有序树。",
+   "分：快 vs 有序；契约一致。",
+   "实践：去重默认 HashSet。",
+   "总结：要序才用 Tree。"
+  ],
+  "pitfalls": [
+   "TreeSet 元素不可比还不传 Comparator。"
+  ]
+ },
+ "p-c2": {
+  "principle": [
+   "LinkedHashMap：HashMap + 双向链表保持插入序或访问序（accessOrder=true）。重写 removeEldestEntry 可做简易 LRU。遍历有序；开销略高于 HashMap。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Map<K,V> lru = new LinkedHashMap<>(16, 0.75f, true) {\n  protected boolean removeEldestEntry(Map.Entry<K,V> e) {\n    return size() > 100;\n  }\n};"
+  },
+  "asks": [
+   "LinkedHashMap 能做什么？",
+   "LRU？",
+   "accessOrder？",
+   "和 LRU Cache？"
+  ],
+  "followups": [
+   {
+    "q": "并发？",
+    "a": "不安全；用 Caffeine 等。"
+   },
+   {
+    "q": "插入序默认？",
+    "a": "是。"
+   },
+   {
+    "q": "应用？",
+    "a": "本地小缓存、保持顺序 JSON。"
+   }
+  ],
+  "answer": [
+   "总：有序 HashMap，可做 LRU。",
+   "分：accessOrder + removeEldestEntry。",
+   "实践：简单 LRU 或用 Caffeine。",
+   "总结：轻量有序映射。"
+  ],
+  "pitfalls": [
+   "高并发用 LinkedHashMap 当缓存。"
+  ]
+ },
+ "p-c3": {
+  "principle": [
+   "PriorityQueue：堆（默认小顶堆），offer/poll O(log n)，peek O(1)；不能 null；非线程安全；迭代无序。大顶堆传反向 Comparator。线程安全用 PriorityBlockingQueue。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "PriorityQueue<Integer> pq = new PriorityQueue<>(); // 小顶\nPriorityQueue<Integer> max = new PriorityQueue<>(Comparator.reverseOrder());\npq.offer(3); pq.offer(1); pq.poll(); // 1"
+  },
+  "asks": [
+   "PriorityQueue 特点？",
+   "能 null 吗？",
+   "有序遍历？",
+   "阻塞版？"
+  ],
+  "followups": [
+   {
+    "q": "遍历？",
+    "a": "不按优先级，要靠反复 poll。"
+   },
+   {
+    "q": "相同优先级？",
+    "a": "不保证稳定顺序。"
+   },
+   {
+    "q": "TopK？",
+    "a": "维护大小为 K 的堆。"
+   }
+  ],
+  "answer": [
+   "总：堆实现的优先级队列。",
+   "分：默认小顶；无 null；非并发。",
+   "实践：TopK、任务调度。",
+   "总结：要优先级用堆不是排序 List。"
+  ],
+  "pitfalls": [
+   "以为 iterator 按优先级。"
+  ]
+ },
+ "p-c5": {
+  "principle": [
+   "BlockingQueue：ArrayBlockingQueue 有界数组；LinkedBlockingQueue 可选界链表；SynchronousQueue 不存储直接移交；DelayQueue 延时；PriorityBlockingQueue 优先级。用于生产者-消费者与线程池工作队列（队列种类影响何时创建非核心线程/拒绝）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "BlockingQueue<Runnable> q = new ArrayBlockingQueue<>(200);\nq.put(task);           // 满则阻塞\nRunnable t = q.take(); // 空则阻塞"
+  },
+  "asks": [
+   "常见 BlockingQueue？",
+   "线程池怎么选队列？",
+   "SynchronousQueue？",
+   "有界意义？"
+  ],
+  "followups": [
+   {
+    "q": "CachedThreadPool？",
+    "a": "SynchronousQueue，任务直接移交线程。"
+   },
+   {
+    "q": "Fixed？",
+    "a": "无界 Linked 有 OOM 风险。"
+   },
+   {
+    "q": "put vs offer？",
+    "a": "put 阻塞，offer 可超时/失败。"
+   }
+  ],
+  "answer": [
+   "总：阻塞队列支撑生产消费与线程池。",
+   "分：有界防 OOM；种类影响池行为。",
+   "实践：自建池用有界 Array+拒绝策略。",
+   "总结：队列是背压点。"
+  ],
+  "pitfalls": [
+   "无界队列不监控。"
+  ]
  }
 }
