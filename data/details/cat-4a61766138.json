@@ -1,0 +1,46 @@
+{
+ "p2-46": {
+  "principle": [
+   "Lambda 表达式和匿名内部类都能实现函数式接口，但有本质区别：",
+   "① 编译与实现：匿名内部类编译后生成独立的 class 文件（如 Outer$1.class），每次执行 new 都会创建对象；Lambda 不生成独立的类文件，编译为私有静态（或实例）方法加 invokedynamic 指令，运行时首次调用时由 LambdaMetafactory 动态生成实现类，不捕获变量的 Lambda 通常复用同一个实例，性能和内存开销更小。",
+   "② this 含义：匿名内部类中的 this 指向匿名类对象本身；Lambda 中的 this 指向外部类的实例（Lambda 不引入新的作用域）。",
+   "③ 变量捕获：两者都只能捕获 effectively final 的局部变量（Java 8 起不需要显式 final），因为捕获的是值的拷贝，若允许修改会造成不一致和并发问题。Lambda 中不能声明与外部局部变量同名的变量，匿名内部类可以遮蔽。",
+   "④ 适用范围：Lambda 只能实现函数式接口（只有一个抽象方法）；匿名内部类可以继承抽象类、实现多方法接口，也可以有自己的字段和状态。",
+   "方法引用（String::length、System.out::println）是 Lambda 的简写形式。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class LambdaDemo {\n    private final String name = \"outer\";\n\n    void run() {\n        int base = 10;                         // effectively final\n        Runnable anon = new Runnable() {\n            private final String name = \"anon\";\n            @Override public void run() {\n                System.out.println(this.name);  // anon（this 是匿名类对象）\n            }\n        };\n        Runnable lambda = () -> System.out.println(this.name + base); // outer10（this 是外部对象）\n        // base++;                             // ❌ 编译错误：被 Lambda 捕获的变量必须是 effectively final\n        anon.run();\n        lambda.run();\n\n        Function<String, Integer> len = String::length;           // 方法引用\n        System.out.println(len.apply(\"hello\"));                   // 5\n    }\n    public static void main(String[] args) { new LambdaDemo().run(); }\n}\n// javap -c -p LambdaDemo.class 可看到 invokedynamic 和 lambda$run$0 私有方法"
+  },
+  "asks": [
+   "Lambda 和匿名内部类有什么区别？",
+   "Lambda 底层是怎么实现的？",
+   "为什么 Lambda 中使用的局部变量必须是 effectively final？",
+   "什么是函数式接口？"
+  ],
+  "followups": [
+   {
+    "q": "为什么要 effectively final？",
+    "a": "Lambda 捕获的是局部变量的值拷贝，局部变量在栈上随方法结束而消失；允许修改会导致拷贝与原值不一致，也会引入并发问题。"
+   },
+   {
+    "q": "invokedynamic 有什么好处？",
+    "a": "把实现策略推迟到运行时，JVM 可以优化（如复用无捕获的实例），也避免生成大量类文件。"
+   },
+   {
+    "q": "Lambda 能修改外部对象的字段吗？",
+    "a": "可以，限制的只是局部变量的引用不能被重新赋值；修改成员变量或对象内部状态是允许的（但要注意线程安全）。"
+   }
+  ],
+  "answer": [
+   "总：Lambda 是函数式接口的简洁实现，底层通过 invokedynamic，语义上不引入新作用域。",
+   "分：匿名内部类生成独立类文件、this 指向自身、可实现多方法接口或抽象类；Lambda 编译为私有方法加 invokedynamic，运行时生成实现，this 指向外部类，只能实现函数式接口；两者都只能捕获 effectively final 的局部变量。",
+   "实践：【结合你的项目】Stream 处理、线程池提交任务、策略注册表（Map<String, Function>）中大量使用 Lambda 和方法引用。",
+   "总结：能用 Lambda 就用 Lambda，需要状态或多方法时用类。"
+  ],
+  "pitfalls": [
+   "说 Lambda 就是匿名内部类的语法糖（实现机制不同）。",
+   "搞错 this 指向。"
+  ]
+ }
+}

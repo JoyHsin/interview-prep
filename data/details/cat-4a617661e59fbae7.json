@@ -1,0 +1,210 @@
+{
+ "p-b1": {
+  "principle": [
+   "封装：把数据和操作数据的方法组织在类中，用访问修饰符（private、默认、protected、public）隐藏内部实现，只暴露必要的接口。好处是降低耦合、保护数据不被随意修改（例如通过方法校验参数）、便于修改内部实现而不影响调用方。",
+   "继承：子类通过 extends 复用父类的属性和方法，并可以扩展或重写。Java 类只支持单继承，接口可以多实现。继承是“is-a”关系，耦合较强，父类修改会影响所有子类，因此推荐“组合优于继承”。",
+   "多态：同一个引用类型调用同一个方法，由于实际对象不同而表现不同。条件：继承或实现、方法重写、父类引用指向子类对象。原理是运行时动态绑定：JVM 通过对象实际类型的虚方法表（vtable）找到要执行的方法（invokevirtual / invokeinterface）。多态让代码面向接口编程，新增实现无需修改调用方，符合开闭原则；策略模式、Spring 依赖注入都是多态的应用。",
+   "注意：字段和静态方法没有多态（按引用的静态类型决定）；private、static、final 方法不能被重写。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "interface PayChannel { String pay(long amountFen); }           // 面向接口\n\nclass WechatPay implements PayChannel {\n    public String pay(long amountFen) { return \"微信支付 \" + amountFen; }\n}\nclass AliPay implements PayChannel {\n    public String pay(long amountFen) { return \"支付宝支付 \" + amountFen; }\n}\n\nclass Account {                                                 // 封装：余额只能通过方法修改\n    private long balance;\n    public void deposit(long amount) {\n        if (amount <= 0) throw new IllegalArgumentException(\"金额必须为正\");\n        balance += amount;\n    }\n    public long getBalance() { return balance; }\n}\n\npublic class Demo {\n    public static void main(String[] args) {\n        Map<String, PayChannel> channels = Map.of(\"wx\", new WechatPay(), \"ali\", new AliPay());\n        System.out.println(channels.get(\"ali\").pay(100));        // 多态：运行时决定实现\n    }\n}"
+  },
+  "asks": [
+   "面向对象的三大特性是什么？",
+   "多态是怎么实现的？",
+   "为什么说组合优于继承？",
+   "你在项目中怎么用多态？"
+  ],
+  "followups": [
+   {
+    "q": "多态的底层原理？",
+    "a": "运行时根据对象实际类型查虚方法表，找到具体实现，称为动态绑定。"
+   },
+   {
+    "q": "重载算多态吗？",
+    "a": "重载是编译期根据参数决定，常被称为编译时多态；通常说的多态指运行时多态（重写）。"
+   },
+   {
+    "q": "组合优于继承的原因？",
+    "a": "继承强耦合、破坏封装，父类变化会影响子类；组合更灵活，可以运行时替换。"
+   }
+  ],
+  "answer": [
+   "总：封装隐藏细节，继承复用代码，多态让同一接口有不同实现。",
+   "分：封装通过访问控制和方法保护数据；继承是 is-a 关系，单继承，耦合较强，推荐组合；多态需要继承或实现、重写、父类引用指向子类对象，运行时通过虚方法表动态绑定。",
+   "实践：【结合你的项目】支付渠道、消息通知用接口加多个实现，通过 Spring 注入 Map 按类型选择，新增渠道不改原有代码。",
+   "总结：面向接口编程是三大特性的落地方式。"
+  ],
+  "pitfalls": [
+   "说字段也有多态。",
+   "只背定义，没有项目例子。"
+  ]
+ },
+ "p-b2": {
+  "principle": [
+   "重载（Overload）：同一个类中方法名相同、参数列表不同（类型、个数、顺序），与返回类型和访问修饰符无关。调用哪个方法在编译期根据参数的静态类型确定（静态分派）。",
+   "重写（Override）：子类重新实现父类（或接口）中的方法，方法名和参数列表必须相同。规则可以记为“两同两小一大”：方法名、参数列表相同；返回类型可以是父类返回类型的子类（协变返回）、抛出的检查异常不能更多更宽；访问权限不能更低。调用哪个实现在运行期根据对象实际类型确定（动态分派）。",
+   "不能重写的情况：private 方法（子类不可见，同名方法是新方法）、static 方法（同名静态方法是隐藏而不是重写）、final 方法；构造方法不能重写但可以重载。建议重写时加 @Override，让编译器检查签名。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "class Printer {\n    void print(int x)    { System.out.println(\"int \" + x); }\n    void print(long x)   { System.out.println(\"long \" + x); }     // 重载\n    void print(Object o) { System.out.println(\"Object \" + o); }\n\n    Number value() { return 1; }\n}\n\nclass ColorPrinter extends Printer {\n    @Override\n    void print(int x) { System.out.println(\"彩色 int \" + x); }   // 重写\n\n    @Override\n    Integer value() { return 2; }                                 // 协变返回类型\n}\n\npublic class Demo {\n    public static void main(String[] args) {\n        Printer p = new ColorPrinter();\n        p.print(1);          // 彩色 int 1（运行期按实际类型）\n        p.print(1L);         // long 1（编译期按参数类型选择重载）\n        Object o = \"hi\";\n        p.print(o);          // Object hi（按静态类型 Object 选择）\n    }\n}"
+  },
+  "asks": [
+   "重载和重写有什么区别？",
+   "重写有哪些规则？",
+   "静态方法能被重写吗？",
+   "返回类型不同能构成重载吗？"
+  ],
+  "followups": [
+   {
+    "q": "只有返回类型不同能重载吗？",
+    "a": "不能，编译器无法根据返回类型区分调用。"
+   },
+   {
+    "q": "静态方法能重写吗？",
+    "a": "不能，子类同名静态方法会隐藏父类方法，调用取决于引用的静态类型。"
+   },
+   {
+    "q": "重载选择的优先级？",
+    "a": "精确匹配 → 基本类型自动拓宽 → 装箱 → 可变参数。"
+   }
+  ],
+  "answer": [
+   "总：重载是编译期的同名不同参，重写是运行期的子类覆盖。",
+   "分：重载在同一类中，参数列表不同，与返回类型无关，编译期静态分派；重写在父子类之间，签名相同，返回类型可协变、异常不能扩大、访问权限不能缩小，运行期动态分派；private、static、final 方法不能重写。",
+   "实践：【结合你的项目】工具类提供多个重载方法适配不同参数；业务中通过重写模板方法定制流程。",
+   "总结：记住“编译期 vs 运行期”这一核心区别。"
+  ],
+  "pitfalls": [
+   "说返回类型不同可以重载。",
+   "说静态方法可以重写。"
+  ]
+ },
+ "p-b3": {
+  "principle": [
+   "== 对基本类型比较值，对引用类型比较是否为同一个对象（内存地址）。equals 是 Object 的方法，默认实现就是 ==，String、Integer 等类重写为比较内容。",
+   "hashCode 契约（Object 文档规定）：① 同一对象在 equals 用到的信息未改变时，多次调用 hashCode 结果一致；② equals 相等的两个对象 hashCode 必须相等；③ hashCode 相等的对象 equals 不一定相等（哈希冲突）。",
+   "为什么重写 equals 必须重写 hashCode：HashMap、HashSet 先用 hashCode 定位桶，再用 equals 比较。如果只重写 equals，两个“相等”的对象 hashCode 不同会落到不同的桶，导致 HashSet 中出现重复元素，HashMap 用等价的 key 取不到值。",
+   "其他坑：Integer 缓存 -128 到 127，在这个范围内 == 比较为 true，超出则为 false，所以包装类必须用 equals；作为 HashMap key 的对象在放入后修改参与 hashCode 的字段会导致取不到；Java 16+ 的 record 自动生成基于所有组件的 equals 和 hashCode。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.*;\n\npublic class EqDemo {\n    static final class User {\n        private final String id; private final String name;\n        User(String id, String name) { this.id = id; this.name = name; }\n        @Override public boolean equals(Object o) {\n            if (this == o) return true;\n            if (!(o instanceof User u)) return false;\n            return id.equals(u.id);\n        }\n        @Override public int hashCode() { return Objects.hash(id); }  // 与 equals 使用相同字段\n    }\n    record Point(int x, int y) {}                                   // 自动生成 equals/hashCode\n\n    public static void main(String[] args) {\n        Integer a = 127, b = 127, c = 128, d = 128;\n        System.out.println(a == b);          // true（缓存）\n        System.out.println(c == d);          // false\n        System.out.println(c.equals(d));     // true\n\n        Set<User> set = new HashSet<>(List.of(new User(\"1\", \"张三\")));\n        System.out.println(set.contains(new User(\"1\", \"张三 改名\")));   // true\n        System.out.println(new Point(1, 2).equals(new Point(1, 2)));   // true\n    }\n}"
+  },
+  "asks": [
+   "== 和 equals 的区别？",
+   "为什么重写 equals 必须重写 hashCode？",
+   "hashCode 相等 equals 一定相等吗？",
+   "Integer 用 == 比较会有什么问题？"
+  ],
+  "followups": [
+   {
+    "q": "只重写 hashCode 不重写 equals？",
+    "a": "两个对象落在同一个桶，但 equals 仍按地址比较，依然被认为不同。"
+   },
+   {
+    "q": "String 的 equals 怎么实现？",
+    "a": "先比较引用，再比较长度和每个字符（JDK 9+ 基于 byte 数组和编码）。"
+   },
+   {
+    "q": "可变对象做 HashMap 的 key 有什么问题？",
+    "a": "修改了参与 hashCode 的字段后，对象所在桶与新 hash 不一致，get 不到也 remove 不掉。"
+   }
+  ],
+  "answer": [
+   "总：== 比地址（基本类型比值），equals 比语义，hashCode 必须与 equals 一致。",
+   "分：Object 默认 equals 就是 ==；契约要求 equals 相等则 hashCode 相等；哈希集合先按 hashCode 找桶再用 equals，不一致会导致重复或查不到；包装类比较用 equals，注意 Integer 缓存。",
+   "实践：【结合你的项目】实体作为 Map 的 key 或放入 Set 去重时，我按业务主键重写两者，或直接使用 record。",
+   "总结：两者成对重写，字段保持一致且最好不可变。"
+  ],
+  "pitfalls": [
+   "用 == 比较包装类或字符串。",
+   "只重写 equals。"
+  ]
+ },
+ "p-b5": {
+  "principle": [
+   "Throwable 是所有异常的根，分两支：",
+   "Error：JVM 层面的严重问题，如 OutOfMemoryError、StackOverflowError、NoClassDefFoundError，程序通常无法恢复，一般不捕获（可以在顶层记录日志）。",
+   "Exception：程序可以处理的异常，又分为：① 受检异常（Checked）：Exception 的非 RuntimeException 子类，如 IOException、SQLException，编译器强制要求 try-catch 或在方法签名中 throws 声明，表示调用方应当预期并处理的外部问题；② 非受检异常（Unchecked）：RuntimeException 及其子类，如 NullPointerException、IllegalArgumentException、IndexOutOfBoundsException，通常是编程错误，不强制处理。",
+   "最佳实践：不要吞异常（空 catch）；捕获具体异常而不是 Exception/Throwable；包装异常时保留原始 cause；资源使用 try-with-resources 自动关闭（实现 AutoCloseable）；业务异常一般定义为 RuntimeException 子类，配合 Spring 的 @RestControllerAdvice 统一处理并返回错误码；finally 中不要 return（会覆盖异常）；Spring 事务默认只对非受检异常回滚。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class BizException extends RuntimeException {\n    private final String code;\n    public BizException(String code, String msg) { super(msg); this.code = code; }\n    public String getCode() { return code; }\n}\n\npublic String readConfig(Path path) {\n    try (BufferedReader r = Files.newBufferedReader(path)) {    // 自动关闭资源\n        return r.readLine();\n    } catch (NoSuchFileException e) {\n        throw new BizException(\"CONFIG_MISSING\", \"配置文件不存在: \" + path);\n    } catch (IOException e) {\n        throw new UncheckedIOException(\"读取配置失败\", e);       // 保留原始异常\n    }\n}\n\n@RestControllerAdvice\nclass GlobalHandler {\n    @ExceptionHandler(BizException.class)\n    ResponseEntity<Map<String, String>> biz(BizException e) {\n        return ResponseEntity.badRequest().body(Map.of(\"code\", e.getCode(), \"msg\", e.getMessage()));\n    }\n    @ExceptionHandler(Exception.class)\n    ResponseEntity<Map<String, String>> other(Exception e) {\n        log.error(\"unexpected\", e);\n        return ResponseEntity.internalServerError().body(Map.of(\"code\", \"SYS_ERROR\", \"msg\", \"系统繁忙\"));\n    }\n}"
+  },
+  "asks": [
+   "Java 异常体系是怎样的？",
+   "受检异常和非受检异常的区别？",
+   "Error 和 Exception 的区别？",
+   "项目中怎么做统一异常处理？"
+  ],
+  "followups": [
+   {
+    "q": "finally 一定会执行吗？",
+    "a": "绝大多数情况会；System.exit()、JVM 崩溃、线程被杀死时不会。finally 中 return 会覆盖 try 中的返回值和异常，应避免。"
+   },
+   {
+    "q": "NoClassDefFoundError 和 ClassNotFoundException 区别？",
+    "a": "前者是 Error，编译时存在但运行时加载失败；后者是受检异常，通常是反射按名称加载找不到类。"
+   },
+   {
+    "q": "为什么业务异常多用 RuntimeException？",
+    "a": "避免层层声明 throws，配合统一异常处理；同时与 Spring 事务默认回滚规则一致。"
+   }
+  ],
+  "answer": [
+   "总：Throwable 分 Error 和 Exception，Exception 又分受检和非受检。",
+   "分：Error 是 JVM 严重问题一般不处理；受检异常必须处理或声明，代表可预期的外部问题；运行时异常多为编程错误。实践中不吞异常、捕获具体类型、保留 cause、用 try-with-resources、业务异常继承 RuntimeException 并统一处理。",
+   "实践：【结合你的项目】我们定义了带错误码的 BizException，通过 @RestControllerAdvice 统一返回，并把未知异常打日志告警。",
+   "总结：异常要可追踪、可分类、不丢失。"
+  ],
+  "pitfalls": [
+   "空 catch 吞异常。",
+   "finally 中 return。"
+  ]
+ },
+ "p-b7": {
+  "principle": [
+   "泛型提供编译期类型检查和自动类型转换，让集合等代码类型安全、可复用。Java 的泛型通过类型擦除实现：编译器检查类型后，把类型参数擦除为其上界（无界时为 Object），在需要的地方插入强制类型转换；为保持多态，必要时生成桥接方法。所以运行时 List<String> 和 List<Integer> 是同一个 Class。",
+   "擦除带来的限制：① 不能 new T()、new T[]（运行时不知道 T）；② 不能 instanceof List<String>（只能 instanceof List<?>）；③ 不能用基本类型作类型参数（只能 Integer 等包装类）；④ 静态字段不能使用类的类型参数；⑤ 同一个类中 void f(List<String>) 和 void f(List<Integer>) 擦除后签名相同，不能重载。需要运行时类型时可以传入 Class<T>，或使用 TypeReference 等通过匿名子类保留父类泛型信息（反射可读取类、字段、方法签名上的泛型声明）。",
+   "通配符与 PECS：? extends T 表示 T 或其子类，只能读出 T，不能写入（null 除外），适合“生产者”；? super T 表示 T 或其父类，可以写入 T，读出只能当 Object，适合“消费者”。即 Producer Extends, Consumer Super，例如 Collections.copy(List<? super T> dest, List<? extends T> src)。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.*;\n\npublic class GenericDemo {\n    // 有界类型参数：擦除后为 Comparable\n    static <T extends Comparable<T>> T max(List<? extends T> list) {\n        T best = list.get(0);\n        for (T t : list) if (t.compareTo(best) > 0) best = t;\n        return best;\n    }\n\n    // PECS：src 生产数据用 extends，dest 消费数据用 super\n    static <T> void copy(List<? super T> dest, List<? extends T> src) {\n        for (T t : src) dest.add(t);\n    }\n\n    // 需要运行时类型时传入 Class\n    static <T> T create(Class<T> clazz) throws Exception {\n        return clazz.getDeclaredConstructor().newInstance();\n    }\n\n    public static void main(String[] args) throws Exception {\n        System.out.println(max(List.of(3, 9, 5)));                          // 9\n        List<Number> nums = new ArrayList<>();\n        copy(nums, List.of(1, 2));                                          // Integer → Number\n        System.out.println(new ArrayList<String>().getClass() == new ArrayList<Integer>().getClass()); // true\n        StringBuilder sb = create(StringBuilder.class);\n    }\n}"
+  },
+  "asks": [
+   "什么是泛型？什么是类型擦除？",
+   "泛型有哪些限制？为什么不能 new T()？",
+   "? extends 和 ? super 的区别？什么是 PECS？",
+   "运行时怎么获取泛型类型？"
+  ],
+  "followups": [
+   {
+    "q": "运行时怎么拿到泛型类型？",
+    "a": "对象实例上拿不到；但类、字段、方法签名中声明的泛型可通过反射（getGenericSuperclass 等）获取，TypeReference 就是利用匿名子类保存父类泛型。"
+   },
+   {
+    "q": "什么是桥接方法？",
+    "a": "子类重写泛型父类方法时，擦除后签名不同，编译器生成一个桥接方法转调，保证多态正确。"
+   },
+   {
+    "q": "为什么 List<Object> 不能接收 List<String>？",
+    "a": "泛型不协变，否则可以往 List<String> 中写入非 String 对象；需要时用 List<?> 或 List<? extends Object>。"
+   }
+  ],
+  "answer": [
+   "总：泛型提供编译期类型安全，运行时通过擦除实现。",
+   "分：编译后类型参数擦除为上界并插入强转，所以不能 new T、不能 instanceof 具体泛型、不能用基本类型、擦除后相同签名不能重载；需要运行时类型就传 Class 或用 TypeReference；通配符遵循 PECS。",
+   "实践：【结合你的项目】统一返回体 Result<T>、通用分页 Page<T>；JSON 反序列化泛型集合时用 TypeReference。",
+   "总结：理解擦除就能理解泛型的各种限制。"
+  ],
+  "pitfalls": [
+   "说运行时完全拿不到任何泛型信息（签名上可以）。",
+   "混淆 extends 和 super 的读写能力。"
+  ]
+ }
+}

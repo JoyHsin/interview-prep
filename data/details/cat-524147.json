@@ -51,7 +51,7 @@
   ],
   "example": {
    "lang": "java",
-   "code": "// Spring AI：按 token 切分（参数依版本可通过 builder 设置）\nTokenTextSplitter splitter = TokenTextSplitter.builder()\n        .withChunkSize(500)          // 目标块大小（token）\n        .withMinChunkSizeChars(200)\n        .build();\nList<Document> chunks = splitter.apply(docs);\n\n// 为每个块补充上下文，提升检索效果\nfor (Document c : chunks) {\n    String title = (String) c.getMetadata().getOrDefault(\"title\", \"\");\n    c.getMetadata().put(\"section_path\", title);\n}\n// 注：TokenTextSplitter 的 builder 方法名在不同 1.x 版本略有差异，以所用版本的 API 为准"
+   "code": "// Spring AI：按 token 切分（参数依版本可通过 builder 设置）\nTokenTextSplitter splitter = TokenTextSplitter.builder()\n        .withChunkSize(500)          // 目标块大小（token）\n        .withMinChunkSizeChars(200)\n        .build();\nList<Document> chunks = splitter.apply(docs);\n\n// 为每个块补充上下文，提升检索效果\nfor (Document c : chunks) {\n    String title = (String) c.getMetadata().getOrDefault(\"title\", \"\");\n    c.getMetadata().put(\"section_path\", title);\n}"
   },
   "asks": [
    "RAG 分块策略怎么选？",

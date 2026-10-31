@@ -1,0 +1,174 @@
+{
+ "p-io1": {
+  "principle": [
+   "三种模型的区别在于“等待数据就绪”和“数据拷贝”两个阶段是否阻塞线程：",
+   "BIO（同步阻塞）：每次 read/accept 都会阻塞线程，直到数据就绪并拷贝完成。服务端通常一个连接一个线程，连接数多时线程数暴涨，上下文切换和内存开销大。编程简单，适合连接数少的场景。",
+   "NIO（同步非阻塞 + IO 多路复用）：Java NIO 中 Channel 可设为非阻塞，配合 Selector，一个线程通过 select 同时监听多个连接的事件（连接、可读、可写），只有就绪的连接才去处理，因此少量线程即可支撑大量连接。底层在 Linux 上使用 epoll。它仍是“同步”的，因为数据从内核拷贝到用户空间时线程需要自己执行读操作。",
+   "AIO（异步非阻塞，NIO.2）：发起读写后立即返回，操作系统完成数据就绪和拷贝后通过回调（CompletionHandler）或 Future 通知。Windows 上有 IOCP 支持；在 Linux 上 JDK 的实现基于 epoll 模拟，优势不明显，所以 Netty 等主流框架基于 NIO。",
+   "类比：BIO 是在柜台前一直等；NIO 是拿号后由叫号屏（Selector）告诉你哪个窗口好了，你再去办；AIO 是办好后直接送到家。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// BIO：一个连接一个线程\ntry (ServerSocket server = new ServerSocket(8080)) {\n    while (true) {\n        Socket s = server.accept();                       // 阻塞\n        executor.submit(() -> handle(s));                 // 每个连接占一个线程\n    }\n}\n\n// NIO：一个线程管理多个连接\nSelector selector = Selector.open();\nServerSocketChannel ssc = ServerSocketChannel.open();\nssc.bind(new InetSocketAddress(8081)).configureBlocking(false);\nssc.register(selector, SelectionKey.OP_ACCEPT);\nwhile (true) {\n    selector.select();                                    // 阻塞直到有就绪事件\n    Iterator<SelectionKey> it = selector.selectedKeys().iterator();\n    while (it.hasNext()) {\n        SelectionKey key = it.next(); it.remove();\n        if (key.isAcceptable()) {\n            SocketChannel sc = ssc.accept();\n            sc.configureBlocking(false).register(selector, SelectionKey.OP_READ);\n        } else if (key.isReadable()) {\n            ByteBuffer buf = ByteBuffer.allocate(1024);\n            if (((SocketChannel) key.channel()).read(buf) < 0) key.channel().close();\n        }\n    }\n}"
+  },
+  "asks": [
+   "BIO、NIO、AIO 有什么区别？",
+   "什么是 IO 多路复用？",
+   "为什么 Netty 用 NIO 而不是 AIO？",
+   "同步和异步、阻塞和非阻塞的区别？"
+  ],
+  "followups": [
+   {
+    "q": "同步/异步和阻塞/非阻塞区别？",
+    "a": "阻塞/非阻塞关注调用是否立即返回；同步/异步关注数据拷贝是由调用方完成还是由系统完成后通知。"
+   },
+   {
+    "q": "select、poll、epoll 区别？",
+    "a": "select 有文件描述符数量限制且每次全量拷贝和遍历；poll 去掉数量限制但仍遍历；epoll 通过事件回调只返回就绪的描述符，适合大量连接。"
+   },
+   {
+    "q": "有了虚拟线程 BIO 还慢吗？",
+    "a": "虚拟线程让“一连接一线程”的同步写法也能支撑大量连接，但底层仍基于非阻塞 IO 实现。"
+   }
+  ],
+  "answer": [
+   "总：BIO 同步阻塞，NIO 同步非阻塞加多路复用，AIO 异步非阻塞。",
+   "分：BIO 一连接一线程，简单但扩展差；NIO 用 Channel、Buffer、Selector，一个线程监听多个连接，Linux 下基于 epoll；AIO 由系统完成后回调，但 Linux 上实现不成熟，所以 Netty 选 NIO。",
+   "实践：【结合你的项目】我们的网关/长连接服务基于 Netty（NIO）；业务上调用 LLM 的 IO 等待可以用虚拟线程。",
+   "总结：高并发连接的关键是多路复用，用少量线程处理大量连接。"
+  ],
+  "pitfalls": [
+   "说 NIO 是异步 IO。",
+   "说 Linux 上 AIO 性能更好。"
+  ]
+ },
+ "p-io2": {
+  "principle": [
+   "Java NIO 三大核心组件：",
+   "Channel（通道）：双向的数据通道，可读可写，对应文件、套接字等，如 FileChannel、SocketChannel、ServerSocketChannel、DatagramChannel。网络通道可以设置为非阻塞模式（FileChannel 不能）。",
+   "Buffer（缓冲区）：数据读写都通过 Buffer。核心属性 capacity（容量）、position（当前位置）、limit（可读写上限）、mark。写入数据后调用 flip() 切换为读模式（limit = position，position = 0）；读完后 clear()（全部重置）或 compact()（保留未读数据）。分为堆内 HeapByteBuffer（在 JVM 堆中，受 GC 管理）和堆外 DirectByteBuffer（在本地内存，IO 时少一次从堆到本地内存的拷贝，但分配和释放成本高，通常池化复用）。",
+   "Selector（选择器）：多路复用器。Channel 以感兴趣的事件（OP_ACCEPT、OP_CONNECT、OP_READ、OP_WRITE）注册到 Selector，得到 SelectionKey；线程调用 select() 阻塞直到有事件就绪，然后遍历 selectedKeys 处理，并要手动移除已处理的 key。",
+   "补充：FileChannel.transferTo 可利用操作系统零拷贝（sendfile）直接把文件发送到套接字；MappedByteBuffer 可以内存映射文件。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.nio.ByteBuffer;\nimport java.nio.channels.FileChannel;\nimport java.nio.file.*;\n\npublic class BufferDemo {\n    public static void main(String[] args) throws Exception {\n        ByteBuffer buf = ByteBuffer.allocate(8);\n        buf.put((byte) 'h').put((byte) 'i');      // 写模式：position=2, limit=8\n        buf.flip();                               // 切换读模式：position=0, limit=2\n        while (buf.hasRemaining()) System.out.print((char) buf.get());\n        buf.clear();                              // 准备再次写入\n\n        // 零拷贝复制文件\n        try (FileChannel in = FileChannel.open(Path.of(\"a.log\"), StandardOpenOption.READ);\n             FileChannel out = FileChannel.open(Path.of(\"b.log\"),\n                     StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {\n            long pos = 0, size = in.size();\n            while (pos < size) pos += in.transferTo(pos, size - pos, out);\n        }\n    }\n}"
+  },
+  "asks": [
+   "NIO 的核心组件有哪些？",
+   "Buffer 的 flip 是做什么的？",
+   "堆内存 Buffer 和直接内存 Buffer 有什么区别？",
+   "Selector 是怎么工作的？"
+  ],
+  "followups": [
+   {
+    "q": "为什么要 flip？",
+    "a": "Buffer 读写共用 position，写完后需要把 limit 设为已写位置、position 归零才能从头读取。"
+   },
+   {
+    "q": "DirectByteBuffer 的问题？",
+    "a": "分配释放成本高，不受堆大小限制但受 MaxDirectMemorySize 限制，泄漏时会出现 Direct buffer memory OOM。"
+   },
+   {
+    "q": "为什么处理完要 remove SelectionKey？",
+    "a": "selectedKeys 集合不会自动清除，不移除会重复处理同一事件。"
+   }
+  ],
+  "answer": [
+   "总：NIO 由 Channel、Buffer、Selector 组成。",
+   "分：Channel 是双向通道，网络通道可非阻塞；Buffer 通过 position、limit、capacity 管理读写，写完 flip 再读，有堆内和堆外两种；Selector 让一个线程监听多个 Channel 的事件，select 返回就绪的 key 并逐个处理。",
+   "实践：【结合你的项目】实际开发多用 Netty 封装；排查过 Direct buffer OOM，需要关注堆外内存。",
+   "总结：Buffer 管数据、Channel 管传输、Selector 管事件。"
+  ],
+  "pitfalls": [
+   "忘记 flip 导致读不到数据。",
+   "说 FileChannel 可以非阻塞。"
+  ]
+ },
+ "p-io5": {
+  "principle": [
+   "Netty 是基于 Java NIO 的高性能网络框架，快的原因主要有：",
+   "① 线程模型：主从 Reactor 多线程。BossGroup（通常 1 个 EventLoop）负责接受连接，把新连接注册到 WorkerGroup；WorkerGroup（默认 CPU 核数 × 2 个 EventLoop）负责读写。每个 EventLoop 是一个线程加一个 Selector，一个 Channel 终身绑定在一个 EventLoop 上，所有 IO 事件和 Handler 调用都在该线程串行执行，无需加锁，避免线程切换。",
+   "② 内存管理：ByteBuf 读写指针分离（不需要 flip），支持池化（PooledByteBufAllocator，基于类似 jemalloc 的内存池）减少分配和 GC，默认可使用堆外直接内存减少拷贝；用引用计数管理生命周期。",
+   "③ 零拷贝：CompositeByteBuf 合并多个缓冲区而不复制，slice 共享底层内存，FileRegion 基于 transferTo 实现文件发送。",
+   "④ 其他：高效的 Pipeline 和 Handler 责任链；对 JDK NIO 空轮询（epoll bug）的规避（检测 select 连续空返回次数超过阈值就重建 Selector）；Linux 下可选原生 epoll 传输；FastThreadLocal 等优化。",
+   "注意：耗时业务逻辑不能在 EventLoop 线程中执行，否则会阻塞同一 EventLoop 上的所有连接，应交给业务线程池。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "EventLoopGroup boss = new NioEventLoopGroup(1);\nEventLoopGroup worker = new NioEventLoopGroup();          // 默认 CPU 核数 * 2\nEventExecutorGroup bizGroup = new DefaultEventExecutorGroup(16); // 耗时业务线程\ntry {\n    new ServerBootstrap()\n        .group(boss, worker)\n        .channel(NioServerSocketChannel.class)\n        .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)\n        .childHandler(new ChannelInitializer<SocketChannel>() {\n            @Override protected void initChannel(SocketChannel ch) {\n                ch.pipeline()\n                  .addLast(new LengthFieldBasedFrameDecoder(1 << 20, 0, 4, 0, 4)) // 解决粘包拆包\n                  .addLast(new StringDecoder(), new StringEncoder())\n                  .addLast(bizGroup, new SimpleChannelInboundHandler<String>() {   // 业务不阻塞 IO 线程\n                      @Override protected void channelRead0(ChannelHandlerContext ctx, String msg) {\n                          ctx.writeAndFlush(\"echo:\" + msg);\n                      }\n                  });\n            }\n        })\n        .bind(9000).sync().channel().closeFuture().sync();\n} finally {\n    boss.shutdownGracefully(); worker.shutdownGracefully();\n}"
+  },
+  "asks": [
+   "Netty 为什么性能高？",
+   "Netty 的线程模型是怎样的？",
+   "Netty 的零拷贝体现在哪里？",
+   "Netty 怎么解决粘包拆包？"
+  ],
+  "followups": [
+   {
+    "q": "粘包拆包怎么解决？",
+    "a": "使用定长、分隔符（DelimiterBasedFrameDecoder）或长度字段（LengthFieldBasedFrameDecoder）解码器。"
+   },
+   {
+    "q": "为什么 Handler 里不能做耗时操作？",
+    "a": "EventLoop 是单线程，阻塞会让其上所有连接的读写停顿；要交给业务线程池。"
+   },
+   {
+    "q": "ByteBuf 为什么要 release？",
+    "a": "池化和直接内存使用引用计数管理，不释放会导致内存泄漏；SimpleChannelInboundHandler 会自动释放。"
+   }
+  ],
+  "answer": [
+   "总：Netty 快在 Reactor 线程模型、内存池化与零拷贝、以及大量细节优化。",
+   "分：主从 Reactor，Boss 接收连接，Worker 处理读写，Channel 绑定单一 EventLoop 无锁串行；ByteBuf 池化、堆外内存、读写指针分离；CompositeByteBuf、slice、FileRegion 实现零拷贝；规避空轮询、可用原生 epoll。耗时业务交给业务线程池。",
+   "实践：【结合你的项目】【待填：如网关、IM、或 Dubbo/gRPC 底层用到 Netty】，我们排查过 ByteBuf 泄漏，用 ResourceLeakDetector 定位。",
+   "总结：线程模型无锁化 + 内存高效复用是关键。"
+  ],
+  "pitfalls": [
+   "在 EventLoop 中执行数据库调用。",
+   "忘记释放 ByteBuf。"
+  ]
+ },
+ "p2-47": {
+  "principle": [
+   "水平触发（LT, Level Triggered）：只要文件描述符处于就绪状态（如接收缓冲区有数据），每次 epoll_wait 都会通知。即使这次没读完，下次还会通知，编程简单、不易丢事件，但可能产生较多重复通知。select、poll 只支持 LT，epoll 默认也是 LT。",
+   "边缘触发（ET, Edge Triggered）：只在状态变化时通知一次（如从无数据变为有数据）。收到通知后必须使用非阻塞 IO 循环读取直到返回 EAGAIN，否则剩余数据不会再触发通知，连接可能“卡住”。通知次数少，效率更高，但编程要求更严格。",
+   "Java 中：JDK NIO 的 Selector 在 Linux 上基于 epoll，使用 LT 模式。Netty 的原生 epoll 传输（EpollEventLoopGroup）默认使用 ET 模式，并在内部负责把数据读完（同时有读取次数上限，避免一个连接占用 EventLoop 太久）。",
+   "Selector 空转（epoll 空轮询 bug）：JDK 某些版本在 Linux 上，当连接异常中断时 epoll 可能返回事件集合为空的唤醒，导致 select() 不阻塞而立刻返回 0，线程陷入死循环，CPU 飙到 100%。Netty 的规避方法：记录 select 连续提前返回且没有就绪事件的次数，超过阈值（默认 512，参数 io.netty.selectorAutoRebuildThreshold）时，新建一个 Selector，把旧 Selector 上注册的 Channel 全部迁移过去，然后关闭旧的。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// Netty 中空轮询规避逻辑（简化示意，摘自其思路）\nint selectCnt = 0;\nlong start = System.nanoTime();\nwhile (true) {\n    int selected = selector.select(timeoutMillis);\n    selectCnt++;\n    if (selected != 0 || hasTasks() || wakenUp) break;          // 正常返回\n    long elapsed = System.nanoTime() - start;\n    if (elapsed >= TimeUnit.MILLISECONDS.toNanos(timeoutMillis)) {\n        selectCnt = 1;                                          // 正常超时，重新计数\n    } else if (selectCnt >= SELECTOR_AUTO_REBUILD_THRESHOLD) {  // 默认 512\n        selector = rebuildSelector(selector);                   // 新建 Selector 并迁移 Channel\n        selectCnt = 1;\n    }\n    start = System.nanoTime();\n}\n\n// 选择 Netty 原生 epoll（ET 模式）传输\nEventLoopGroup group = Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup();\nClass<? extends ServerChannel> ch = Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;"
+  },
+  "asks": [
+   "水平触发和边缘触发有什么区别？",
+   "Java NIO 的 Selector 用的是哪种模式？",
+   "什么是 epoll 空轮询 bug？Netty 怎么解决？",
+   "ET 模式下为什么必须一次读完？"
+  ],
+  "followups": [
+   {
+    "q": "ET 为什么要非阻塞？",
+    "a": "需要循环读到 EAGAIN 为止，阻塞模式下最后一次读会把线程挂住。"
+   },
+   {
+    "q": "LT 会有什么问题？",
+    "a": "如果某个连接的数据一直不处理，会被反复通知，浪费 CPU；但不会丢事件。"
+   },
+   {
+    "q": "空轮询还存在吗？",
+    "a": "新版本 JDK 已修复大部分情况，但 Netty 的保护机制仍然保留作为兜底。"
+   }
+  ],
+  "answer": [
+   "总：LT 只要就绪就一直通知，ET 只在状态变化时通知一次。",
+   "分：LT 编程简单、不易丢事件，JDK NIO 使用；ET 通知少、效率高，但必须非阻塞循环读到 EAGAIN，Netty 原生 epoll 传输使用 ET。JDK 曾有 epoll 空轮询 bug 导致 CPU 100%，Netty 统计空返回次数超过 512 次就重建 Selector。",
+   "实践：【结合你的项目】Linux 部署时我们开启 Netty 原生 epoll 传输【待填：效果】；排查 CPU 100% 时也会考虑空轮询。",
+   "总结：理解触发模式有助于理解 Netty 的读取循环和保护机制。"
+  ],
+  "pitfalls": [
+   "说 JDK NIO 使用 ET。",
+   "ET 模式只读一次。"
+  ]
+ }
+}

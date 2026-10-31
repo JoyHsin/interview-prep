@@ -83,5 +83,47 @@
    "用 MQ 的 msgId 做去重键。",
    "Redis 标记和业务不在同一事务却不处理失败情况。"
   ]
+ },
+ "p2-28": {
+  "principle": [
+   "重复消费不可避免（生产者重试、消费者提交 offset 前宕机、Rebalance、Broker 重投），所以要在业务层实现幂等。关键是两点：选对唯一键，以及让“判重”和“业务处理”原子化。",
+   "唯一键：使用业务唯一标识（订单号 + 业务类型、支付流水号），或生产者生成并随消息传递的事件 ID；不要依赖 MQ 内部的 offset。",
+   "方案对比：① 去重表 + 唯一索引：在同一本地事务中插入去重记录和执行业务，插入冲突即说明已处理。可靠性最高，适合资金、积分等关键业务；② 状态机条件更新：UPDATE ... WHERE status = 前置状态，适合有明确状态流转的业务；③ 业务表唯一约束：如积分流水表以 (user_id, biz_no) 唯一；④ Redis SETNX 去重：性能高，但与 DB 不在一个事务，处理失败要删除标记，或采用“处理中/已完成”两阶段标记并设置过期，适合非关键业务或作为前置过滤；⑤ 乐观锁版本号。",
+   "注意并发重复：同一消息被两个消费者同时处理时，唯一约束能保证只有一个成功；只用“先查再写”会有竞态。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "-- 去重表\nCREATE TABLE mq_consume_record (\n  id BIGINT AUTO_INCREMENT PRIMARY KEY,\n  consumer_group VARCHAR(64) NOT NULL,\n  biz_key VARCHAR(128) NOT NULL,\n  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n  UNIQUE KEY uk_group_key (consumer_group, biz_key)\n);\n\n-- 消费逻辑（同一事务内）\nBEGIN;\nINSERT INTO mq_consume_record(consumer_group, biz_key) VALUES ('points', 'PAID:O20261031001');\n-- 若唯一键冲突 → 回滚并直接 ACK（已处理过）\nUPDATE user_points SET points = points + 100 WHERE user_id = 42;\nCOMMIT;\n\n-- 状态机方式\nUPDATE t_coupon SET status = 'USED', used_order = 'O20261031001'\n WHERE id = 7 AND status = 'UNUSED';   -- 影响行数 0 → 已处理"
+  },
+  "asks": [
+   "消息重复消费怎么保证业务幂等？",
+   "去重表和 Redis 去重怎么选？",
+   "唯一键用什么？",
+   "并发重复消费怎么处理？"
+  ],
+  "followups": [
+   {
+    "q": "去重表数据越来越多怎么办？",
+    "a": "按时间分区或定期归档清理超过消息最大重投周期的记录。"
+   },
+   {
+    "q": "先查再插有什么问题？",
+    "a": "两个并发请求可能都查不到，然后都执行；必须依赖唯一约束或原子操作。"
+   },
+   {
+    "q": "消费失败要不要删除去重记录？",
+    "a": "与业务同一事务时失败会一起回滚，不需要额外处理。"
+   }
+  ],
+  "answer": [
+   "总：业务唯一键 + 原子判重是幂等的核心。",
+   "分：可选去重表加唯一索引（与业务同事务，最可靠）、状态机条件更新、业务表唯一约束、Redis SETNX（快但需处理失败）、乐观锁；唯一键用业务 ID；并发场景必须依赖约束而非先查后写。",
+   "实践：【结合你的项目】我们积分发放用去重表，与积分更新同一事务；优惠券核销用状态机。",
+   "总结：关键业务落在数据库约束上。"
+  ],
+  "pitfalls": [
+   "用先查后写判重。",
+   "用 offset 作为唯一键。"
+  ]
  }
 }

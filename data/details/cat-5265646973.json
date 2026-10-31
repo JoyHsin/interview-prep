@@ -128,5 +128,48 @@
    "没有删除失败的兜底。",
    "加分：讲事务提交后再删、binlog 方案。"
   ]
+ },
+ "p2-25": {
+  "principle": [
+   "落地时要组合使用，并说明每一招针对的问题和代价：",
+   "防穿透（查不存在的数据）：① 接口层参数校验（ID 格式、范围），拦截明显非法请求；② 缓存空值，设置较短过期时间（如 1–5 分钟），防止反复查库，同时注意被大量随机 key 撑大内存；③ 布隆过滤器：启动时加载所有有效 ID，查询前判断，不存在直接返回；新增数据时同步写入布隆过滤器，删除数据无法移除（需要定期重建或使用支持删除的变种）。",
+   "防击穿（热点 key 失效）：① 互斥锁重建：只有拿到锁的线程查 DB 回填，其他线程短暂等待后重读缓存，保证一致性但有等待；② 逻辑过期：缓存不设物理过期，值中保存逻辑过期时间，过期后由一个线程异步重建，其他线程直接返回旧值，可用性高但短时间不一致；③ 已知热点预热并定时刷新。",
+   "防雪崩（大量 key 同时失效或 Redis 不可用）：① 过期时间加随机偏移；② Redis 高可用（主从 + 哨兵或集群）；③ 多级缓存：本地缓存（Caffeine）+ Redis，Redis 故障时本地缓存兜底；④ 限流、熔断、降级保护数据库；⑤ 缓存预热。",
+   "配套监控：缓存命中率、DB QPS、热 key 发现、Redis 可用性告警。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 多级缓存 + 布隆过滤器 + 逻辑过期（示意）\nprivate final Cache<Long, Product> local = Caffeine.newBuilder()\n        .maximumSize(10_000).expireAfterWrite(Duration.ofSeconds(30)).build();\nprivate final RBloomFilter<Long> bloom;            // Redisson 布隆过滤器，启动时加载所有商品 ID\n\npublic Product get(Long id) {\n    if (!bloom.contains(id)) return null;                          // 防穿透\n    Product p = local.getIfPresent(id);\n    if (p != null) return p;                                       // 本地缓存（防雪崩兜底）\n    CacheValue<Product> cv = redisGet(\"product:\" + id);\n    if (cv == null) return loadWithMutex(id);                      // 首次加载用互斥锁\n    if (cv.expireAt().isBefore(Instant.now())) {                   // 逻辑过期（防击穿）\n        if (tryLock(\"rebuild:\" + id)) rebuildExecutor.submit(() -> rebuild(id));\n    }\n    local.put(id, cv.data());\n    return cv.data();                                              // 返回旧值，不阻塞\n}\n// 写缓存时 TTL 加随机：base + random(0, 300s)（防雪崩）"
+  },
+  "asks": [
+   "缓存穿透、击穿、雪崩的完整解决方案？",
+   "布隆过滤器怎么维护？",
+   "互斥锁和逻辑过期怎么选？",
+   "多级缓存有什么一致性问题？"
+  ],
+  "followups": [
+   {
+    "q": "多级缓存一致性？",
+    "a": "本地缓存过期时间设短；数据变更时通过 MQ 或 Redis Pub/Sub 广播失效本地缓存。"
+   },
+   {
+    "q": "布隆过滤器误判率怎么控制？",
+    "a": "根据预估元素数和期望误判率计算位数组大小和哈希函数个数；数据量增长后重建。"
+   },
+   {
+    "q": "空值缓存被随机 key 打爆内存怎么办？",
+    "a": "空值过期时间短，配合布隆过滤器和限流，必要时对异常来源封禁。"
+   }
+  ],
+  "answer": [
+   "总：穿透用校验 + 空值 + 布隆，击穿用互斥锁或逻辑过期，雪崩用随机 TTL + 高可用 + 多级缓存 + 限流降级。",
+   "分：每种方案都有代价：空值占内存、布隆有误判不能删除、互斥锁有等待、逻辑过期短时不一致、多级缓存需要失效广播。再配合命中率和 DB QPS 监控。",
+   "实践：【结合你的项目】我们商品详情用 Caffeine + Redis 两级缓存，热点商品逻辑过期，TTL 加随机，DB 前有限流【待填：效果数据】。",
+   "总结：按问题对症下药，并清楚每种方案的代价。"
+  ],
+  "pitfalls": [
+   "只列方法不讲代价。",
+   "忽略本地缓存一致性。"
+  ]
  }
 }

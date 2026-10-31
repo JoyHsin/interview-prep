@@ -258,5 +258,90 @@
    "池化虚拟线程。",
    "加分：知道 JDK 24 JEP 491 改进 pinning。"
   ]
+ },
+ "p-th1": {
+  "principle": [
+   "java.lang.Thread.State 定义了 6 种状态：",
+   "NEW：创建后尚未调用 start()。RUNNABLE：调用 start() 后，包括操作系统层面的“就绪”和“运行中”两种情况；Java 中阻塞式 IO 等待（如 socket 读）在 Java 层通常也显示为 RUNNABLE。BLOCKED：等待进入 synchronized 同步块/方法，即等待获取 monitor 锁。WAITING：无限期等待其他线程的动作，由 Object.wait()、Thread.join()、LockSupport.park() 进入（ReentrantLock 等待锁时就是 park，所以显示 WAITING 而不是 BLOCKED）。TIMED_WAITING：带超时的等待，如 Thread.sleep(ms)、wait(ms)、join(ms)、parkNanos。TERMINATED：run 方法执行结束或异常退出。",
+   "状态转换：NEW → start() → RUNNABLE；RUNNABLE → 竞争 synchronized 失败 → BLOCKED → 获得锁 → RUNNABLE；RUNNABLE → wait()/join()/park() → WAITING → notify()/notifyAll()/unpark()/目标线程结束 → RUNNABLE（wait 被唤醒后还需要重新竞争锁，可能先进入 BLOCKED）；超时版本进入 TIMED_WAITING。",
+   "sleep 与 wait 区别：sleep 是 Thread 的静态方法，不释放锁；wait 是 Object 的方法，必须在 synchronized 中调用，会释放锁。一个线程只能 start 一次，再次调用抛 IllegalThreadStateException。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class StateDemo {\n    public static void main(String[] args) throws Exception {\n        Object lock = new Object();\n        Thread t = new Thread(() -> {\n            synchronized (lock) {\n                try { lock.wait(); } catch (InterruptedException ignored) {}\n            }\n        });\n        System.out.println(t.getState());   // NEW\n        t.start();\n        Thread.sleep(100);\n        System.out.println(t.getState());   // WAITING（在 lock.wait()）\n        synchronized (lock) {\n            lock.notify();\n            Thread.sleep(100);\n            System.out.println(t.getState()); // BLOCKED（被唤醒但主线程仍持有锁）\n        }\n        t.join();\n        System.out.println(t.getState());   // TERMINATED\n    }\n}"
+  },
+  "asks": [
+   "Java 线程有哪几种状态？",
+   "BLOCKED 和 WAITING 有什么区别？",
+   "sleep 和 wait 的区别？",
+   "线程状态是怎么转换的？"
+  ],
+  "followups": [
+   {
+    "q": "ReentrantLock 等锁是什么状态？",
+    "a": "WAITING 或 TIMED_WAITING，因为底层是 LockSupport.park，不是 BLOCKED。"
+   },
+   {
+    "q": "jstack 中大量 RUNNABLE 但 CPU 不高？",
+    "a": "可能在阻塞式 IO 读（如等待数据库或 HTTP 响应），Java 层显示 RUNNABLE。"
+   },
+   {
+    "q": "线程能 start 两次吗？",
+    "a": "不能，第二次抛 IllegalThreadStateException。"
+   }
+  ],
+  "answer": [
+   "总：6 种状态：NEW、RUNNABLE、BLOCKED、WAITING、TIMED_WAITING、TERMINATED。",
+   "分：RUNNABLE 包含就绪和运行；BLOCKED 专指等待 synchronized 锁；WAITING 由 wait、join、park 进入，TIMED_WAITING 是带超时版本；wait 被唤醒后要重新竞争锁。sleep 不释放锁，wait 释放锁且必须在同步块中。",
+   "实践：【结合你的项目】看 jstack 时，大量 BLOCKED 说明 synchronized 竞争，大量 WAITING 在 AQS 上说明 Lock 或连接池等待。",
+   "总结：状态是排查线程问题的第一手信息。"
+  ],
+  "pitfalls": [
+   "把 Lock 等待说成 BLOCKED。",
+   "以为 RUNNABLE 一定在占用 CPU。"
+  ]
+ },
+ "p2-7": {
+  "principle": [
+   "线程池大小没有固定公式，要基于任务类型估算，再用压测校准。",
+   "CPU 密集型（计算、加解密、压缩）：线程数约为 CPU 核数（或核数 + 1，多一个用于弥补偶发的缺页等停顿），更多线程只会增加上下文切换。",
+   "IO 密集型（数据库、HTTP、RPC、调用 LLM）：线程大部分时间在等待，可以更多。常用估算：线程数 = 核数 × 目标 CPU 利用率 × (1 + 等待时间 / 计算时间)。例如 8 核、计算 10ms、等待 90ms，目标利用率 80%：8 × 0.8 × 10 = 64。也可以从吞吐量推算（Little 定律）：线程数 ≈ 目标 QPS × 平均响应时间（秒），如 200 QPS × 0.5s = 100。",
+   "同时要考虑下游的承载能力：线程数再大，数据库连接池只有 20 个也无济于事，反而增加等待。",
+   "落地：不同类型任务使用不同线程池隔离；使用有界队列和合理拒绝策略；监控活跃线程数、队列长度、任务耗时、拒绝次数；通过动态线程池（配置中心修改 core/max）在线调整；Java 21 中 IO 密集任务也可以用虚拟线程 + 信号量替代大线程池。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "int cores = Runtime.getRuntime().availableProcessors();\n\n// CPU 密集\nThreadPoolExecutor cpuPool = new ThreadPoolExecutor(cores + 1, cores + 1, 0, TimeUnit.SECONDS,\n        new ArrayBlockingQueue<>(100), new ThreadPoolExecutor.CallerRunsPolicy());\n\n// IO 密集：8 核，等待/计算 = 9，目标利用率 0.8 → 约 64\nint ioThreads = (int) (cores * 0.8 * (1 + 9));\nThreadPoolExecutor ioPool = new ThreadPoolExecutor(ioThreads, ioThreads * 2, 60, TimeUnit.SECONDS,\n        new ArrayBlockingQueue<>(500), r -> new Thread(r, \"io-pool\"),\n        new ThreadPoolExecutor.AbortPolicy());\n\n// 运行时可调整（配合配置中心实现动态线程池）\nioPool.setCorePoolSize(80);\nioPool.setMaximumPoolSize(120);\n\n// 监控\nlog.info(\"active={} queue={} completed={}\", ioPool.getActiveCount(),\n        ioPool.getQueue().size(), ioPool.getCompletedTaskCount());"
+  },
+  "asks": [
+   "线程池大小怎么设置？",
+   "CPU 密集型和 IO 密集型怎么区分设置？",
+   "你们项目的线程池参数是多少？怎么得出来的？",
+   "线程池参数能动态调整吗？"
+  ],
+  "followups": [
+   {
+    "q": "如何知道等待时间和计算时间？",
+    "a": "通过链路追踪或打点统计任务中远程调用耗时与总耗时，或用 profiler 分析。"
+   },
+   {
+    "q": "动态调整的原理？",
+    "a": "ThreadPoolExecutor 提供 setCorePoolSize、setMaximumPoolSize；队列容量需要自定义可调整的队列。"
+   },
+   {
+    "q": "线程池满了怎么办？",
+    "a": "先看是下游变慢还是流量增加，扩容或限流；拒绝策略记录日志和告警。"
+   }
+  ],
+  "answer": [
+   "总：先按任务类型估算，再压测和监控校准。",
+   "分：CPU 密集约等于核数加 1；IO 密集用核数乘利用率乘（1 + 等待/计算），或用 QPS 乘响应时间估算；同时受限于下游连接池；不同业务隔离线程池，有界队列，监控并支持动态调整。",
+   "实践：【结合你的项目】我们调用下游的线程池最初设置【待填】，压测发现【待填】，调整为【待填】后 P99 改善。",
+   "总结：公式只是起点，数据才是依据。"
+  ],
+  "pitfalls": [
+   "背一个固定公式不讲压测。",
+   "忽略下游连接池限制。"
+  ]
  }
 }

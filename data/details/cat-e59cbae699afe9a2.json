@@ -85,5 +85,49 @@
    "不验签或不校验金额。",
    "加分：讲查单补偿、对账、关单后支付的处理。"
   ]
+ },
+ "p2-33": {
+  "principle": [
+   "超卖的根源是“先查库存、再扣减”不是原子操作：两个请求同时读到库存 1，都判断可扣，都扣减成功。防超卖就是让“判断 + 扣减”原子化，并在不同并发量下选合适的层次：",
+   "① 数据库条件更新（最常用的兜底）：UPDATE stock SET count = count - #{n} WHERE sku_id = ? AND count >= #{n}，根据影响行数判断是否成功。InnoDB 行锁保证原子性，简单可靠，但热点行在高并发下会排队，适合中低并发。",
+   "② 乐观锁：带 version 字段更新，失败重试，适合冲突少的场景，冲突多时重试浪费。",
+   "③ 悲观锁：SELECT ... FOR UPDATE 后再更新，同样串行化，持锁时间更长，一般不如条件更新。",
+   "④ Redis 预扣：库存加载到 Redis，用 DECRBY 后判断结果是否小于 0（小于 0 则加回），或使用 Lua 脚本“判断并扣减”，单线程执行保证原子，可承受高并发；之后异步写 DB，DB 仍用条件更新兜底。",
+   "⑤ 一致性保障：Redis 与 DB 之间要有补偿和对账；订单取消、支付超时要归还库存（归还操作也要幂等）；热点商品可把库存拆分成多个分片 key 分散压力。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "// 1. DB 条件更新（兜底）\n@Update(\"UPDATE t_stock SET available = available - #{qty} \" +\n        \"WHERE sku_id = #{skuId} AND available >= #{qty}\")\nint deduct(@Param(\"skuId\") long skuId, @Param(\"qty\") int qty);\n\nif (stockMapper.deduct(skuId, qty) == 0) throw new BizException(\"STOCK_NOT_ENOUGH\", \"库存不足\");\n\n// 2. Redis Lua 原子扣减（高并发）\nprivate static final String LUA = \"\"\"\n        local s = tonumber(redis.call('get', KEYS[1]) or '0')\n        local n = tonumber(ARGV[1])\n        if s < n then return -1 end\n        return redis.call('decrby', KEYS[1], n)\n        \"\"\";\nLong left = redis.execute(new DefaultRedisScript<>(LUA, Long.class),\n        List.of(\"stock:\" + skuId), String.valueOf(qty));\nif (left == null || left < 0) throw new BizException(\"STOCK_NOT_ENOUGH\", \"库存不足\");\nmq.send(\"stock-deduct\", new DeductMsg(orderNo, skuId, qty));   // 异步落库，消费端条件更新 + 幂等"
+  },
+  "asks": [
+   "库存扣减怎么防止超卖？",
+   "乐观锁和悲观锁怎么选？",
+   "Redis 扣库存和数据库不一致怎么办？",
+   "高并发下单个商品库存成为热点怎么办？"
+  ],
+  "followups": [
+   {
+    "q": "热点库存怎么办？",
+    "a": "库存分片到多个 key 或多行，请求分散扣减；或在 Redis 中扣减后异步合并写 DB。"
+   },
+   {
+    "q": "取消订单归还库存要注意什么？",
+    "a": "归还要幂等（以订单号判重），避免重复归还导致库存虚增。"
+   },
+   {
+    "q": "DECR 后发现小于 0 怎么处理？",
+    "a": "立即 INCR 补回并返回库存不足；更推荐使用 Lua 先判断后扣减。"
+   }
+  ],
+  "answer": [
+   "总：防超卖的本质是让“判断库存 + 扣减”原子化。",
+   "分：中低并发用 DB 条件更新（WHERE 库存足够），简单可靠；冲突少可用乐观锁；高并发用 Redis Lua 原子扣减，再异步落库，DB 条件更新兜底；配合归还幂等、分片和对账。",
+   "实践：【结合你的项目】我们下单扣库存用【待填：方案】，大促时【待填】。",
+   "总结：原子操作 + 数据库兜底 + 对账补偿。"
+  ],
+  "pitfalls": [
+   "先 SELECT 再 UPDATE 不加条件。",
+   "忽略库存归还的幂等。"
+  ]
  }
 }

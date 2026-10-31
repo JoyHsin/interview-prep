@@ -130,5 +130,89 @@
    "SELECT * 却期望覆盖索引。",
    "加分：讲延迟关联和游标分页。"
   ]
+ },
+ "p-m1": {
+  "principle": [
+   "SQL 标准定义了 4 个隔离级别，用来平衡并发性能和数据一致性，对应三种读现象：脏读（读到其他事务未提交的数据）、不可重复读（同一事务两次读同一行结果不同，因为别人修改并提交）、幻读（同一事务两次按条件查询，结果集行数不同，因为别人插入或删除并提交）。",
+   "① READ UNCOMMITTED：三种问题都可能发生，几乎不用；② READ COMMITTED（RC）：避免脏读，Oracle、SQL Server、PostgreSQL 的默认级别，很多互联网公司在 MySQL 上也改用 RC；③ REPEATABLE READ（RR）：MySQL InnoDB 默认，避免脏读和不可重复读；InnoDB 通过 MVCC（快照读）和临键锁（当前读）在很大程度上避免幻读，但不是完全消除；④ SERIALIZABLE：所有读加共享锁，完全串行化，性能最差。",
+   "InnoDB 实现：RC 和 RR 都靠 MVCC 实现快照读，区别在 ReadView 生成时机（RC 每条语句，RR 事务第一次读）；RR 下当前读使用间隙锁和临键锁，RC 下基本只有记录锁，因此 RC 锁冲突和死锁更少。",
+   "选择：RC 并发更好、锁更少，但要接受不可重复读；RR 一致性更强。使用 RC 时 binlog 格式需为 ROW。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "-- 查看与设置隔离级别（MySQL 8.0）\nSELECT @@transaction_isolation;\nSET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;\n\n-- 不可重复读演示（RC 下）\n-- 会话 A\nBEGIN;\nSELECT balance FROM account WHERE id = 1;   -- 100\n-- 会话 B\nUPDATE account SET balance = 200 WHERE id = 1; COMMIT;\n-- 会话 A\nSELECT balance FROM account WHERE id = 1;   -- RC：200（不可重复读）；RR：仍为 100\nCOMMIT;"
+  },
+  "asks": [
+   "事务的隔离级别有哪些？分别解决什么问题？",
+   "MySQL 默认隔离级别是什么？为什么很多公司改成 RC？",
+   "脏读、不可重复读、幻读分别是什么？",
+   "InnoDB 的 RR 是怎么实现的？"
+  ],
+  "followups": [
+   {
+    "q": "为什么改用 RC？",
+    "a": "RC 没有间隙锁，锁范围小，死锁和锁等待更少，并发更高；业务通常能接受不可重复读。"
+   },
+   {
+    "q": "不可重复读和幻读区别？",
+    "a": "不可重复读关注同一行的值被修改，幻读关注满足条件的行数变化（插入或删除）。"
+   },
+   {
+    "q": "Spring 中怎么设置？",
+    "a": "@Transactional(isolation = Isolation.READ_COMMITTED)，最终由数据库连接执行。"
+   }
+  ],
+  "answer": [
+   "总：四个隔离级别对应解决脏读、不可重复读、幻读三类问题。",
+   "分：RU 都不解决；RC 解决脏读；RR 解决脏读和不可重复读，InnoDB 借助 MVCC 和临键锁大部分避免幻读；串行化全部解决但性能最差。RC 与 RR 的实现差别在 ReadView 生成时机和是否使用间隙锁。",
+   "实践：【结合你的项目】我们线上 MySQL 使用【待填：RR/RC】，原因是【待填】；遇到过间隙锁导致的死锁问题。",
+   "总结：隔离级别是一致性与并发性的权衡。"
+  ],
+  "pitfalls": [
+   "说 MySQL RR 完全没有幻读。",
+   "混淆不可重复读和幻读。"
+  ]
+ },
+ "p2-21": {
+  "principle": [
+   "本题与“索引失效常见原因”相同，这里从“优化器视角”补充：索引不被使用有两类原因——一是物理上无法用 B+ 树定位，二是优化器基于成本认为全表扫描更便宜。",
+   "无法定位的情况：① 索引列参与函数或运算（DATE(col)、col + 1、SUBSTRING）；② 隐式类型转换（字符串列与数字比较、关联字段字符集或排序规则不一致）；③ 不满足联合索引最左前缀；④ LIKE 以 % 开头；⑤ OR 两边有一个条件列没有索引（可能只能全表，或使用 index merge）。",
+   "成本选择的情况：⑥ 区分度低（如性别、状态只有几个值），走二级索引还要大量回表；⑦ 查询返回数据占比高（经验上超过二三成）；⑧ 统计信息不准确，导致估算错误（可以 ANALYZE TABLE 更新）；⑨ 小表直接全表扫描更快；⑩ !=、NOT IN、IS NOT NULL 等通常匹配行多，往往选择全表。",
+   "应对：改写 SQL 让索引列保持原样（范围条件代替函数）、参数类型与列类型一致、设计合适的联合索引和覆盖索引、MySQL 8.0 的函数索引、必要时 FORCE INDEX（谨慎）、定期分析慢日志。"
+  ],
+  "example": {
+   "lang": "sql",
+   "code": "-- 1. 函数 → 范围\n-- ❌ WHERE YEAR(create_time) = 2026\nSELECT id FROM t_order WHERE create_time >= '2026-01-01' AND create_time < '2027-01-01';\n\n-- 2. 函数索引（MySQL 8.0.13+）\nALTER TABLE t_user ADD INDEX idx_lower_email ((LOWER(email)));\nSELECT * FROM t_user WHERE LOWER(email) = 'a@b.com';\n\n-- 3. 统计信息过期导致选错索引\nANALYZE TABLE t_order;\nEXPLAIN SELECT * FROM t_order WHERE user_id = 42 AND status = 1;\n\n-- 4. 前导模糊 → 全文索引或搜索引擎\nALTER TABLE t_article ADD FULLTEXT INDEX ft_title (title) WITH PARSER ngram;\nSELECT * FROM t_article WHERE MATCH(title) AGAINST('面试' IN BOOLEAN MODE);"
+  },
+  "asks": [
+   "什么情况下索引会失效？",
+   "为什么有索引 MySQL 却不用？",
+   "区分度低的列适合建索引吗？",
+   "MySQL 选错索引怎么办？"
+  ],
+  "followups": [
+   {
+    "q": "选错索引怎么办？",
+    "a": "先 ANALYZE TABLE 更新统计信息；调整 SQL 或索引；最后才考虑 FORCE INDEX，并在数据变化后复查。"
+   },
+   {
+    "q": "区分度低的列能建索引吗？",
+    "a": "单独建意义不大；可以作为联合索引的后续列，或在数据分布极不均匀且查询少数值时使用。"
+   },
+   {
+    "q": "%xxx% 搜索怎么优化？",
+    "a": "全文索引（ngram 支持中文）或 Elasticsearch。"
+   }
+  ],
+  "answer": [
+   "总：索引不用要么是无法定位，要么是优化器认为不划算。",
+   "分：无法定位包括函数运算、隐式转换、违背最左前缀、前导模糊、OR 中有无索引列；成本原因包括区分度低、返回行多、统计信息不准、小表。对策是改写 SQL、统一类型、合理设计联合和覆盖索引、使用函数索引、更新统计信息。",
+   "实践：【结合你的项目】【待填：一次慢 SQL 优化案例和数据】。",
+   "总结：用 EXPLAIN 验证，而不是凭经验猜。"
+  ],
+  "pitfalls": [
+   "把成本选择说成“失效”。",
+   "滥用 FORCE INDEX。"
+  ]
  }
 }

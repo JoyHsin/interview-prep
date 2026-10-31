@@ -168,5 +168,46 @@
    "只靠在 Prompt 里写“不要被注入”。",
    "忽略间接注入。"
   ]
+ },
+ "r-e1": {
+  "principle": [
+   "依赖单一 LLM 提供商存在宕机、限流、延迟升高、地区不可用、价格变化等风险，Failover 是在提供商之间自动切换以保证可用性。",
+   "设计要点：① 统一抽象：业务代码只依赖内部的 LLM 网关接口（或 Spring AI 的 ChatModel 抽象），各提供商实现适配，屏蔽 API 差异；② 优先级与路由：配置主备列表（如 主：A 厂大模型，备：B 厂同级模型，兜底：自部署模型），也可按成本、延迟、能力路由；③ 健康判断：按提供商独立统计错误率和延迟，用熔断器（Resilience4j CircuitBreaker）在超过阈值时打开，期间直接跳过该提供商，半开状态试探恢复；④ 错误分类：超时、429、5xx 才切换；400（请求问题）切换也没用；⑤ 兼容性：不同模型对提示、工具调用格式、结构化输出、上下文长度、内容审核的支持不同，需要为每个模型维护提示适配并在评测集上验证备用模型质量；工具定义和输出解析要兼容；⑥ 流式场景：已经输出部分内容后失败一般不能无缝切换，要告知用户重试或从头重新生成；⑦ 可观测：记录每次请求实际使用的提供商、耗时、token 和费用，切换时告警。",
+   "可以使用开源 LLM 网关（如 LiteLLM、One API 等）统一管理多提供商密钥、限流和回退，也可以在 Java 中自行实现。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Service\npublic class LlmRouter {\n    private final List<Provider> providers;            // 按优先级排序：primary, secondary, local\n    private final CircuitBreakerRegistry registry;\n\n    public String chat(String prompt) {\n        RuntimeException last = null;\n        for (Provider p : providers) {\n            CircuitBreaker cb = registry.circuitBreaker(p.name());   // 每个提供商独立熔断\n            if (!cb.tryAcquirePermission()) continue;               // 熔断打开，跳过\n            long start = System.nanoTime();\n            try {\n                String r = p.client().prompt().user(p.adapt(prompt)).call().content();\n                cb.onSuccess(System.nanoTime() - start, TimeUnit.NANOSECONDS);\n                metrics.record(p.name(), start);\n                return r;\n            } catch (RuntimeException e) {\n                cb.onError(System.nanoTime() - start, TimeUnit.NANOSECONDS, e);\n                if (!isRetryable(e)) throw e;                       // 400 等不切换\n                last = e;\n                log.warn(\"provider {} failed, failover\", p.name(), e);\n            }\n        }\n        throw new LlmUnavailableException(\"all providers failed\", last);\n    }\n}"
+  },
+  "asks": [
+   "多个 LLM 提供商怎么做 Failover？",
+   "切换模型后效果不一致怎么办？",
+   "熔断器怎么配置？",
+   "流式输出过程中失败怎么处理？"
+  ],
+  "followups": [
+   {
+    "q": "切换后质量下降？",
+    "a": "事先用评测集验证备用模型，为每个模型维护提示适配；降级时可缩小功能或明确提示。"
+   },
+   {
+    "q": "如何避免频繁来回切换？",
+    "a": "熔断器打开后等待一段时间再半开试探，并设置最小请求数和滑动窗口。"
+   },
+   {
+    "q": "自建还是用网关？",
+    "a": "需求简单可以用开源网关；有特殊治理、审计、计费需求可以在 Java 网关内实现。"
+   }
+  ],
+  "answer": [
+   "总：统一抽象 + 优先级路由 + 按提供商熔断 + 兼容性验证 + 可观测。",
+   "分：业务只依赖内部 LLM 接口；配置主备列表；每个提供商独立熔断，只对超时、429、5xx 切换；为不同模型做提示和输出适配，并用评测集验证；流式中途失败需重新生成；记录每次实际使用的提供商和成本。",
+   "实践：【结合你的项目】我们主用【待填】，备用【待填】，在【待填：某次故障】中自动切换，用户基本无感知。",
+   "总结：Failover 不只是换个地址，关键是兼容性和质量验证。"
+  ],
+  "pitfalls": [
+   "忽略不同模型的提示和格式差异。",
+   "对 400 错误也切换。"
+  ]
  }
 }

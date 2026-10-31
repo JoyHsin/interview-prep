@@ -89,5 +89,47 @@
    "以为用了 CHM 所有组合操作都线程安全。",
    "加分：讲出 helpTransfer 多线程扩容和不允许 null 的原因。"
   ]
+ },
+ "p2-4": {
+  "principle": [
+   "HashMap 扩容触发条件：当元素个数 size 超过阈值 threshold = capacity × loadFactor 时，在 put 后触发 resize，容量翻倍（默认初始容量 16，阈值 12）。此外，链表长度达到 8 但数组长度小于 64 时，会优先扩容而不是树化。table 懒加载，第一次 put 时才初始化。",
+   "指定初始容量时，HashMap 会通过 tableSizeFor 把它调整为大于等于该值的最小 2 的幂。",
+   "负载因子 0.75 的原因：这是时间和空间的折中。负载因子越大，空间利用率越高，但冲突越多，查找变慢；越小冲突越少，但浪费空间并且扩容更频繁。源码注释指出，在 0.75 下，桶中元素个数近似服从参数约 0.5 的泊松分布，链表长度达到 8 的概率极低（约千万分之六），说明这个默认值能让大多数桶很短。另外 0.75 × 2 的幂结果是整数，计算阈值方便。",
+   "实践建议：已知元素数量 n 时，初始容量设为 n / 0.75 + 1，避免多次扩容（Guava 的 Maps.newHashMapWithExpectedSize 就是这样计算的；JDK 19 起也提供了 HashMap.newHashMap(int numMappings)）。扩容需要重新分布所有节点，代价较高。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.HashMap;\nimport java.util.Map;\n\npublic class ResizeDemo {\n    public static void main(String[] args) {\n        int expected = 1000;\n        Map<String, Integer> m1 = new HashMap<>((int) (expected / 0.75f) + 1); // 1334 → 实际容量 2048\n        Map<String, Integer> m2 = HashMap.newHashMap(expected);                // JDK 19+ 推荐写法\n        for (int i = 0; i < expected; i++) { m1.put(\"k\" + i, i); m2.put(\"k\" + i, i); }\n\n        // 默认构造：16 → 32 → 64 → ... → 2048，经历 7 次扩容\n        Map<String, Integer> m3 = new HashMap<>();\n        for (int i = 0; i < expected; i++) m3.put(\"k\" + i, i);\n    }\n}"
+  },
+  "asks": [
+   "HashMap 什么时候扩容？",
+   "负载因子为什么是 0.75？",
+   "初始容量为什么是 2 的幂？传入 10 会怎样？",
+   "怎么避免频繁扩容？"
+  ],
+  "followups": [
+   {
+    "q": "传入初始容量 10 会怎样？",
+    "a": "tableSizeFor 调整为 16，阈值 12。"
+   },
+   {
+    "q": "负载因子能大于 1 吗？",
+    "a": "可以，表示允许平均每个桶多于一个元素，节省空间但冲突增多，一般不建议。"
+   },
+   {
+    "q": "扩容时为什么不用重新算 hash？",
+    "a": "容量翻倍后只多看一位，根据 hash & oldCap 是否为 0 决定留在原位还是移到原位加 oldCap。"
+   }
+  ],
+  "answer": [
+   "总：size 超过容量乘负载因子就扩容为两倍，0.75 是时间与空间的折中。",
+   "分：默认 16，阈值 12；链表长度达 8 但容量不足 64 也会扩容；容量总是 2 的幂；0.75 让桶中元素分布满足泊松分布，长链概率极低。已知数据量时预设容量。",
+   "实践：【结合你的项目】批量加载数据到 Map 时我会用 HashMap.newHashMap(n) 或 Guava 预估容量。",
+   "总结：合理初始容量能避免扩容开销。"
+  ],
+  "pitfalls": [
+   "把初始容量直接设为 n（会因 0.75 再扩容一次）。",
+   "说负载因子越小越好。"
+  ]
  }
 }

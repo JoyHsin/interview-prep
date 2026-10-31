@@ -87,5 +87,47 @@
    "只说“重启”。",
    "加分：讲 GC 线程情况和火焰图。"
   ]
+ },
+ "p2-35": {
+  "principle": [
+   "死锁的四个必要条件：互斥、持有并等待、不可剥夺、循环等待。Java 中最常见的是两个线程以相反顺序获取两把锁。",
+   "用 jstack 定位：执行 jstack <pid>（或 jcmd <pid> Thread.print），输出末尾如果存在死锁，会出现 “Found one Java-level deadlock:”，列出每个线程正在等待哪个锁（waiting to lock monitor ... / waiting for ownable synchronizer）以及该锁被哪个线程持有，随后是各线程的完整栈，栈中 “- locked <0x...>” 表示已持有的锁，“- waiting to lock <0x...>” 表示等待的锁。它既能检测 synchronized 的死锁，也能检测 ReentrantLock 等 JUC 锁的死锁。",
+   "其他手段：JConsole/VisualVM 的“检测死锁”按钮；Arthas 的 thread -b 找出阻塞其他线程的线程；代码中用 ThreadMXBean.findDeadlockedThreads() 定期检测并告警。",
+   "解决与预防：① 固定加锁顺序（如按账户 ID 大小顺序加锁）；② 使用 tryLock 加超时，获取失败释放已持有的锁并重试；③ 减小锁粒度、缩短持锁时间、避免在持锁时调用外部方法；④ 数据库层面的死锁看 SHOW ENGINE INNODB STATUS 的 LATEST DETECTED DEADLOCK。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "public class Transfer {\n    // ❌ 可能死锁：A→B 与 B→A 同时进行，加锁顺序相反\n    void transferBad(Account from, Account to, long amt) {\n        synchronized (from) { synchronized (to) { from.debit(amt); to.credit(amt); } }\n    }\n\n    // ✅ 固定顺序：总是先锁 ID 小的账户\n    void transfer(Account from, Account to, long amt) {\n        Account first = from.id() < to.id() ? from : to;\n        Account second = first == from ? to : from;\n        synchronized (first) { synchronized (second) { from.debit(amt); to.credit(amt); } }\n    }\n}\n\n/* jstack 输出片段：\nFound one Java-level deadlock:\n=============================\n\"T2\":\n  waiting to lock monitor 0x00007f..., (object 0x000000071a0, a Account),\n  which is held by \"T1\"\n\"T1\":\n  waiting to lock monitor 0x00007f..., (object 0x000000071b0, a Account),\n  which is held by \"T2\"\n...\nFound 1 deadlock.\n*/\n\n// 代码中检测\nlong[] ids = ManagementFactory.getThreadMXBean().findDeadlockedThreads();"
+  },
+  "asks": [
+   "如何用 jstack 定位死锁？",
+   "死锁产生的条件是什么？",
+   "怎么预防死锁？",
+   "数据库死锁怎么排查？"
+  ],
+  "followups": [
+   {
+    "q": "ReentrantLock 死锁 jstack 能发现吗？",
+    "a": "能，会显示 waiting for ownable synchronizer 以及持有者线程。"
+   },
+   {
+    "q": "线上发生死锁怎么止血？",
+    "a": "Java 层死锁无法自动解除，通常只能重启实例；先保存 jstack 输出用于分析。"
+   },
+   {
+    "q": "数据库死锁怎么查？",
+    "a": "SHOW ENGINE INNODB STATUS 查看最近一次死锁的两个事务和锁信息，InnoDB 会自动回滚其中一个。"
+   }
+  ],
+  "answer": [
+   "总：jstack 末尾的“Found Java-level deadlock”会直接给出死锁线程和锁。",
+   "分：看每个线程等待哪个锁、被谁持有，以及栈中的 locked 和 waiting to lock，定位到代码；也可用 Arthas thread -b、JConsole 或 ThreadMXBean。预防靠固定加锁顺序、tryLock 超时、缩小锁范围、不在持锁时调用外部方法。",
+   "实践：【结合你的项目】【待填：例如转账或批量更新时加锁顺序不一致导致的死锁】。",
+   "总结：先保存现场，再按锁等待关系找环。"
+  ],
+  "pitfalls": [
+   "不知道 jstack 能直接检测死锁。",
+   "只说重启不讲预防。"
+  ]
  }
 }

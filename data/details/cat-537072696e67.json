@@ -132,5 +132,48 @@
    "还说 Boot 3 用 spring.factories 注册自动配置。",
    "加分：讲 DeferredImportSelector 保证用户 Bean 优先。"
   ]
+ },
+ "p2-17": {
+  "principle": [
+   "Spring Bean 作用域决定容器如何创建和管理 Bean 实例：",
+   "① singleton（默认）：每个 Spring 容器中只有一个实例，容器启动时创建（可通过 @Lazy 延迟），由容器管理完整生命周期。注意它是“容器级单例”，不是 JVM 级；单例 Bean 被多线程共享，不要在其中保存可变的请求状态，否则有线程安全问题。",
+   "② prototype：每次获取（getBean 或注入）都创建新实例；容器只负责创建和初始化，不管理销毁（不会调用 @PreDestroy）。",
+   "Web 环境下另有：③ request：每个 HTTP 请求一个实例；④ session：每个 HTTP 会话一个实例；⑤ application：每个 ServletContext 一个实例；⑥ websocket：每个 WebSocket 会话一个实例。",
+   "常见坑：单例 Bean 中注入 prototype 或 request 作用域的 Bean，注入只发生一次，之后一直是同一个实例。解决办法：使用 ObjectProvider<T>.getObject() 每次获取、@Lookup 方法注入，或设置 proxyMode = ScopedProxyMode.TARGET_CLASS 注入代理（request/session 作用域常用，@RequestScope 默认就是代理模式）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "@Component\n@Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)\nclass ReportBuilder {                       // 有状态，每次需要新实例\n    private final List<String> lines = new ArrayList<>();\n    void add(String l) { lines.add(l); }\n    String build() { return String.join(\"\\n\", lines); }\n}\n\n@Component\n@RequestScope                               // 默认 proxyMode = TARGET_CLASS\nclass RequestContext { String traceId; }\n\n@Service\n@RequiredArgsConstructor\nclass ReportService {                       // singleton\n    private final ObjectProvider<ReportBuilder> builders;   // 每次获取新的 prototype\n    private final RequestContext ctx;                        // 注入的是代理，按当前请求取实例\n\n    String report(List<String> data) {\n        ReportBuilder b = builders.getObject();\n        data.forEach(b::add);\n        return ctx.traceId + \"\\n\" + b.build();\n    }\n}"
+  },
+  "asks": [
+   "Spring Bean 有哪些作用域？",
+   "单例 Bean 是线程安全的吗？",
+   "单例 Bean 中注入 prototype Bean 会有什么问题？",
+   "prototype Bean 的生命周期由谁管理？"
+  ],
+  "followups": [
+   {
+    "q": "单例 Bean 线程安全吗？",
+    "a": "Spring 不保证。无状态（只依赖其他无状态 Bean）就是安全的；有可变成员变量就需要自行处理，比如使用 ThreadLocal 或改为局部变量。"
+   },
+   {
+    "q": "prototype 会调用销毁方法吗？",
+    "a": "不会，容器交出实例后不再管理，需要调用方自己释放资源。"
+   },
+   {
+    "q": "@RequestScope 为什么能注入到单例？",
+    "a": "注入的是代理对象，每次方法调用时代理从当前请求中获取真实实例。"
+   }
+  ],
+  "answer": [
+   "总：默认 singleton，另有 prototype，以及 Web 中的 request、session、application、websocket。",
+   "分：singleton 是容器级单例，全生命周期管理，要注意线程安全；prototype 每次新建，不管理销毁；Web 作用域与请求或会话绑定。单例中注入短作用域 Bean 要用 ObjectProvider、@Lookup 或作用域代理。",
+   "实践：【结合你的项目】请求上下文我们用 @RequestScope 或 ThreadLocal；有状态的构建器用 prototype 配 ObjectProvider。",
+   "总结：作用域决定实例数量和生命周期，混用时注意注入时机。"
+  ],
+  "pitfalls": [
+   "说单例 Bean 天然线程安全。",
+   "单例中直接注入 prototype 期待每次不同。"
+  ]
  }
 }
