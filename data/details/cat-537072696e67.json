@@ -489,154 +489,170 @@
  },
  "j-s6": {
   "principle": [
-   "链路：请求→Filter→DispatcherServlet→HandlerMapping 找 Handler→Interceptor.pre→HandlerAdapter 调 Controller→返回值处理器（视图/消息转换）→Interceptor.post/after→响应。"
+   "Spring MVC 请求处理链路：请求先经过 Servlet 容器的 Filter 链，到达 DispatcherServlet（前端控制器）。它通过 HandlerMapping 根据 URL 和方法找到对应的处理器（Controller 方法）以及拦截器，组成 HandlerExecutionChain。",
+   "接着依次执行拦截器的 preHandle；再由 HandlerAdapter（通常是 RequestMappingHandlerAdapter）调用处理器：用参数解析器（HandlerMethodArgumentResolver）把请求参数、路径变量、请求体通过 HttpMessageConverter 转换为方法参数，执行 Controller 方法后，用返回值处理器处理结果，@ResponseBody 时通过消息转换器序列化为 JSON 写回。",
+   "然后执行拦截器 postHandle；如果是视图模式则由 ViewResolver 解析并渲染视图；最后执行 afterCompletion。过程中的异常由 HandlerExceptionResolver 处理，@ControllerAdvice 配合 @ExceptionHandler 就是在这里生效的。"
   ],
   "example": {
    "lang": "text",
-   "code": "DispatcherServlet 是前端控制器核心"
+   "code": "Filter 链\n  -> DispatcherServlet.doDispatch\n     -> HandlerMapping 找到 HandlerExecutionChain（handler + 拦截器）\n     -> interceptor.preHandle\n     -> HandlerAdapter.handle\n          参数解析器 + HttpMessageConverter（JSON -> 对象）\n          调用 Controller 方法\n          返回值处理器（对象 -> JSON）\n     -> interceptor.postHandle\n     -> 视图渲染（如有） / 异常 -> HandlerExceptionResolver(@ControllerAdvice)\n     -> interceptor.afterCompletion"
   },
   "asks": [
-   "MVC 链路？",
-   "DispatcherServlet？",
-   "拦截器位置？",
-   "消息转换？"
+   "Spring MVC 一个请求的处理流程是什么？",
+   "HandlerMapping 和 HandlerAdapter 分别做什么？",
+   "参数和返回值是怎么转换的？",
+   "全局异常处理在哪里生效？"
   ],
   "followups": [
    {
-    "q": "Adapter？",
-    "a": "适配不同类型 Handler。"
+    "q": "自定义参数注解怎么实现？",
+    "a": "实现 HandlerMethodArgumentResolver，判断参数上的注解并从请求或上下文中解析出值，再注册到 MVC 配置中。"
    },
    {
-    "q": "@ResponseBody？",
-    "a": "HttpMessageConverter。"
+    "q": "为什么需要 HandlerAdapter？",
+    "a": "处理器有多种形式，适配器模式让 DispatcherServlet 用统一方式调用不同类型的处理器。"
    },
    {
-    "q": "异常？",
-    "a": "HandlerExceptionResolver。"
+    "q": "postHandle 在 @ResponseBody 接口中能修改响应吗？",
+    "a": "通常不能，响应体在处理器返回时已经写出，修改响应应使用 ResponseBodyAdvice。"
    }
   ],
   "answer": [
-   "总：前端控制器调度整链。",
-   "分：映射-拦截-适配-返回。",
-   "实践：排 404/拦截器问题。",
-   "总结：懂链路会查中间件。"
+   "总：请求经 Filter 进入 DispatcherServlet，由 HandlerMapping 找处理器、HandlerAdapter 调用并完成参数和返回值转换，前后穿插拦截器。",
+   "分：参数解析器和消息转换器负责 JSON 与对象互转；拦截器有 preHandle、postHandle、afterCompletion 三个时机；异常由 HandlerExceptionResolver 和 @ControllerAdvice 处理。",
+   "实践：【结合你的项目】说明登录拦截器、统一响应包装和全局异常处理分别放在链路的哪一环。",
+   "总结：理解这条链路，才能把鉴权、参数解析、响应包装和异常处理放在正确的扩展点上。"
   ],
   "pitfalls": [
-   "说不清顺序。"
+   "在 postHandle 中试图修改已写出的 JSON 响应。",
+   "分不清 Filter 和拦截器的执行位置。",
+   "加分：会用 HandlerMethodArgumentResolver 和 ResponseBodyAdvice 扩展。"
   ]
  },
  "r-j3": {
   "principle": [
-   "AOT/Native Image：构建期闭环，启动快、内存小；反射/动态代理/资源需 hints；构建慢、调试难、部分库不兼容。适合 Serverless/CLI；传统长驻服务权衡收益。"
+   "Spring Boot 3 的 AOT（提前处理）在构建阶段运行应用上下文的分析，提前生成 Bean 定义的 Java 代码以及反射、代理、资源、序列化所需的配置（hints），减少运行时的反射和类路径扫描。这些产物可以交给 GraalVM 的 native-image 工具，把应用编译成本地可执行文件。",
+   "Native Image 的优势：启动时间从数秒降到几十毫秒，内存占用显著下降，非常适合 Serverless、函数计算、命令行工具和需要快速扩缩容的容器场景。它基于封闭世界假设：构建时必须确定所有可达的类，运行时不能随意加载新类。",
+   "代价：构建时间长、资源消耗大；反射、动态代理、JNI、资源加载必须通过 hints 或 RuntimeHints 注册，部分第三方库不兼容；没有 JIT，长时间运行的峰值吞吐可能低于 JVM；调试和诊断工具（Arthas 等）受限。适合启动敏感的场景，长时间运行的大型服务通常仍选择 JVM，或用 CRaC 等方案改善启动。"
   ],
   "example": {
-   "lang": "text",
-   "code": "spring-boot:build-image / native-maven-plugin\n反射 → reflect-config.json hints"
+   "lang": "java",
+   "code": "// 为反射访问注册 hints\n@ImportRuntimeHints(MyHints.class)\n@SpringBootApplication\npublic class App { }\n\nclass MyHints implements RuntimeHintsRegistrar {\n    public void registerHints(RuntimeHints hints, ClassLoader cl) {\n        hints.reflection().registerType(LegacyDto.class, MemberCategory.values());\n        hints.resources().registerPattern(\"templates/*.txt\");\n    }\n}\n// 构建：./mvnw -Pnative native:compile"
   },
   "asks": [
-   "Native Image？",
-   "代价？",
-   "适用？",
-   "hints？"
+   "Spring Boot 3 的 AOT 做了什么？",
+   "GraalVM Native Image 有什么优势？",
+   "Native Image 有哪些限制？",
+   "什么场景适合使用 Native Image？"
   ],
   "followups": [
    {
-    "q": "启动？",
-    "a": "毫秒～秒级。"
+    "q": "为什么反射需要额外配置？",
+    "a": "Native Image 在构建时静态分析可达代码，反射访问的类无法被分析到，必须通过 hints 告知编译器保留。"
    },
    {
-    "q": "峰值？",
-    "a": "吞吐未必胜经典 JIT。"
+    "q": "Native Image 的运行性能一定更好吗？",
+    "a": "不一定，它启动快内存小，但缺少 JIT 的运行时优化，长期运行的峰值吞吐可能不如 JVM。"
    },
    {
-    "q": "Spring？",
-    "a": "AOT 处理部分。"
+    "q": "不用 Native 怎么改善启动速度？",
+    "a": "可以使用类数据共享 CDS、延迟初始化、减少自动配置，或者使用 CRaC 做检查点恢复。"
    }
   ],
   "answer": [
-   "总：快启小内存换构建与兼容成本。",
-   "分：hints；场景选型。",
-   "实践：了解边界。",
-   "总结：不是银弹。"
+   "总：AOT 在构建期生成 Bean 定义和运行时 hints，配合 GraalVM 把应用编译为启动快、内存小的本地可执行文件。",
+   "分：适合 Serverless 和快速扩缩容；基于封闭世界假设，反射和代理需要 hints；构建慢、库兼容性有成本、峰值性能和诊断工具受限。",
+   "实践：【结合你的项目】说明是否评估过 Native Image，以及遇到的反射或第三方库兼容问题。",
+   "总结：Native Image 用构建复杂度换启动速度和内存，应按场景选择。"
   ],
   "pitfalls": [
-   "一律原生。"
+   "认为 Native Image 在所有场景下都比 JVM 快。",
+   "忽视反射和动态代理需要注册 hints。",
+   "加分：提到 CDS 和 CRaC 等替代方案。"
   ]
  },
  "p-s3": {
   "principle": [
-   "FactoryBean：自己的 getObject 创建复杂对象；容器中 &beanName 才是 FactoryBean 本身。区别于 BeanFactory（容器）。"
+   "FactoryBean 是 Spring 提供的一种特殊 Bean，用来创建构造过程复杂的对象。它实现 FactoryBean<T> 接口的 getObject()、getObjectType() 和 isSingleton()。当容器中注册的 Bean 是 FactoryBean 时，通过名字获取到的不是 FactoryBean 本身，而是 getObject() 返回的对象；要拿到工厂本身需要在名字前加 & 前缀。",
+   "典型应用：MyBatis 的 MapperFactoryBean 为每个 Mapper 接口生成动态代理对象，SqlSessionFactoryBean 构建 SqlSessionFactory；OpenFeign 的 FeignClientFactoryBean 为接口生成 HTTP 客户端代理；以及各种需要读取配置、组装多个组件才能创建的对象。它把复杂的创建逻辑封装起来，对使用方保持普通注入的体验。",
+   "与 BeanFactory 的区别：BeanFactory 是 Spring IoC 容器的顶层接口，负责管理所有 Bean 的创建、获取和生命周期；FactoryBean 只是容器中的一个 Bean，负责生产某一种对象。名字相似，但一个是容器，一个是工厂 Bean。"
   ],
   "example": {
    "lang": "java",
-   "code": "public class MyFB implements FactoryBean<Client> {\n  public Client getObject(){ return build(); }\n  public Class<?> getObjectType(){ return Client.class; }\n}"
+   "code": "public class RpcClientFactoryBean<T> implements FactoryBean<T> {\n    private final Class<T> iface;\n    public RpcClientFactoryBean(Class<T> iface) { this.iface = iface; }\n    public T getObject() {\n        return (T) Proxy.newProxyInstance(iface.getClassLoader(), new Class[]{iface},\n            (p, m, args) -> rpc.invoke(iface.getName(), m.getName(), args));\n    }\n    public Class<?> getObjectType() { return iface; }\n}\n// ctx.getBean(\"userClient\")  -> 代理对象\n// ctx.getBean(\"&userClient\") -> FactoryBean 本身"
   },
   "asks": [
-   "FactoryBean？",
-   "和 BeanFactory？",
-   "&？",
-   "场景？"
+   "FactoryBean 是什么？",
+   "FactoryBean 和 BeanFactory 有什么区别？",
+   "有哪些框架使用了 FactoryBean？",
+   "如何获取 FactoryBean 本身？"
   ],
   "followups": [
    {
-    "q": "&？",
-    "a": "取工厂。"
+    "q": "MyBatis 的 Mapper 接口为什么能直接注入？",
+    "a": "每个 Mapper 接口注册为 MapperFactoryBean，注入时调用 getObject 返回为该接口生成的动态代理。"
    },
    {
-    "q": "MyBatis？",
-    "a": "MapperFactoryBean。"
+    "q": "getObjectType 有什么作用？",
+    "a": "让容器在不创建对象的情况下知道产物类型，用于按类型注入和匹配，返回 null 会影响按类型查找。"
    },
    {
-    "q": "是否单例？",
-    "a": "isSingleton。"
+    "q": "FactoryBean 和 @Bean 方法怎么选？",
+    "a": "普通复杂对象用 @Bean 方法即可；需要为一批接口统一生成代理，或作为框架扩展点时用 FactoryBean。"
    }
   ],
   "answer": [
-   "总：用工厂方法暴露产品 Bean。",
-   "分：别和容器接口混。",
-   "实践：集成中间件。",
-   "总结：框架常见扩展点。"
+   "总：FactoryBean 是容器中负责生产复杂对象的特殊 Bean，获取它时得到的是 getObject 返回的产物。",
+   "分：加 & 前缀获取工厂本身；MyBatis Mapper 和 Feign 客户端都用它生成代理；BeanFactory 是容器顶层接口，二者职责不同。",
+   "实践：【结合你的项目】说明 Mapper 或 Feign 接口能被注入背后的 FactoryBean 机制。",
+   "总结：FactoryBean 是框架把接口变成可注入代理对象的关键扩展点。"
   ],
   "pitfalls": [
-   "名字混淆。"
+   "把 FactoryBean 和 BeanFactory 混为一谈。",
+   "不知道获取工厂本身要加 & 前缀。",
+   "加分：结合 MyBatis 或 Feign 源码说明。"
   ]
  },
  "p2-20": {
   "principle": [
-   "DispatcherServlet 初始化：加载 WebApplicationContext、HandlerMapping、Adapter、ExceptionResolver、ViewResolver 等；Boot 自动配置注册。"
+   "DispatcherServlet 是一个 Servlet，由 Servlet 容器（如 Tomcat）管理生命周期。在 Spring Boot 中，它由 DispatcherServletAutoConfiguration 注册为 Bean，并通过 DispatcherServletRegistrationBean 注册到内嵌容器。默认 load-on-startup 为 -1，即首次请求时才初始化，可以通过 spring.mvc.servlet.load-on-startup=1 改为启动时初始化，避免第一个请求变慢。",
+   "初始化过程：HttpServletBean.init 把配置参数绑定到属性；FrameworkServlet.initServletBean 初始化或关联 WebApplicationContext（Spring Boot 中直接使用已经创建好的应用上下文）；然后 DispatcherServlet.onRefresh 调用 initStrategies 初始化九大组件。",
+   "九大组件包括：MultipartResolver（文件上传）、LocaleResolver、ThemeResolver、HandlerMappings、HandlerAdapters、HandlerExceptionResolvers、RequestToViewNameTranslator、ViewResolvers、FlashMapManager。它们优先从容器中获取用户定义的 Bean，没有时使用 DispatcherServlet.properties 中的默认策略。"
   ],
   "example": {
    "lang": "text",
-   "code": "onRefresh → initStrategies"
+   "code": "Tomcat 启动 -> 注册 DispatcherServlet\n首次请求（或 load-on-startup>=0 时启动）-> Servlet.init()\n  HttpServletBean.init()            绑定 init-param\n  FrameworkServlet.initServletBean() 关联 WebApplicationContext\n  DispatcherServlet.onRefresh()\n     initStrategies():\n       initMultipartResolver / initLocaleResolver / initThemeResolver\n       initHandlerMappings / initHandlerAdapters\n       initHandlerExceptionResolvers / initViewResolvers ...\n# application.yml\nspring.mvc.servlet.load-on-startup: 1"
   },
   "asks": [
-   "初始化做什么？",
-   "Boot？",
-   "策略？",
-   "上下文？"
+   "DispatcherServlet 是如何初始化的？",
+   "九大组件有哪些？",
+   "Spring Boot 中 DispatcherServlet 是怎么注册的？",
+   "为什么第一次请求会比较慢？"
   ],
   "followups": [
    {
-    "q": "父子容器？",
-    "a": "根与 Web。"
+    "q": "组件没有自定义时用的是什么？",
+    "a": "使用 DispatcherServlet.properties 中配置的默认实现，例如默认的 HandlerMapping 和 HandlerAdapter 列表。"
    },
    {
-    "q": "映射？",
-    "a": "RequestMappingHandlerMapping。"
+    "q": "load-on-startup 有什么作用？",
+    "a": "值大于等于 0 时容器启动就初始化 Servlet，避免首个请求承担初始化开销导致响应变慢。"
    },
    {
-    "q": "启动慢？",
-    "a": "查初始化 Bean。"
+    "q": "Spring Boot 中有几个 ApplicationContext？",
+    "a": "通常只有一个 Web 应用上下文，传统 Spring MVC 才有根上下文和 Servlet 子上下文的父子结构。"
    }
   ],
   "answer": [
-   "总：装配九大组件。",
-   "分：Boot 自动化。",
-   "实践：排启动。",
-   "总结：前端控制器就绪过程。"
+   "总：DispatcherServlet 由容器触发 init，关联 WebApplicationContext 后在 onRefresh 中初始化九大组件。",
+   "分：Spring Boot 通过自动配置注册它；默认懒初始化，可配 load-on-startup；组件优先取容器中的 Bean，否则用默认策略。",
+   "实践：【结合你的项目】说明是否配置启动时初始化 DispatcherServlet，以及首次请求慢的处理。",
+   "总结：理解初始化流程有助于定位首请求慢和组件不生效的问题。"
   ],
   "pitfalls": [
-   "说不清职责。"
+   "不知道 DispatcherServlet 默认是首次请求才初始化。",
+   "混淆传统父子容器与 Spring Boot 单容器。",
+   "加分：列出九大组件并说明默认策略来源。"
   ]
  }
 }

@@ -1,40 +1,44 @@
 {
  "p2-40": {
   "principle": [
-   "Tomcat：NIO 连接器；maxThreads 工作线程；acceptCount 队列。Boot 内嵌可配 server.tomcat.*。线程满→拒绝；可开虚拟线程（新版本）。"
+   "Tomcat 由 Connector（连接器）和 Container（容器）组成。Connector 负责网络通信和协议解析，把字节流转换为 Request 对象；Container（Engine、Host、Context、Wrapper）负责找到并调用对应的 Servlet。Connector 内部的 ProtocolHandler 包含 Endpoint（处理 socket）和 Processor（解析 HTTP），通过 Adapter 适配到容器。",
+   "IO 模型：Tomcat 8.5 起默认 NIO，另有 NIO2 和 APR。NIO 模式下 Acceptor 线程接受连接，Poller 线程用 Selector 监听连接上的读事件，有数据可读时把任务交给 Worker 线程池执行 Servlet 逻辑。因此少量线程就能维持大量空闲长连接，但业务处理仍然占用 Worker 线程直到完成。",
+   "关键参数（Spring Boot 中为 server.tomcat.*）：threads.max 最大工作线程数（默认 200）、threads.min-spare、max-connections 最大连接数（NIO 默认 8192）、accept-count 连接数满后的等待队列长度（默认 100）、connection-timeout。线程都被慢请求占满时新请求会排队甚至超时，需要结合下游耗时调优，或者采用异步 Servlet、虚拟线程。"
   ],
   "example": {
    "lang": "yaml",
-   "code": "server.tomcat.threads.max: 200\nserver.tomcat.accept-count: 100"
+   "code": "server:\n  tomcat:\n    threads:\n      max: 400          # 工作线程上限（IO 密集可调大）\n      min-spare: 50\n    max-connections: 10000\n    accept-count: 200   # 连接满后的等待队列\n    connection-timeout: 5s\n# Spring Boot 3.2+ 可开启虚拟线程：spring.threads.virtual.enabled=true"
   },
   "asks": [
-   "线程模型？",
-   "参数？",
-   "和 Netty？",
-   "虚拟线程？"
+   "Tomcat 的整体架构是怎样的？",
+   "Tomcat NIO 线程模型是什么？",
+   "maxThreads、maxConnections、acceptCount 有什么区别？",
+   "Tomcat 线程池满了会怎样？"
   ],
   "followups": [
    {
-    "q": "阻塞？",
-    "a": "一请求一线程经典。"
+    "q": "maxThreads 越大越好吗？",
+    "a": "不是，线程过多会增加内存和上下文切换开销，应根据请求耗时、CPU 和下游连接池容量压测确定。"
    },
    {
-    "q": "满？",
-    "a": "监控。"
+    "q": "连接数和队列都满了会发生什么？",
+    "a": "操作系统层面拒绝新的连接或者让客户端连接超时，用户看到连接失败或请求超时。"
    },
    {
-    "q": "APR？",
-    "a": "历史。"
+    "q": "虚拟线程对 Tomcat 有什么影响？",
+    "a": "每个请求可使用廉价的虚拟线程，阻塞 IO 不再长时间占用平台线程，提升高并发阻塞场景的吞吐。"
    }
   ],
   "answer": [
-   "总：NIO 接收+线程池处理。",
-   "分：maxThreads。",
-   "实践：调参压测。",
-   "总结：容量规划。"
+   "总：Tomcat 由连接器和容器组成，NIO 模式下 Acceptor 接收连接、Poller 监听事件、Worker 线程池执行业务。",
+   "分：maxThreads 控制并发处理数，maxConnections 控制连接数，acceptCount 是满后队列；线程被慢请求占满会排队超时；可用异步或虚拟线程改善。",
+   "实践：【结合你的项目】说明线上 Tomcat 线程数配置以及一次线程池打满的排查。",
+   "总结：Tomcat 调优要结合请求耗时和下游容量，而不是简单调大线程数。"
   ],
   "pitfalls": [
-   "无限调大线程。"
+   "把 maxConnections 和 maxThreads 混为一谈。",
+   "盲目调大线程数而不处理慢下游。",
+   "加分：讲清 Acceptor、Poller、Worker 的分工。"
   ]
  }
 }

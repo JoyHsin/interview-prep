@@ -399,116 +399,128 @@
  },
  "j-d5": {
   "principle": [
-   "分布式 ID：UUID 无序占空间；号段 DB 段缓存；雪花趋势递增、依赖时钟（回拨要处理）；Redis INCR。索引友好选趋势递增。"
+   "分布式 ID 的要求：全局唯一、高性能高可用，最好趋势递增（对 B+ 树索引插入友好）、不暴露业务量。UUID 本地生成简单但是 36 位字符串、无序，作为 InnoDB 主键会导致页分裂和索引膨胀；数据库自增在分库后需要设置不同步长，扩展性差。",
+   "号段模式（如美团 Leaf-segment）：数据库中维护每个业务的 max_id 和 step，服务每次批量取一个号段在内存中分配，用完再取，双 buffer 提前加载下一号段，数据库压力很小，ID 趋势递增；缺点是 ID 连续可被推测业务量，且依赖数据库。",
+   "雪花算法：64 位 = 1 位符号 + 41 位毫秒时间戳 + 10 位机器 ID + 12 位序列号，本地生成、性能极高、趋势递增。问题一是时钟回拨会产生重复 ID，需要检测回拨后等待、报错或使用备用位；问题二是机器 ID 分配，可以借助 ZooKeeper、Redis 或数据库在启动时分配，容器环境中尤其要注意。"
   ],
   "example": {
    "lang": "java",
-   "code": "long id = snowflake.nextId(); // 时间+机器+序列"
+   "code": "synchronized long nextId() {\n    long now = System.currentTimeMillis();\n    if (now < lastTs) {                        // 时钟回拨\n        if (lastTs - now < 5) now = waitUntil(lastTs);\n        else throw new IllegalStateException(\"clock moved backwards\");\n    }\n    if (now == lastTs) {\n        seq = (seq + 1) & 4095;                // 12 位序列号\n        if (seq == 0) now = waitUntil(lastTs + 1);\n    } else seq = 0;\n    lastTs = now;\n    return ((now - EPOCH) << 22) | (workerId << 12) | seq;\n}"
   },
   "asks": [
-   "分布式 ID？",
-   "雪花回拨？",
-   "号段？",
-   "为何递增？"
+   "分布式 ID 有哪些方案？",
+   "雪花算法的结构是什么？",
+   "时钟回拨怎么处理？",
+   "为什么 ID 最好趋势递增？"
   ],
   "followups": [
    {
-    "q": "回拨？",
-    "a": "等待/扩展位/报错。"
+    "q": "UUID 作为主键有什么问题？",
+    "a": "无序插入导致 B+ 树频繁页分裂，字符串占用空间大，二级索引也会随之膨胀，写入性能下降。"
    },
    {
-    "q": "机器号？",
-    "a": "协调分配。"
+    "q": "容器环境下雪花算法的机器 ID 怎么分配？",
+    "a": "启动时通过 Redis、ZooKeeper 或数据库申请一个未被占用的 workerId，并定期续约，避免 Pod 重建时冲突。"
    },
    {
-    "q": "美团 leaf？",
-    "a": "号段+雪花。"
+    "q": "号段模式数据库挂了怎么办？",
+    "a": "内存中还有当前和预加载的号段可以继续分配一段时间，同时数据库要做主从高可用。"
    }
   ],
   "answer": [
-   "总：号段与雪花主流。",
-   "分：时钟与索引。",
-   "实践：订单号。",
-   "总结：别用随机打散主键。"
+   "总：分布式 ID 常用号段模式和雪花算法，要求唯一、高性能并尽量趋势递增。",
+   "分：UUID 简单但无序不适合做主键；号段模式批量取号、双 buffer、依赖数据库；雪花本地生成但要处理时钟回拨和机器 ID 分配。",
+   "实践：【结合你的项目】说明订单号的生成方式，以及是否遇到过时钟回拨或 workerId 冲突。",
+   "总结：选型时在性能、依赖、可读性和防推测之间取舍。"
   ],
   "pitfalls": [
-   "UUID 当聚簇主键。"
+   "使用 UUID 作为 InnoDB 聚簇主键。",
+   "雪花算法不处理时钟回拨。",
+   "加分：说明号段模式的双 buffer 设计。"
   ]
  },
  "p-d4": {
   "principle": [
-   "雪崩：依赖失败→线程打满→整站挂。防：超时、熔断、限流、舱壁隔离线程池、缓存降级、快速失败。"
+   "服务雪崩是指某个下游服务变慢或故障，调用方线程因为等待而被大量占用，进而调用方自身也无法响应，故障沿调用链向上游扩散，最终导致整个系统不可用。根因通常是没有超时、重试放大流量以及资源没有隔离。",
+   "防护手段：一是合理的超时，所有远程调用都必须设置连接和读取超时，并且上游超时要大于下游；二是熔断，当错误率或慢调用比例超过阈值时快速失败，一段时间后半开试探恢复；三是降级，返回缓存、默认值或简化功能；四是舱壁隔离，为不同下游分配独立的线程池或信号量，一个下游故障不会耗尽全部资源。",
+   "此外还要限流保护自身入口、控制重试次数并加退避和抖动、避免同步调用链过长（可改为异步消息），以及做好容量规划和压测。常用组件有 Sentinel、Resilience4j，在网关层和服务层都要配置。"
   ],
   "example": {
    "lang": "java",
-   "code": "@CircuitBreaker(name=\"dep\", fallbackMethod=\"fb\")"
+   "code": "@CircuitBreaker(name = \"inventory\", fallbackMethod = \"stockFallback\")\n@Bulkhead(name = \"inventory\", type = Bulkhead.Type.THREADPOOL)\n@TimeLimiter(name = \"inventory\")\npublic CompletableFuture<Stock> query(long skuId) {\n    return CompletableFuture.supplyAsync(() -> inventoryClient.get(skuId));\n}\nCompletableFuture<Stock> stockFallback(long skuId, Throwable t) {\n    return CompletableFuture.completedFuture(Stock.unknown(skuId));  // 降级\n}\n# resilience4j: failureRateThreshold 50, slowCallDurationThreshold 1s, waitDurationInOpenState 10s"
   },
   "asks": [
-   "雪崩？",
-   "怎么防？",
-   "舱壁？",
-   "超时？"
+   "什么是服务雪崩？",
+   "如何防止服务雪崩？",
+   "舱壁隔离是什么？",
+   "重试为什么可能加剧雪崩？"
   ],
   "followups": [
    {
-    "q": "舱壁？",
-    "a": "池隔离依赖。"
+    "q": "熔断器有哪几种状态？",
+    "a": "关闭状态正常放行，打开状态直接快速失败，半开状态放行少量请求试探，成功则关闭，失败则重新打开。"
    },
    {
-    "q": "重试？",
-    "a": "放大灾难，要谨慎。"
+    "q": "超时时间怎么设置？",
+    "a": "参考下游的 P99 耗时并留一定余量，同时保证上游的超时大于下游超时与重试时间之和。"
    },
    {
-    "q": "演练？",
-    "a": "故障注入。"
+    "q": "降级返回什么内容？",
+    "a": "可以返回缓存数据、默认值或者隐藏非核心模块，但要保证核心流程可用，并对降级进行监控告警。"
    }
   ],
   "answer": [
-   "总：超时熔断隔离降级。",
-   "分：别无限重试。",
-   "实践：Resilience4j/Sentinel。",
-   "总结：失败要可控。"
+   "总：雪崩是下游故障通过线程堆积向上游扩散，防护靠超时、熔断、降级和隔离。",
+   "分：所有远程调用设置超时；熔断快速失败并半开恢复；降级返回兜底；舱壁隔离限制故障影响范围；控制重试并做入口限流。",
+   "实践：【结合你的项目】讲一次下游变慢导致自身线程池打满的故障，以及后来加的保护措施。",
+   "总结：防雪崩的核心是让故障快速失败并限制影响范围。"
   ],
   "pitfalls": [
-   "依赖挂了还狂重试。"
+   "远程调用不设置超时。",
+   "无限制重试放大下游压力。",
+   "加分：说明线程池隔离与信号量隔离的区别。"
   ]
  },
  "p2-32": {
   "principle": [
-   "链路追踪：traceId 全链路，spanId 每跨度；采样率控量；注入日志 MDC 关联。SkyWalking/Zipkin/OTel。"
+   "分布式链路追踪用于还原一次请求在多个服务之间的调用路径和耗时。核心字段：traceId 标识一次完整请求，在整条链路中保持不变；spanId 标识一次调用单元；parentSpanId 记录父调用，用来构建调用树；此外每个 span 记录服务名、操作名、开始时间、耗时、状态码以及标签和事件。",
+   "上下文传播：调用下游时把 traceId、spanId 等放进请求头（W3C 标准为 traceparent），消息队列放在消息属性中，线程池异步时需要手动传递上下文。OpenTelemetry 是目前的标准，后端可以接 Jaeger、Zipkin、SkyWalking 等。",
+   "采样率：全量采集成本高，通常按比例采样（头部采样），或在请求结束后保留错误和慢请求（尾部采样）。与日志关联：把 traceId 放入 MDC，每条日志都带上 traceId，排查时可以从链路跳到日志、从日志跳到链路，也可以把 traceId 返回给前端便于用户报障。"
   ],
   "example": {
    "lang": "java",
-   "code": "MDC.put(\"traceId\", id); // 网关生成下传"
+   "code": "// 日志格式带 traceId（OpenTelemetry/Micrometer 自动放入 MDC）\n// logging.pattern.level: \"%5p [%X{traceId:-},%X{spanId:-}]\"\n\n// 异步任务传递上下文\nContext ctx = Context.current();\nexecutor.submit(ctx.wrap(() -> orderService.notify(orderId)));\n\n// HTTP 头示例\n// traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
   },
   "asks": [
-   "追踪字段？",
-   "采样？",
-   "和日志？",
-   "AI？"
+   "链路追踪的关键字段有哪些？",
+   "traceId 是如何在服务间传递的？",
+   "采样策略怎么选择？",
+   "链路追踪如何与日志关联？"
   ],
   "followups": [
    {
-    "q": "透传？",
-    "a": "HTTP header。"
+    "q": "异步线程中 traceId 丢失怎么办？",
+    "a": "使用 Context.wrap 或 TaskDecorator 包装任务，把父线程的追踪上下文和 MDC 传递到子线程。"
    },
    {
-    "q": "存储？",
-    "a": "后端集中。"
+    "q": "尾部采样有什么优势？",
+    "a": "在请求结束后根据结果决定是否保留，能确保错误和慢请求都被采集，代价是需要缓存完整链路。"
    },
    {
-    "q": "性能？",
-    "a": "采样。"
+    "q": "MQ 场景下链路怎么串起来？",
+    "a": "生产者把追踪上下文写入消息头，消费者取出后创建关联的 span，从而把异步处理纳入同一条链路。"
    }
   ],
   "answer": [
-   "总：trace/span+日志关联。",
-   "分：采样；标准头。",
-   "实践：排障神器。",
-   "总结：微服务必备。"
+   "总：链路追踪通过 traceId、spanId、parentSpanId 还原调用树和各段耗时。",
+   "分：上下文通过请求头和消息属性传播，异步需手动传递；按比例或尾部采样控制成本；traceId 写入 MDC 与日志关联。",
+   "实践：【结合你的项目】说明使用的追踪系统、采样率，以及如何通过 traceId 定位一次慢请求。",
+   "总结：链路、日志和指标通过 traceId 串联，才能高效排查分布式问题。"
   ],
   "pitfalls": [
-   "无 ID 无法串。"
+   "线程池异步调用后 traceId 丢失。",
+   "全量采样导致存储成本过高。",
+   "加分：了解 W3C traceparent 标准和 OpenTelemetry。"
   ]
  }
 }

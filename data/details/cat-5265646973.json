@@ -441,116 +441,128 @@
  },
  "j-r6": {
   "principle": [
-   "BigKey：大 value/大集合，阻塞、内存尖峰；拆分、扫描删用渐进。热点 Key：单 key QPS 极高；本地缓存、读写分离、复制多副本、拆 key。"
+   "BigKey 指单个 key 的值过大，如 String 超过 10KB、Hash/List/Set 元素数量超过数千或上万。危害：读写占用大量网络带宽、单命令执行慢阻塞 Redis 单线程、集群下数据和流量不均衡、删除时阻塞（DEL 大集合）、迁移和持久化时卡顿。",
+   "发现方式：redis-cli --bigkeys 或 --memkeys 采样扫描、MEMORY USAGE 查看单 key、离线分析 RDB 文件。治理：把大 Hash 按字段哈希拆成多个小 key，大 List 分段存储；删除使用 UNLINK 异步删除或 HSCAN 分批删除；开启 lazyfree 相关配置；从业务上避免把整个列表或大 JSON 塞进一个 key。",
+   "热点 Key 指短时间内被极高频访问的 key（如秒杀商品、热搜），会导致单个分片 CPU 和网卡打满。发现可用 redis-cli --hotkeys（需 LFU 淘汰策略）、客户端或代理层统计。处理：在应用层加本地缓存（Caffeine）并设置短过期；把热点 key 复制成多个副本（key_1…key_N）随机读取分散到不同分片；读请求走从节点；对极端热点做限流降级。"
   ],
   "example": {
    "lang": "bash",
-   "code": "redis-cli --bigkeys\nMEMORY USAGE key"
+   "code": "redis-cli --bigkeys -i 0.1          # 采样找大 key（-i 控制扫描间隔）\nredis-cli --hotkeys                 # 需 maxmemory-policy 为 LFU\nredis-cli MEMORY USAGE user:feed:1001\nredis-cli UNLINK user:feed:1001     # 异步删除，避免阻塞\n# redis.conf\nlazyfree-lazy-eviction yes\nlazyfree-lazy-expire yes"
   },
   "asks": [
-   "BigKey？",
-   "热点 Key？",
-   "怎么治？",
-   "发现？"
+   "什么是 BigKey，有什么危害？",
+   "如何发现和治理 BigKey？",
+   "什么是热点 Key？",
+   "热点 Key 怎么处理？"
   ],
   "followups": [
    {
-    "q": "热 key？",
-    "a": "代理上报或猜测。"
+    "q": "为什么删除 BigKey 会阻塞？",
+    "a": "DEL 需要同步释放集合中的所有元素内存，元素很多时耗时长，单线程模型下会阻塞其他命令。"
    },
    {
-    "q": "拆？",
-    "a": "哈希分桶。"
+    "q": "热点 Key 复制多份有什么问题？",
+    "a": "更新时需要同时更新所有副本，存在短暂不一致，适合读多写少、可以容忍短暂旧值的数据。"
    },
    {
-    "q": "删大 key？",
-    "a": "UNLINK。"
+    "q": "本地缓存解决热点要注意什么？",
+    "a": "要设置较短过期时间和容量上限，并通过消息广播或版本号机制处理数据变更后的失效。"
    }
   ],
   "answer": [
-   "总：大与热都要拆与挡。",
-   "分：本地缓存打热；渐进删大。",
-   "实践：【结合你的项目】。",
-   "总结：监控 key 分布。"
+   "总：BigKey 是单 key 过大，热点 Key 是单 key 访问过于集中，两者都会让单个 Redis 分片成为瓶颈。",
+   "分：BigKey 用 --bigkeys 和 RDB 分析发现，通过拆分、UNLINK 和 lazyfree 治理；热点 Key 用 --hotkeys 或客户端统计发现，通过本地缓存、多副本、读从库和限流处理。",
+   "实践：【结合你的项目】讲一次大 key 或热点 key 导致 Redis 延迟升高的排查过程。",
+   "总结：从数据结构设计阶段就避免大 key，并为热点数据准备多级缓存。"
   ],
   "pitfalls": [
-   "KEYS * 删大键。"
+   "用 DEL 直接删除大集合导致 Redis 阻塞。",
+   "用 KEYS 命令在线上扫描大 key。",
+   "加分：说明 hotkeys 依赖 LFU 策略。"
   ]
  },
  "p-rd4": {
   "principle": [
-   "Redis 快：内存+单线程执行无锁+IO 多路复用。6.0+ 网络读写多线程，命令执行仍主要单线程，避免并发复杂度。大 key/慢命令仍阻塞。"
+   "Redis 单线程依然很快的原因：数据全部在内存中，操作是纳秒到微秒级；核心数据结构（SDS、跳表、压缩列表、哈希表渐进式 rehash）高效；单线程执行命令避免了锁竞争和线程上下文切换；网络层使用 epoll 等 IO 多路复用，一个线程就能同时处理大量连接。",
+   "Redis 的瓶颈通常不在 CPU，而在网络 IO 和内存。随着网络带宽提升，单线程读写 socket 和协议解析成为瓶颈，所以 Redis 6.0 引入了多线程 IO：用多个 IO 线程并行读取请求、解析协议、写回响应，而命令的执行仍然由主线程串行完成，因此保持了原子性，不需要给数据结构加锁。",
+   "多线程 IO 默认关闭，需要配置 io-threads（建议小于 CPU 核数）并开启 io-threads-do-reads。此外 Redis 早已使用后台线程处理关闭文件、AOF 刷盘和异步删除（UNLINK、lazyfree）等耗时操作，所以「单线程」准确地说是指命令执行单线程。"
   ],
   "example": {
-   "lang": "text",
-   "code": "慢命令：KEYS、大集合满载操作 → 用 SCAN/拆分"
+   "lang": "bash",
+   "code": "# redis.conf（6.0+）\nio-threads 4                 # IO 线程数，建议小于核数\nio-threads-do-reads yes      # 读请求也使用多线程\n# 命令执行仍在主线程串行，KEYS / 大集合 SMEMBERS 等慢命令依然会阻塞\nredis-cli --latency          # 观察延迟\nredis-cli SLOWLOG GET 10     # 慢命令"
   },
   "asks": [
-   "为何单线程还快？",
-   "6.0 多线程？",
-   "瓶颈？",
-   "集群？"
+   "Redis 为什么单线程也很快？",
+   "Redis 6.0 的多线程是什么？",
+   "多线程 IO 会影响命令的原子性吗？",
+   "Redis 真的只有一个线程吗？"
   ],
   "followups": [
    {
-    "q": "执行？",
-    "a": "仍单线程为主。"
+    "q": "为什么命令执行不也做成多线程？",
+    "a": "多线程执行需要给数据结构加锁，增加复杂度和开销，而 CPU 本来就不是 Redis 的主要瓶颈。"
    },
    {
-    "q": "模块？",
-    "a": "部分可并行。"
+    "q": "开启多线程 IO 后还要注意慢命令吗？",
+    "a": "要，命令仍在主线程串行执行，KEYS、大集合全量读取等慢命令依然会阻塞所有请求。"
    },
    {
-    "q": "阻塞？",
-    "a": "慢命令。"
+    "q": "Redis 有哪些后台线程？",
+    "a": "有处理文件关闭、AOF fsync 和惰性释放内存的 bio 后台线程，以及 6.0 之后的 IO 线程。"
    }
   ],
   "answer": [
-   "总：单线程执行模型+多路 IO。",
-   "分：6.0 加速网络；避慢命令。",
-   "实践：禁 KEYS。",
-   "总结：快在简单。"
+   "总：Redis 快在内存操作、高效数据结构、单线程无锁和 IO 多路复用；6.0 的多线程只用于网络 IO。",
+   "分：瓶颈主要在网络而非 CPU；6.0 用 IO 线程并行读写和解析，命令执行仍在主线程，保持原子性；后台线程负责刷盘和惰性删除；慢命令仍会阻塞。",
+   "实践：【结合你的项目】说明是否开启了 io-threads 以及压测下的吞吐变化。",
+   "总结：理解单线程执行模型，才能避免在线上使用会阻塞的慢命令。"
   ],
   "pitfalls": [
-   "说 Redis 多线程执行所有命令。"
+   "认为 6.0 之后命令执行也是多线程的。",
+   "以为单线程就不会有并发问题，忽视客户端的读改写竞态。",
+   "加分：提到 bio 后台线程和 lazyfree。"
   ]
  },
  "p2-27": {
   "principle": [
-   "GEO：附近的人。HyperLogLog：近似 UV。BitMap：签到/布尔。省内存换精度或位运算。"
+   "GEO：基于有序集合实现，把经纬度通过 GeoHash 编码成 52 位整数作为 score，支持 GEOADD 添加位置、GEOSEARCH 按半径或矩形范围查询并按距离排序、GEODIST 计算距离。适合附近的人、附近门店、骑手派单等场景；数据量非常大或需要复杂过滤时可以使用 ES 的地理查询。",
+   "HyperLogLog：基数估算结构，每个 key 只占约 12KB 内存，就能估算高达 2^64 个不同元素的数量，标准误差约 0.81%。适合统计页面 UV、独立搜索词数量等允许少量误差的去重计数；它不能列出具体元素，也不能判断某元素是否存在。PFMERGE 可以合并多天数据统计周 UV。",
+   "BitMap：本质是 String 的位操作，每个用户或每天占 1 个 bit，非常节省空间。适合用户签到（key 按用户和月份，偏移为日期）、在线状态、活跃用户统计（按日期 key，偏移为用户 ID），用 BITCOUNT 统计数量，BITOP 做多天的与或运算。用户 ID 稀疏且很大时会浪费空间，可考虑 Roaring Bitmap。"
   ],
   "example": {
    "lang": "bash",
-   "code": "GEOADD loc 116.4 39.9 user1\nPFADD uv:d u1; SETBIT sign:u 1 1"
+   "code": "GEOADD shops 116.40 39.90 shop:1\nGEOSEARCH shops FROMLONLAT 116.41 39.91 BYRADIUS 3 km ASC COUNT 10 WITHDIST\nPFADD uv:2026-10-31 user:1 user:2 user:1\nPFCOUNT uv:2026-10-31                        # 约 2\nPFMERGE uv:week uv:2026-10-25 uv:2026-10-31\nSETBIT sign:1001:202610 30 1                 # 用户 1001 十月第 31 天签到\nBITCOUNT sign:1001:202610                    # 本月签到天数"
   },
   "asks": [
-   "三者场景？",
-   "精度？",
-   "内存？",
-   "替代？"
+   "GEO、HyperLogLog、BitMap 分别适合什么场景？",
+   "HyperLogLog 为什么省内存？",
+   "BitMap 怎么实现签到？",
+   "GEO 的底层原理是什么？"
   ],
   "followups": [
    {
-    "q": "HLL 误差？",
-    "a": "约 0.81%。"
+    "q": "HyperLogLog 能判断用户是否访问过吗？",
+    "a": "不能，它只估算基数而不保存元素，判断是否存在应使用 Set、BitMap 或布隆过滤器。"
    },
    {
-    "q": "GEO？",
-    "a": "底层 ZSET。"
+    "q": "BitMap 什么时候会浪费空间？",
+    "a": "当用户 ID 很大且稀疏时，需要按最大偏移分配空间，这时可以先做 ID 映射或使用 Roaring Bitmap。"
    },
    {
-    "q": "BitMap？",
-    "a": "偏移用户 id。"
+    "q": "GEO 数据量大时有什么问题？",
+    "a": "单个 key 的有序集合过大会成为 BigKey，可以按城市或区域拆分 key，或改用 ES 的地理查询。"
    }
   ],
   "answer": [
-   "总：特殊结构省空间。",
-   "分：UV/签到/附近。",
-   "实践：运营统计。",
-   "总结：选对结构。"
+   "总：GEO 处理地理位置查询，HyperLogLog 做低内存的去重计数估算，BitMap 做按位的状态记录和统计。",
+   "分：GEO 基于 GeoHash 和 ZSet；HyperLogLog 约 12KB、误差约 0.81%、不能列出元素；BitMap 适合签到和活跃统计，ID 稀疏时浪费空间。",
+   "实践：【结合你的项目】说明 UV 统计或签到功能使用的数据结构以及内存估算。",
+   "总结：选择数据结构要明确是否允许误差、是否需要列出元素以及数据分布。"
   ],
   "pitfalls": [
-   "用 String 硬算 UV。"
+   "用 HyperLogLog 做需要精确结果的计数。",
+   "把全国门店放在一个 GEO key 中形成大 key。",
+   "加分：说明 HyperLogLog 的误差与内存特性。"
   ]
  }
 }
