@@ -122,7 +122,7 @@
    "总：Netty 快在 Reactor 线程模型、内存池化与零拷贝、以及大量细节优化。",
    "分：主从 Reactor，Boss 接收连接，Worker 处理读写，Channel 绑定单一 EventLoop 无锁串行；ByteBuf 池化、堆外内存、读写指针分离；CompositeByteBuf、slice、FileRegion 实现零拷贝；规避空轮询、可用原生 epoll。耗时业务交给业务线程池。",
    "实践：【结合你的项目】【待填：如网关、IM、或 Dubbo/gRPC 底层用到 Netty】，我们排查过 ByteBuf 泄漏，用 ResourceLeakDetector 定位。",
-   "总结：线程模型无锁化 + 内存高效复用是关键。"
+   "总结：Netty 高性能的关键是 Reactor 线程模型下的无锁串行化和池化内存复用。"
   ],
   "pitfalls": [
    "在 EventLoop 中执行数据库调用。",

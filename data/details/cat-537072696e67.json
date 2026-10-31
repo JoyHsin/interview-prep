@@ -38,7 +38,7 @@
    "总：事务基于 AOP 代理，没经过代理或异常没传给代理就会失效。",
    "分：常见场景有自调用、方法私有或 final、异常被吞、抛受检异常没配 rollbackFor、对象不是 Bean、多线程、传播行为配错、引擎不支持。",
    "实践：【结合你的项目】我们遇到过自调用导致事务不生效，后来把事务方法拆到单独 Service，并统一 rollbackFor = Exception.class。",
-   "总结：记住“代理 + 异常”两个关键点。"
+   "总结：事务失效大多围绕两点：调用没有经过代理，或异常没有按规则抛出到事务边界。"
   ],
   "pitfalls": [
    "说 Spring 6 仍然只能 public（已放宽到非 private，仅限类代理）。",
@@ -126,7 +126,7 @@
    "总：自动配置 = 按约定加载候选配置类 + 条件注解按需装配。",
    "分：@SpringBootApplication 包含 @EnableAutoConfiguration，它通过 AutoConfigurationImportSelector 读取 AutoConfiguration.imports 里的配置类，延迟到用户配置之后处理，再用 @ConditionalOnClass、@ConditionalOnMissingBean、@ConditionalOnProperty 过滤，属性通过 @ConfigurationProperties 绑定。",
    "实践：【结合你的项目】我们封装过内部的【待填：如日志/鉴权/短信】starter，其他服务引依赖、改配置即可使用。",
-   "总结：约定优于配置，同时保留用户覆盖能力。"
+   "总结：自动配置体现约定优于配置，通过条件注解在用户自定义 Bean 时自动让位。"
   ],
   "pitfalls": [
    "还说 Boot 3 用 spring.factories 注册自动配置。",

@@ -119,7 +119,7 @@
    }
   ],
   "answer": [
-   "总：两者能力相近，选型主要看技术栈和编程风格。",
+   "总：Spring AI 和 LangChain4j 能力相近，选型主要看是否深度使用 Spring 生态和团队编程风格。",
    "分：Spring AI 是 Spring 官方，ChatClient + Advisor，与 Boot、可观测性深度集成；LangChain4j 独立，AI Services 声明式接口，集成丰富，也支持 Spring Boot。概念基本一一对应。",
    "实践：【结合你的项目】我们后端是 Spring Boot，所以选 Spring AI【或待填】；我也用 LangChain4j 写过【待填】做对比。",
    "总结：有 Spring 用 Spring AI，要声明式和更多集成可选 LangChain4j。"

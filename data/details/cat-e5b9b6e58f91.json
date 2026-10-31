@@ -124,7 +124,7 @@
    "总：AQS = 一个 volatile state + 一个 CLH 等待队列 + 模板方法。",
    "分：子类用 CAS 改 state 定义抢锁规则；失败线程入队并 park；释放时唤醒后继。独占和共享两种模式，ReentrantLock、Semaphore、CountDownLatch、读写锁都基于它。公平与非公平差在是否先看队列里有没有人。",
    "实践：【结合你的项目】排查线程卡住时，jstack 看到大量 WAITING 在 AbstractQueuedSynchronizer.acquire，就知道是锁竞争。",
-   "总结：理解 AQS 就理解了 JUC 大部分锁。"
+   "总结：AQS 用 state 加 CLH 队列实现排队与唤醒，理解它就理解了 JUC 大部分同步器。"
   ],
   "pitfalls": [
    "只背“state+队列”，说不出模板方法和共享/独占。",
@@ -208,7 +208,7 @@
    "总：CAS 是硬件级原子“比较并交换”，是无锁并发的基础。",
    "分：Java 用 Unsafe/VarHandle 调用，Atomic 类、AQS、CHM 都依赖它；失败就自旋重试，属于乐观锁。问题有三：ABA 用版本号（AtomicStampedReference）解决；高竞争自旋浪费 CPU，可换 LongAdder 或锁；只能保证单变量原子。",
    "实践：【结合你的项目】接口计数统计我用 LongAdder；库存扣减在 DB 层用 version 字段做乐观锁，本质也是 CAS 思想。",
-   "总结：CAS 适合低竞争、简单操作。"
+   "总结：CAS 适合低竞争、单变量的简单更新，高竞争时自旋开销大，应换锁或 LongAdder。"
   ],
   "pitfalls": [
    "说 CAS 不会有性能问题（高竞争会空转）。",
@@ -251,7 +251,7 @@
    "总：虚拟线程是 JVM 调度的轻量线程，阻塞时自动让出载体线程。",
    "分：Java 21 正式可用，大量虚拟线程复用少量载体线程，阻塞 IO 时卸载、就绪后再挂载，用同步写法获得高吞吐。适合 IO 密集，不适合 CPU 密集。注意不要池化、用 Semaphore 限流、JDK 21 上避免 synchronized 内阻塞、ThreadLocal 内存。Boot 3.2+ 一个配置即可开启。",
    "实践：【结合你的项目】调用大模型接口一次要几秒，如果用平台线程池很快占满；用虚拟线程可以【待填：压测数据】。",
-   "总结：IO 密集场景的低成本高并发方案。"
+   "总结：虚拟线程是 IO 密集场景下用同步写法获得高并发的低成本方案，但要注意 pinning。"
   ],
   "pitfalls": [
    "说虚拟线程让 CPU 计算更快。",
@@ -294,7 +294,7 @@
    "总：6 种状态：NEW、RUNNABLE、BLOCKED、WAITING、TIMED_WAITING、TERMINATED。",
    "分：RUNNABLE 包含就绪和运行；BLOCKED 专指等待 synchronized 锁；WAITING 由 wait、join、park 进入，TIMED_WAITING 是带超时版本；wait 被唤醒后要重新竞争锁。sleep 不释放锁，wait 释放锁且必须在同步块中。",
    "实践：【结合你的项目】看 jstack 时，大量 BLOCKED 说明 synchronized 竞争，大量 WAITING 在 AQS 上说明 Lock 或连接池等待。",
-   "总结：状态是排查线程问题的第一手信息。"
+   "总结：线程状态是排查卡顿、死锁和 CPU 问题的第一手信息，要能看懂 jstack 中的状态。"
   ],
   "pitfalls": [
    "把 Lock 等待说成 BLOCKED。",
@@ -334,10 +334,10 @@
    }
   ],
   "answer": [
-   "总：先按任务类型估算，再压测和监控校准。",
+   "总：线程池大小先按 CPU 密集或 IO 密集估算，再通过压测和运行时监控校准。",
    "分：CPU 密集约等于核数加 1；IO 密集用核数乘利用率乘（1 + 等待/计算），或用 QPS 乘响应时间估算；同时受限于下游连接池；不同业务隔离线程池，有界队列，监控并支持动态调整。",
    "实践：【结合你的项目】我们调用下游的线程池最初设置【待填】，压测发现【待填】，调整为【待填】后 P99 改善。",
-   "总结：公式只是起点，数据才是依据。"
+   "总结：线程数公式只是起点，最终要以压测结果和线上队列、耗时监控数据为依据。"
   ],
   "pitfalls": [
    "背一个固定公式不讲压测。",
