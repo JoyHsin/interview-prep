@@ -467,41 +467,44 @@
  },
  "r-a3": {
   "principle": [
-   "LangGraph Checkpoint：把图执行的 State 持久化（内存/Sqlite/Postgres/Redis 等），每步或每超级步保存。",
-   "用途：① 进程挂了可恢复；② human-in-the-loop——节点前暂停，人工审批后继续；③ 时间旅行调试、从某 checkpoint 分叉对比策略。是长任务 Agent 的关键能力。"
+   "LangGraph 的 Checkpoint 是图状态的持久化快照：每个超级步骤（super-step）结束后，把当前 State 写入 checkpointer（内存、Sqlite、Postgres、Redis 等）。有了它，图可以从中断点恢复，而不是每次从零开始。",
+   "典型用途：① 人工审批（human-in-the-loop）：跑到需确认的节点就 pause，把状态存盘，人点同意后再 resume。② 故障恢复：进程崩溃后按 thread_id/session 加载最近 checkpoint 继续。③ 调试与分叉：回溯到某步，改输入再跑，对比不同分支。④ 长时间多轮 Agent：跨请求保持图状态。",
+   "实现上要注意：State 必须可序列化；敏感字段脱敏；同一 thread_id 的并发写入要有策略；生产别用 MemorySaver。和「只把聊天历史存 Redis」不同，checkpoint 存的是图的通道状态（包括中间工具结果、分支标记），能精确恢复控制流。"
   ],
   "example": {
-   "lang": "python",
-   "code": "from langgraph.checkpoint.memory import MemorySaver\ngraph = builder.compile(checkpointer=MemorySaver())\ncfg = {\"configurable\": {\"thread_id\": \"u-1\"}}\ngraph.invoke({\"x\": 1}, cfg)          # 状态可跨调用恢复\n# 生产换 PostgresSaver / RedisSaver"
+   "lang": "text",
+   "code": "概念：\ngraph.compile(checkpointer=PostgresSaver(...))\nconfig = {\"configurable\": {\"thread_id\": userSession}}\ngraph.invoke(input, config)          # 自动写 checkpoint\n# 人工审批后\ngraph.invoke(Command(resume=True), config)\n\n面试要点：\n- thread_id 维度隔离会话\n- 可 interrupt_before / interrupt_after 某节点\n- 回溯：拿到 state history 再 update_state"
   },
   "asks": [
-   "Checkpoint 是什么？",
-   "用在哪里？",
-   "和会话记忆区别？",
-   "thread_id？"
+   "LangGraph Checkpoint 是什么？",
+   "用在哪些场景？",
+   "和只存聊天历史有什么不同？",
+   "生产要注意什么？"
   ],
   "followups": [
    {
-    "q": "和 ChatMemory？",
-    "a": "Checkpoint 是整图状态；ChatMemory 多指对话消息。"
+    "q": "没有 Checkpoint 能不能做多轮？",
+    "a": "能，但通常只能自己把消息列表塞回输入；遇到中途暂停、分支恢复会很脆，也难做审批流。"
    },
    {
-    "q": "审批？",
-    "a": "interrupt 后等外部更新再 invoke。"
+    "q": "Checkpoint 会不会把密钥也持久化？",
+    "a": "如果 State 里塞了密钥就会；应在状态设计时排除敏感信息，并对存储加密与访问控制。"
    },
    {
-    "q": "存储选型？",
-    "a": "开发 Memory，生产 DB/Redis。"
+    "q": "Java 侧有没有类似概念？",
+    "a": "LangGraph4j / Spring AI Alibaba Graph 也有状态与持久化思路，核心同样是「图状态可恢复」，具体 API 名可能不同。"
    }
   ],
   "answer": [
-   "总：状态持久化支撑恢复、审批、调试。",
-   "分：按 thread 隔离；生产用可靠存储。",
-   "实践：【结合你的项目】【待填】。",
-   "总结：长任务没有 checkpoint 很难做稳。"
+   "总：Checkpoint 把 Agent 图的状态持久化，用来做暂停恢复、故障续跑、审批和回溯调试。",
+   "分：按 thread_id 隔离；比单纯聊天历史更能恢复控制流；生产用外部存储并注意序列化与脱敏；可配合 interrupt 做人工确认。",
+   "实践：【结合你的项目】【待填：审批/长任务】用 checkpoint 存在【待填】，按【待填：session】恢复。",
+   "总结：没有可恢复状态的多步 Agent，很难安全地做人机协同。"
   ],
   "pitfalls": [
-   "当成只存聊天记录。"
+   "把 Checkpoint 说成普通日志。",
+   "生产环境使用仅内存的 Saver 还自以为高可用。",
+   "加分：能讲 interrupt 与 resume 的审批流。"
   ]
  },
  "r-a4": {
@@ -548,40 +551,43 @@
  },
  "r-a5": {
   "principle": [
-   "MCP 工具安全：最小权限（只读与写分离）；参数校验（路径规范化防穿越、SQL 参数化）；密钥不进模型上下文；破坏性操作二次确认；沙箱目录/网络策略；完整审计；限流超时；工具描述防投毒（来源可信）。"
+   "MCP 工具一接上模型，就等于给了「可控的远程执行面」，安全必须按最小权限设计。要点：① 鉴权与租户隔离：谁能看到哪些 tool/resources。② 参数校验：路径规范化防穿越、SQL/命令白名单、长度与类型校验，拒绝模型乱填。③ 破坏性操作（删改、转账、发信）要二次确认或人工审批。④ 沙箱：文件访问限制目录，代码执行用容器/虚拟机，网络出站白名单。⑤ 审计：每次调用记录操作者、参数摘要、结果状态，便于追责。⑥ 超时、限流、并发上限，防止工具被打爆或循环调用。",
+   "不要把高权限 token 直接塞给模型上下文；工具服务端用自己的凭证，并按用户身份做下行鉴权。提示词防注入只能当辅助，不能代替服务端校验。"
   ],
   "example": {
    "lang": "java",
-   "code": "@Tool(description=\"删除指定租户下的临时文件，需 confirm=true\")\npublic String deleteTemp(String relativePath, boolean confirm) {\n  if (!confirm) return \"需要 confirm=true\";\n  Path p = sandboxRoot.resolve(relativePath).normalize();\n  if (!p.startsWith(sandboxRoot)) return \"路径非法\";\n  Files.deleteIfExists(p);\n  audit.log(\"delete\", p);\n  return \"ok\";\n}"
+   "code": "// 伪校验\npublic Object call(ToolReq req, User u) {\n  ToolSpec spec = registry.get(req.name());\n  auth.assertCanUse(u, spec);\n  Object args = schema.validate(req.arguments());   // 类型/枚举/路径\n  if (spec.destructive()) {\n    approval.require(u, spec, args);               // 人工确认\n  }\n  try (var scope = sandbox.open(u, spec)) {\n    return timed(spec.timeout(), () -> scope.invoke(args));\n  } finally {\n    audit.log(u, spec, args);\n  }\n}"
   },
   "asks": [
-   "MCP 工具怎么保证安全？",
-   "路径穿越？",
-   "工具投毒？",
-   "人工确认？"
+   "MCP 工具调用怎么保证安全？",
+   "为什么不能只靠提示词防注入？",
+   "破坏性操作怎么处理？",
+   "审计要记什么？"
   ],
   "followups": [
    {
-    "q": "投毒？",
-    "a": "恶意描述诱导模型；只用可信 Server。"
+    "q": "模型被提示词注入后要求删库怎么办？",
+    "a": "服务端白名单与审批会拦住；即使模型发出调用，未授权或未审批也不能执行。"
    },
    {
-    "q": "多租户？",
-    "a": "工具内强制租户上下文。"
+    "q": "沙箱是不是只要 Docker 就够？",
+    "a": "容器是基础，还要非 root、只读文件系统、网络策略、seccomp 等，并限制挂载路径。"
    },
    {
-    "q": "审计？",
-    "a": "谁在何时调了什么参数。"
+    "q": "资源和工具的权限模型有何不同？",
+    "a": "工具偏动作，资源偏读数据；都要按租户授权，读也要防敏感字段过量暴露。"
    }
   ],
   "answer": [
-   "总：最小权限、校验、确认、沙箱、审计。",
-   "分：防穿越与注入；描述来源可信。",
-   "实践：【结合你的项目】【待填】。",
-   "总结：假设模型会被骗。"
+   "总：MCP 安全靠最小权限、参数校验、沙箱、破坏性审批、审计与限流，而不是指望模型听话。",
+   "分：凭证留在服务端；路径与命令防注入；超时限流；提示词防御只是辅助层。",
+   "实践：【结合你的项目】工具【待填】的权限是【待填】，破坏性操作【待填：审批】，审计在【待填】。",
+   "总结：把 MCP 工具当成对外开放的 API 来做安全设计。"
   ],
   "pitfalls": [
-   "只靠 Prompt 说不要乱来。"
+   "说「模型不会乱来」当安全方案。",
+   "把管理员密钥放进系统提示词。",
+   "加分：能讲沙箱与审批流的具体控制点。"
   ]
  },
  "a-a10": {

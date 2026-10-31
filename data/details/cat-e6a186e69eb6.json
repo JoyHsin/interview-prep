@@ -339,41 +339,43 @@
  },
  "r-f1": {
   "principle": [
-   "LangGraph4j、Spring AI Alibaba Graph 等：在 Java 侧用 State/Node/Edge（含条件边）编排多步 Agent，类似 LangGraph 思想——显式状态、分支循环、可测试。",
-   "适合要留在 JVM、与 Spring 服务集成的团队；生态成熟度对照 Python LangGraph 仍在追赶，选型前看版本与示例。"
+   "LangGraph4j 与 Spring AI Alibaba Graph 一类项目，目标是在 JVM 里用「状态图」编排多步 Agent：State 存放共享数据，Node 执行一步（调 LLM/工具/业务），Edge/条件边决定下一步，从而表达分支、循环、并行与结束。相比线性 Chain，图更适合 ReAct 循环、人工审批、多 Agent 协作。",
+   "和 Python LangGraph 概念对齐：编译图、调用时传入线程/会话配置、可用检查点做恢复。和纯 Spring AI ChatClient 比，Graph 解决的是「多步控制流」，ChatClient 解决的是「单次模型+工具调用」。选型：流程复杂、要可视化与可恢复 → Graph；单轮工具调用 → ChatClient 足够。"
   ],
   "example": {
    "lang": "java",
-   "code": "// 概念示意：State → nodeA → (cond) → nodeB/nodeC → END\n// 条件边根据 state 字段路由；循环要设最大次数\n// 具体 API 以所用库当前文档为准"
+   "code": "// 概念伪代码（API 随版本变化，面试讲清角色即可）\nStateGraph<AgentState> g = new StateGraph<>(AgentState::new)\n  .addNode(\"plan\", this::plan)\n  .addNode(\"act\", this::act)\n  .addNode(\"review\", this::review)\n  .addEdge(START, \"plan\")\n  .addConditionalEdges(\"plan\", this::needAct, Map.of(\"yes\",\"act\",\"no\",\"review\"))\n  .addEdge(\"act\", \"plan\")\n  .addEdge(\"review\", END);\nCompiledGraph<AgentState> app = g.compile(checkpointer);"
   },
   "asks": [
-   "Java 图编排是什么？",
-   "和 LangGraph？",
-   "何时用？",
-   "和纯 ChatClient 链？"
+   "LangGraph4j / Spring AI Alibaba Graph 是什么？",
+   "和 ChatClient 链式调用差在哪？",
+   "条件边解决什么问题？",
+   "什么时候值得上图编排？"
   ],
   "followups": [
    {
-    "q": "简单链？",
-    "a": "ChatClient+Advisor 够用。"
+    "q": "是不是做 Agent 必须上 Graph？",
+    "a": "不是。步骤少、无暂停恢复时，循环里调 ChatClient 也可以；图的价值在复杂控制流与可恢复状态。"
    },
    {
-    "q": "要循环审批？",
-    "a": "上图编排。"
+    "q": "和工作流引擎（如 Flowable）比呢？",
+    "a": "业务工作流偏人工任务与长事务；Agent Graph 偏模型决策与工具调用，可组合但关注点不同。"
    },
    {
-    "q": "成熟度？",
-    "a": "跟文档与社区，避免早期 API 大变。"
+    "q": "调试图难不难？",
+    "a": "要靠状态快照、逐步执行与可视化；这也是 checkpoint 和可观测的重要性。"
    }
   ],
   "answer": [
-   "总：Java 也可用状态图做多步 Agent。",
-   "分：State/Node/条件边；复杂才上；核对文档。",
-   "实践：【结合你的项目】【待填】。",
-   "总结：编排复杂度匹配工具。"
+   "总：Java 图编排用 State/Node/Edge 表达多步 Agent，适合分支循环与恢复，补齐单次 ChatClient 表达不了的控制流。",
+   "分：条件边做路由；复杂流程才上图；与 Python LangGraph 概念相通；注意版本 API 差异，重思想不重背方法名。",
+   "实践：【结合你的项目】若用【待填】实现【待填：多步流程】，节点包括【待填】。",
+   "总结：把 Agent 当成有状态的工作流来设计，而不是无限 if-else。"
   ],
   "pitfalls": [
-   "简单问答也上图。"
+   "把 Graph 说成只是「另一个 HTTP 客户端」。",
+   "背不出适用场景，只丢框架名。",
+   "加分：画一个含审批节点的简单状态图。"
   ]
  },
  "x-a5": {

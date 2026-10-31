@@ -1,601 +1,615 @@
 {
-  "j-col1": {
-    "principle": [
-      "JDK 8 HashMap 结构是“数组 + 链表 + 红黑树”。put 流程：",
-      "① 计算 hash：(h = key.hashCode()) ^ (h >>> 16)，把高 16 位混进低位，减少只用低位取模时的冲突。",
-      "② 下标 = (n - 1) & hash，n 是 2 的幂，等价于取模但更快。table 懒初始化，默认容量 16。",
-      "③ 桶空直接放；有冲突则链表尾插；链表长度达到 8 且数组长度 ≥ 64 时转红黑树，数组不足 64 则优先扩容；树节点数 ≤ 6 时退化回链表。",
-      "④ size 超过 threshold（容量 × 负载因子 0.75）触发 resize，容量翻倍。JDK 8 扩容时不重新计算 hash，而是看 (hash & oldCap) 是否为 0，把节点拆成低位链（原位置）和高位链（原位置 + oldCap），并保持原顺序。",
-      "JDK 7 是数组 + 链表、头插法，并发扩容时可能形成环形链表导致 get 死循环；JDK 8 改尾插解决了环，但 HashMap 依然线程不安全（并发 put 会丢数据）。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "import java.util.HashMap;\nimport java.util.Map;\n\npublic class HashMapDemo {\n    public static void main(String[] args) {\n        // 预估 1000 个元素：容量 = 1000 / 0.75 + 1，避免多次扩容\n        Map<String, Integer> map = new HashMap<>((int) (1000 / 0.75f) + 1);\n        map.put(\"a\", 1);\n        map.merge(\"a\", 1, Integer::sum);      // a -> 2\n        map.computeIfAbsent(\"b\", k -> 10);\n        System.out.println(map);              // {a=2, b=10}\n\n        int h = \"a\".hashCode();\n        int hash = h ^ (h >>> 16);\n        System.out.println(\"index in 16 = \" + ((16 - 1) & hash));\n    }\n}"
-    },
-    "asks": [
-      "HashMap 底层结构和 put 流程？",
-      "JDK 7 和 8 的 HashMap 有什么区别？",
-      "为什么容量是 2 的幂？",
-      "HashMap 为什么线程不安全？"
-    ],
-    "followups": [
-      {
-        "q": "为什么树化阈值是 8？",
-        "a": "源码注释说明在负载因子 0.75 下桶内元素个数服从泊松分布，长度到 8 的概率极低，到 8 说明 hash 很差，此时转树保底 O(log n)。"
-      },
-      {
-        "q": "为什么要扰动函数？",
-        "a": "下标只用 hash 的低位，扰动把高位信息混入低位，减少冲突。"
-      },
-      {
-        "q": "线程安全用什么？",
-        "a": "ConcurrentHashMap；Collections.synchronizedMap 和 Hashtable 是全表锁，性能差。"
-      }
-    ],
-    "answer": [
-      "总：JDK 8 HashMap 是数组 + 链表 + 红黑树，核心是 hash 定位和扩容。",
-      "分：hash 做高低位异或，用 (n-1)&hash 定位；冲突尾插链表，链表 ≥8 且容量 ≥64 转红黑树；超过容量 ×0.75 扩容翻倍，靠 hash&oldCap 拆分高低链。相比 JDK 7：头插改尾插消除环、引入红黑树、扩容不再重算 hash。",
-      "实践：【结合你的项目】已知数据量时我会指定初始容量减少扩容；多线程共享缓存用 ConcurrentHashMap。",
-      "总结：HashMap 高效但非线程安全。"
-    ],
-    "pitfalls": [
-      "说“链表长度 8 就一定转树”——忽略容量 64 条件。",
-      "说 JDK 8 HashMap 线程安全了。",
-      "加分：讲清 hash & oldCap 拆分。"
-    ]
+ "j-col1": {
+  "principle": [
+   "JDK 8 HashMap 结构是“数组 + 链表 + 红黑树”。put 流程：",
+   "① 计算 hash：(h = key.hashCode()) ^ (h >>> 16)，把高 16 位混进低位，减少只用低位取模时的冲突。",
+   "② 下标 = (n - 1) & hash，n 是 2 的幂，等价于取模但更快。table 懒初始化，默认容量 16。",
+   "③ 桶空直接放；有冲突则链表尾插；链表长度达到 8 且数组长度 ≥ 64 时转红黑树，数组不足 64 则优先扩容；树节点数 ≤ 6 时退化回链表。",
+   "④ size 超过 threshold（容量 × 负载因子 0.75）触发 resize，容量翻倍。JDK 8 扩容时不重新计算 hash，而是看 (hash & oldCap) 是否为 0，把节点拆成低位链（原位置）和高位链（原位置 + oldCap），并保持原顺序。",
+   "JDK 7 是数组 + 链表、头插法，并发扩容时可能形成环形链表导致 get 死循环；JDK 8 改尾插解决了环，但 HashMap 依然线程不安全（并发 put 会丢数据）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.HashMap;\nimport java.util.Map;\n\npublic class HashMapDemo {\n    public static void main(String[] args) {\n        // 预估 1000 个元素：容量 = 1000 / 0.75 + 1，避免多次扩容\n        Map<String, Integer> map = new HashMap<>((int) (1000 / 0.75f) + 1);\n        map.put(\"a\", 1);\n        map.merge(\"a\", 1, Integer::sum);      // a -> 2\n        map.computeIfAbsent(\"b\", k -> 10);\n        System.out.println(map);              // {a=2, b=10}\n\n        int h = \"a\".hashCode();\n        int hash = h ^ (h >>> 16);\n        System.out.println(\"index in 16 = \" + ((16 - 1) & hash));\n    }\n}"
   },
-  "j-col2": {
-    "principle": [
-      "JDK 7 的 ConcurrentHashMap 用 Segment 分段锁（Segment 继承 ReentrantLock），默认 16 段，并发度受段数限制。",
-      "JDK 8 去掉 Segment，结构和 HashMap 类似（数组 + 链表 + 红黑树），锁粒度细化到单个桶：",
-      "① put 时如果桶为空，用 CAS 放入首节点，不加锁；",
-      "② 桶非空则 synchronized 锁住桶的头节点再操作链表/树；",
-      "③ 扩容时把桶迁移到新表，迁移完的桶放 ForwardingNode（hash = MOVED），其他线程 put 遇到它会 helpTransfer 协助扩容；sizeCtl 控制初始化和扩容状态；",
-      "④ get 全程不加锁，Node 的 val 和 next 用 volatile 保证可见性；",
-      "⑤ 计数用 baseCount + CounterCell 数组（类似 LongAdder），减少竞争，size() 是并发下的近似值。",
-      "它不允许 key 或 value 为 null，因为并发下 get 返回 null 无法区分“不存在”还是“值为 null”。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "import java.util.concurrent.ConcurrentHashMap;\nimport java.util.concurrent.atomic.LongAdder;\n\npublic class PvCounter {\n    private final ConcurrentHashMap<String, LongAdder> pv = new ConcurrentHashMap<>();\n\n    public void hit(String url) {\n        // computeIfAbsent 是原子的；避免 get-then-put 的竞态\n        pv.computeIfAbsent(url, k -> new LongAdder()).increment();\n    }\n\n    public long count(String url) {\n        LongAdder a = pv.get(url);\n        return a == null ? 0 : a.sum();\n    }\n}"
-    },
-    "asks": [
-      "ConcurrentHashMap 如何保证线程安全？",
-      "JDK 7 和 8 实现区别？为什么放弃分段锁？",
-      "get 为什么不需要加锁？",
-      "为什么不允许 null？"
-    ],
-    "followups": [
-      {
-        "q": "为什么用 synchronized 不用 ReentrantLock？",
-        "a": "锁粒度已细到桶头，synchronized 经 JVM 优化后开销小，且不需要额外 Node 继承锁对象，节省内存。"
-      },
-      {
-        "q": "复合操作安全吗？",
-        "a": "单个方法是原子的，但 get 后再 put 不是；要用 computeIfAbsent/merge 等原子方法。"
-      },
-      {
-        "q": "size 准确吗？",
-        "a": "并发修改时是估算值，不加全局锁。"
-      }
-    ],
-    "answer": [
-      "总：JDK 8 用“CAS + synchronized 锁桶头 + volatile”实现细粒度并发。",
-      "分：空桶 CAS 插入，非空桶锁头节点；get 无锁靠 volatile；扩容多线程协助迁移，用 ForwardingNode 标记；计数用 CounterCell 分散竞争。JDK 7 是 Segment 分段锁，并发度固定。",
-      "实践：【结合你的项目】本地缓存/计数器我用 CHM + computeIfAbsent，避免 check-then-act 的竞态。",
-      "总结：锁粒度从段细化到桶，读完全无锁。"
-    ],
-    "pitfalls": [
-      "以为用了 CHM 所有组合操作都线程安全。",
-      "加分：讲出 helpTransfer 多线程扩容和不允许 null 的原因。",
-      "单个方法线程安全不代表检查再更新等组合操作原子；使用 putIfAbsent、compute 或明确的同步边界。"
-    ]
+  "asks": [
+   "HashMap 底层结构和 put 流程？",
+   "JDK 7 和 8 的 HashMap 有什么区别？",
+   "为什么容量是 2 的幂？",
+   "HashMap 为什么线程不安全？"
+  ],
+  "followups": [
+   {
+    "q": "为什么树化阈值是 8？",
+    "a": "源码注释说明在负载因子 0.75 下桶内元素个数服从泊松分布，长度到 8 的概率极低，到 8 说明 hash 很差，此时转树保底 O(log n)。"
+   },
+   {
+    "q": "为什么要扰动函数？",
+    "a": "下标只用 hash 的低位，扰动把高位信息混入低位，减少冲突。"
+   },
+   {
+    "q": "线程安全用什么？",
+    "a": "ConcurrentHashMap；Collections.synchronizedMap 和 Hashtable 是全表锁，性能差。"
+   }
+  ],
+  "answer": [
+   "总：JDK 8 HashMap 是数组 + 链表 + 红黑树，核心是 hash 定位和扩容。",
+   "分：hash 做高低位异或，用 (n-1)&hash 定位；冲突尾插链表，链表 ≥8 且容量 ≥64 转红黑树；超过容量 ×0.75 扩容翻倍，靠 hash&oldCap 拆分高低链。相比 JDK 7：头插改尾插消除环、引入红黑树、扩容不再重算 hash。",
+   "实践：【结合你的项目】已知数据量时我会指定初始容量减少扩容；多线程共享缓存用 ConcurrentHashMap。",
+   "总结：HashMap 高效但非线程安全。"
+  ],
+  "pitfalls": [
+   "说“链表长度 8 就一定转树”——忽略容量 64 条件。",
+   "说 JDK 8 HashMap 线程安全了。",
+   "加分：讲清 hash & oldCap 拆分。"
+  ]
+ },
+ "j-col2": {
+  "principle": [
+   "JDK 7 的 ConcurrentHashMap 用 Segment 分段锁（Segment 继承 ReentrantLock），默认 16 段，并发度受段数限制。",
+   "JDK 8 去掉 Segment，结构和 HashMap 类似（数组 + 链表 + 红黑树），锁粒度细化到单个桶：",
+   "① put 时如果桶为空，用 CAS 放入首节点，不加锁；",
+   "② 桶非空则 synchronized 锁住桶的头节点再操作链表/树；",
+   "③ 扩容时把桶迁移到新表，迁移完的桶放 ForwardingNode（hash = MOVED），其他线程 put 遇到它会 helpTransfer 协助扩容；sizeCtl 控制初始化和扩容状态；",
+   "④ get 全程不加锁，Node 的 val 和 next 用 volatile 保证可见性；",
+   "⑤ 计数用 baseCount + CounterCell 数组（类似 LongAdder），减少竞争，size() 是并发下的近似值。",
+   "它不允许 key 或 value 为 null，因为并发下 get 返回 null 无法区分“不存在”还是“值为 null”。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.concurrent.ConcurrentHashMap;\nimport java.util.concurrent.atomic.LongAdder;\n\npublic class PvCounter {\n    private final ConcurrentHashMap<String, LongAdder> pv = new ConcurrentHashMap<>();\n\n    public void hit(String url) {\n        // computeIfAbsent 是原子的；避免 get-then-put 的竞态\n        pv.computeIfAbsent(url, k -> new LongAdder()).increment();\n    }\n\n    public long count(String url) {\n        LongAdder a = pv.get(url);\n        return a == null ? 0 : a.sum();\n    }\n}"
   },
-  "p2-4": {
-    "principle": [
-      "HashMap 扩容触发条件：当元素个数 size 超过阈值 threshold = capacity × loadFactor 时，在 put 后触发 resize，容量翻倍（默认初始容量 16，阈值 12）。此外，链表长度达到 8 但数组长度小于 64 时，会优先扩容而不是树化。table 懒加载，第一次 put 时才初始化。",
-      "指定初始容量时，HashMap 会通过 tableSizeFor 把它调整为大于等于该值的最小 2 的幂。",
-      "负载因子 0.75 的原因：这是时间和空间的折中。负载因子越大，空间利用率越高，但冲突越多，查找变慢；越小冲突越少，但浪费空间并且扩容更频繁。源码注释指出，在 0.75 下，桶中元素个数近似服从参数约 0.5 的泊松分布，链表长度达到 8 的概率极低（约千万分之六），说明这个默认值能让大多数桶很短。另外 0.75 × 2 的幂结果是整数，计算阈值方便。",
-      "实践建议：已知元素数量 n 时，初始容量设为 n / 0.75 + 1，避免多次扩容（Guava 的 Maps.newHashMapWithExpectedSize 就是这样计算的；JDK 19 起也提供了 HashMap.newHashMap(int numMappings)）。扩容需要重新分布所有节点，代价较高。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "import java.util.HashMap;\nimport java.util.Map;\n\npublic class ResizeDemo {\n    public static void main(String[] args) {\n        int expected = 1000;\n        Map<String, Integer> m1 = new HashMap<>((int) (expected / 0.75f) + 1); // 1334 → 实际容量 2048\n        Map<String, Integer> m2 = HashMap.newHashMap(expected);                // JDK 19+ 推荐写法\n        for (int i = 0; i < expected; i++) { m1.put(\"k\" + i, i); m2.put(\"k\" + i, i); }\n\n        // 默认构造：16 → 32 → 64 → ... → 2048，经历 7 次扩容\n        Map<String, Integer> m3 = new HashMap<>();\n        for (int i = 0; i < expected; i++) m3.put(\"k\" + i, i);\n    }\n}"
-    },
-    "asks": [
-      "HashMap 什么时候扩容？",
-      "负载因子为什么是 0.75？",
-      "初始容量为什么是 2 的幂？传入 10 会怎样？",
-      "怎么避免频繁扩容？"
-    ],
-    "followups": [
-      {
-        "q": "传入初始容量 10 会怎样？",
-        "a": "tableSizeFor 调整为 16，阈值 12。"
-      },
-      {
-        "q": "负载因子能大于 1 吗？",
-        "a": "可以，表示允许平均每个桶多于一个元素，节省空间但冲突增多，一般不建议。"
-      },
-      {
-        "q": "扩容时为什么不用重新算 hash？",
-        "a": "容量翻倍后只多看一位，根据 hash & oldCap 是否为 0 决定留在原位还是移到原位加 oldCap。"
-      }
-    ],
-    "answer": [
-      "总：size 超过容量乘负载因子就扩容为两倍，0.75 是时间与空间的折中。",
-      "分：默认 16，阈值 12；链表长度达 8 但容量不足 64 也会扩容；容量总是 2 的幂；0.75 让桶中元素分布满足泊松分布，长链概率极低。已知数据量时预设容量。",
-      "实践：【结合你的项目】批量加载数据到 Map 时我会用 HashMap.newHashMap(n) 或 Guava 预估容量。",
-      "总结：合理初始容量能避免扩容开销。"
-    ],
-    "pitfalls": [
-      "把初始容量直接设为 n（会因 0.75 再扩容一次）。",
-      "说负载因子越小越好。"
-    ]
+  "asks": [
+   "ConcurrentHashMap 如何保证线程安全？",
+   "JDK 7 和 8 实现区别？为什么放弃分段锁？",
+   "get 为什么不需要加锁？",
+   "为什么不允许 null？"
+  ],
+  "followups": [
+   {
+    "q": "为什么用 synchronized 不用 ReentrantLock？",
+    "a": "锁粒度已细到桶头，synchronized 经 JVM 优化后开销小，且不需要额外 Node 继承锁对象，节省内存。"
+   },
+   {
+    "q": "复合操作安全吗？",
+    "a": "单个方法是原子的，但 get 后再 put 不是；要用 computeIfAbsent/merge 等原子方法。"
+   },
+   {
+    "q": "size 准确吗？",
+    "a": "并发修改时是估算值，不加全局锁。"
+   }
+  ],
+  "answer": [
+   "总：JDK 8 用“CAS + synchronized 锁桶头 + volatile”实现细粒度并发。",
+   "分：空桶 CAS 插入，非空桶锁头节点；get 无锁靠 volatile；扩容多线程协助迁移，用 ForwardingNode 标记；计数用 CounterCell 分散竞争。JDK 7 是 Segment 分段锁，并发度固定。",
+   "实践：【结合你的项目】本地缓存/计数器我用 CHM + computeIfAbsent，避免 check-then-act 的竞态。",
+   "总结：锁粒度从段细化到桶，读完全无锁。"
+  ],
+  "pitfalls": [
+   "以为用了 CHM 所有组合操作都线程安全。",
+   "加分：讲出 helpTransfer 多线程扩容和不允许 null 的原因。",
+   "单个方法线程安全不代表检查再更新等组合操作原子；使用 putIfAbsent、compute 或明确的同步边界。"
+  ]
+ },
+ "p2-4": {
+  "principle": [
+   "HashMap 扩容触发条件：当元素个数 size 超过阈值 threshold = capacity × loadFactor 时，在 put 后触发 resize，容量翻倍（默认初始容量 16，阈值 12）。此外，链表长度达到 8 但数组长度小于 64 时，会优先扩容而不是树化。table 懒加载，第一次 put 时才初始化。",
+   "指定初始容量时，HashMap 会通过 tableSizeFor 把它调整为大于等于该值的最小 2 的幂。",
+   "负载因子 0.75 的原因：这是时间和空间的折中。负载因子越大，空间利用率越高，但冲突越多，查找变慢；越小冲突越少，但浪费空间并且扩容更频繁。源码注释指出，在 0.75 下，桶中元素个数近似服从参数约 0.5 的泊松分布，链表长度达到 8 的概率极低（约千万分之六），说明这个默认值能让大多数桶很短。另外 0.75 × 2 的幂结果是整数，计算阈值方便。",
+   "实践建议：已知元素数量 n 时，初始容量设为 n / 0.75 + 1，避免多次扩容（Guava 的 Maps.newHashMapWithExpectedSize 就是这样计算的；JDK 19 起也提供了 HashMap.newHashMap(int numMappings)）。扩容需要重新分布所有节点，代价较高。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "import java.util.HashMap;\nimport java.util.Map;\n\npublic class ResizeDemo {\n    public static void main(String[] args) {\n        int expected = 1000;\n        Map<String, Integer> m1 = new HashMap<>((int) (expected / 0.75f) + 1); // 1334 → 实际容量 2048\n        Map<String, Integer> m2 = HashMap.newHashMap(expected);                // JDK 19+ 推荐写法\n        for (int i = 0; i < expected; i++) { m1.put(\"k\" + i, i); m2.put(\"k\" + i, i); }\n\n        // 默认构造：16 → 32 → 64 → ... → 2048，经历 7 次扩容\n        Map<String, Integer> m3 = new HashMap<>();\n        for (int i = 0; i < expected; i++) m3.put(\"k\" + i, i);\n    }\n}"
   },
-  "j-col3": {
-    "principle": [
-      "ArrayList：Object[] 数组，随机访问 O(1)，尾部添加均摊 O(1)，中间插入删除要搬移 O(n)。默认空数组，首次添加扩到 10，之后 1.5 倍扩容（old + old>>1）。遍历快（连续内存缓存友好）。",
-      "LinkedList：双向链表，头尾插入删除 O(1)，按索引访问 O(n)，每个节点有前后指针，内存开销大，缓存不友好。实现了 Deque，可当队列/栈。",
-      "实际业务几乎总是 ArrayList：随机访问、遍历、序列化都更优；只有频繁头插且几乎不随机访问时才考虑 LinkedList，即便如此 ArrayDeque 作队列通常更好。CopyOnWriteArrayList 适合读多写极少。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "List<String> a = new ArrayList<>(1000);       // 预估容量避免扩容\na.add(\"x\");                                   // 尾部快\na.add(0, \"y\");                                // 中间慢，搬移\n\nDeque<String> q = new ArrayDeque<>();         // 队列/栈优先于 LinkedList\nq.offerLast(\"a\"); q.pollFirst();\n\nList<String> cow = new CopyOnWriteArrayList<>(); // 读多写少，写时复制"
-    },
-    "asks": [
-      "ArrayList 和 LinkedList 区别？",
-      "ArrayList 怎么扩容？",
-      "什么时候用 LinkedList？",
-      "为什么业务多用 ArrayList？"
-    ],
-    "followups": [
-      {
-        "q": "扩容倍数？",
-        "a": "1.5 倍（newCapacity = oldCapacity + (oldCapacity >> 1)）。"
-      },
-      {
-        "q": "RandomAccess？",
-        "a": "ArrayList 实现该标记接口，算法可据此选索引遍历而非迭代器。"
-      },
-      {
-        "q": "线程安全？",
-        "a": "都不是；并发用 CopyOnWriteArrayList 或 Collections.synchronizedList。"
-      }
-    ],
-    "answer": [
-      "总：ArrayList 数组随机访问快，LinkedList 链表头尾改快但整体更慢。",
-      "分：ArrayList 1.5 倍扩容；LinkedList 实现 Deque 但队列更推荐 ArrayDeque；业务默认 ArrayList。",
-      "实践：【结合你的项目】列表几乎全用 ArrayList，队列用 ArrayDeque。",
-      "总结：别因为“插入快”就选 LinkedList。"
-    ],
-    "pitfalls": [
-      "默认选 LinkedList。",
-      "说 ArrayList 扩容 2 倍（那是 HashMap）。",
-      "LinkedList 按索引定位需要遍历；只有已经定位节点后的链接修改才可能是常数级，不能笼统说插入删除总更快。",
-      "LinkedList 按索引定位需要遍历，不能笼统说插入删除总更快。"
-    ]
+  "asks": [
+   "HashMap 什么时候扩容？",
+   "负载因子为什么是 0.75？",
+   "初始容量为什么是 2 的幂？传入 10 会怎样？",
+   "怎么避免频繁扩容？"
+  ],
+  "followups": [
+   {
+    "q": "传入初始容量 10 会怎样？",
+    "a": "tableSizeFor 调整为 16，阈值 12。"
+   },
+   {
+    "q": "负载因子能大于 1 吗？",
+    "a": "可以，表示允许平均每个桶多于一个元素，节省空间但冲突增多，一般不建议。"
+   },
+   {
+    "q": "扩容时为什么不用重新算 hash？",
+    "a": "容量翻倍后只多看一位，根据 hash & oldCap 是否为 0 决定留在原位还是移到原位加 oldCap。"
+   }
+  ],
+  "answer": [
+   "总：size 超过容量乘负载因子就扩容为两倍，0.75 是时间与空间的折中。",
+   "分：默认 16，阈值 12；链表长度达 8 但容量不足 64 也会扩容；容量总是 2 的幂；0.75 让桶中元素分布满足泊松分布，长链概率极低。已知数据量时预设容量。",
+   "实践：【结合你的项目】批量加载数据到 Map 时我会用 HashMap.newHashMap(n) 或 Guava 预估容量。",
+   "总结：合理初始容量能避免扩容开销。"
+  ],
+  "pitfalls": [
+   "把初始容量直接设为 n（会因 0.75 再扩容一次）。",
+   "说负载因子越小越好。"
+  ]
+ },
+ "j-col3": {
+  "principle": [
+   "ArrayList：Object[] 数组，随机访问 O(1)，尾部添加均摊 O(1)，中间插入删除要搬移 O(n)。默认空数组，首次添加扩到 10，之后 1.5 倍扩容（old + old>>1）。遍历快（连续内存缓存友好）。",
+   "LinkedList：双向链表，头尾插入删除 O(1)，按索引访问 O(n)，每个节点有前后指针，内存开销大，缓存不友好。实现了 Deque，可当队列/栈。",
+   "实际业务几乎总是 ArrayList：随机访问、遍历、序列化都更优；只有频繁头插且几乎不随机访问时才考虑 LinkedList，即便如此 ArrayDeque 作队列通常更好。CopyOnWriteArrayList 适合读多写极少。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "List<String> a = new ArrayList<>(1000);       // 预估容量避免扩容\na.add(\"x\");                                   // 尾部快\na.add(0, \"y\");                                // 中间慢，搬移\n\nDeque<String> q = new ArrayDeque<>();         // 队列/栈优先于 LinkedList\nq.offerLast(\"a\"); q.pollFirst();\n\nList<String> cow = new CopyOnWriteArrayList<>(); // 读多写少，写时复制"
   },
-  "j-col4": {
-    "principle": [
-      "契约：① equals 相等 ⇒ hashCode 必须相等；② hashCode 相等 ≠ equals 一定相等；③ 同一对象在 equals 所用字段不变时 hashCode 应稳定。",
-      "原因：HashMap/HashSet 先按 hashCode 定位桶，再用 equals 比内容。只改 equals 不改 hashCode，相等对象进不同桶，Set 会“重复”、Map 用等价 key 取不到。",
-      "实践：用业务主键字段生成两者；作为 key 后不要改这些字段；可用 Objects.equals/hash 或 record 自动生成。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "final class User {\n    private final String id;\n    User(String id) { this.id = id; }\n    @Override public boolean equals(Object o) {\n        return o instanceof User u && id.equals(u.id);\n    }\n    @Override public int hashCode() { return id.hashCode(); }\n}\nrecord Point(int x, int y) {}   // 自动 equals/hashCode"
-    },
-    "asks": [
-      "equals 和 hashCode 契约？",
-      "为什么要一起重写？",
-      "Integer 缓存对 == 的影响？",
-      "record 有什么便利？"
-    ],
-    "followups": [
-      {
-        "q": "只重写 hashCode？",
-        "a": "仍按地址 equals，集合行为仍错。"
-      },
-      {
-        "q": "可变 key？",
-        "a": "改字段后 hash 变了，可能丢在错误桶里。"
-      },
-      {
-        "q": "String 呢？",
-        "a": "已正确重写，内容相等则 hash 相同。"
-      }
-    ],
-    "answer": [
-      "总：相等必须同 hash，作哈希键必须成对重写且稳定。",
-      "分：哈希集合先 hash 后 equals；用业务主键；record 可自动生成。",
-      "实践：【结合你的项目】实体去重、缓存 key 按业务 ID 重写。",
-      "总结：成对、稳定、不可变字段最好。"
-    ],
-    "pitfalls": [
-      "只重写 equals。",
-      "用 == 比包装类。",
-      "equals 相等必须具有相同 hashCode，这是对象契约，不因是否放入哈希集合而改变。"
-    ]
+  "asks": [
+   "ArrayList 和 LinkedList 区别？",
+   "ArrayList 怎么扩容？",
+   "什么时候用 LinkedList？",
+   "为什么业务多用 ArrayList？"
+  ],
+  "followups": [
+   {
+    "q": "扩容倍数？",
+    "a": "1.5 倍（newCapacity = oldCapacity + (oldCapacity >> 1)）。"
+   },
+   {
+    "q": "RandomAccess？",
+    "a": "ArrayList 实现该标记接口，算法可据此选索引遍历而非迭代器。"
+   },
+   {
+    "q": "线程安全？",
+    "a": "都不是；并发用 CopyOnWriteArrayList 或 Collections.synchronizedList。"
+   }
+  ],
+  "answer": [
+   "总：ArrayList 数组随机访问快，LinkedList 链表头尾改快但整体更慢。",
+   "分：ArrayList 1.5 倍扩容；LinkedList 实现 Deque 但队列更推荐 ArrayDeque；业务默认 ArrayList。",
+   "实践：【结合你的项目】列表几乎全用 ArrayList，队列用 ArrayDeque。",
+   "总结：别因为“插入快”就选 LinkedList。"
+  ],
+  "pitfalls": [
+   "默认选 LinkedList。",
+   "说 ArrayList 扩容 2 倍（那是 HashMap）。",
+   "LinkedList 按索引定位需要遍历；只有已经定位节点后的链接修改才可能是常数级，不能笼统说插入删除总更快。",
+   "LinkedList 按索引定位需要遍历，不能笼统说插入删除总更快。"
+  ]
+ },
+ "j-col4": {
+  "principle": [
+   "契约：① equals 相等 ⇒ hashCode 必须相等；② hashCode 相等 ≠ equals 一定相等；③ 同一对象在 equals 所用字段不变时 hashCode 应稳定。",
+   "原因：HashMap/HashSet 先按 hashCode 定位桶，再用 equals 比内容。只改 equals 不改 hashCode，相等对象进不同桶，Set 会“重复”、Map 用等价 key 取不到。",
+   "实践：用业务主键字段生成两者；作为 key 后不要改这些字段；可用 Objects.equals/hash 或 record 自动生成。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "final class User {\n    private final String id;\n    User(String id) { this.id = id; }\n    @Override public boolean equals(Object o) {\n        return o instanceof User u && id.equals(u.id);\n    }\n    @Override public int hashCode() { return id.hashCode(); }\n}\nrecord Point(int x, int y) {}   // 自动 equals/hashCode"
   },
-  "p-c1": {
-    "principle": [
-      "HashSet 内部是 HashMap，元素作 key，固定 dummy value；无序、唯一、允许一个 null；复杂度均摊 O(1)。TreeSet 基于 TreeMap 红黑树，有序（自然序或 Comparator），O(log n)；元素需可比且 compareTo 与 equals 一致。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "Set<String> h = new HashSet<>();\nSet<Integer> t = new TreeSet<>(); // 有序\n// LinkedHashSet 保持插入序"
-    },
-    "asks": [
-      "HashSet 底层？",
-      "和 TreeSet？",
-      "null？",
-      "同步？"
-    ],
-    "followups": [
-      {
-        "q": "equals 与 compareTo？",
-        "a": "不一致会导致 TreeSet 行为怪。"
-      },
-      {
-        "q": "线程安全？",
-        "a": "ConcurrentHashMap.newKeySet。"
-      },
-      {
-        "q": "用途？",
-        "a": "去重 Hash；要排序 Tree。"
-      }
-    ],
-    "answer": [
-      "总：HashSet→HashMap，TreeSet 有序树。",
-      "分：快 vs 有序；契约一致。",
-      "实践：去重默认 HashSet。",
-      "总结：要序才用 Tree。"
-    ],
-    "pitfalls": [
-      "TreeSet 元素不可比还不传 Comparator。"
-    ]
+  "asks": [
+   "equals 和 hashCode 契约？",
+   "为什么要一起重写？",
+   "Integer 缓存对 == 的影响？",
+   "record 有什么便利？"
+  ],
+  "followups": [
+   {
+    "q": "只重写 hashCode？",
+    "a": "仍按地址 equals，集合行为仍错。"
+   },
+   {
+    "q": "可变 key？",
+    "a": "改字段后 hash 变了，可能丢在错误桶里。"
+   },
+   {
+    "q": "String 呢？",
+    "a": "已正确重写，内容相等则 hash 相同。"
+   }
+  ],
+  "answer": [
+   "总：相等必须同 hash，作哈希键必须成对重写且稳定。",
+   "分：哈希集合先 hash 后 equals；用业务主键；record 可自动生成。",
+   "实践：【结合你的项目】实体去重、缓存 key 按业务 ID 重写。",
+   "总结：成对、稳定、不可变字段最好。"
+  ],
+  "pitfalls": [
+   "只重写 equals。",
+   "用 == 比包装类。",
+   "equals 相等必须具有相同 hashCode，这是对象契约，不因是否放入哈希集合而改变。"
+  ]
+ },
+ "p-c1": {
+  "principle": [
+   "HashSet 底层是 HashMap：元素放在 key，value 是共享占位对象；判重依赖 hashCode 与 equals。TreeSet 底层是 TreeMap（红黑树），按自然顺序或 Comparator 排序，判重依赖比较结果为 0，不一定走 equals。",
+   "因此实现 Comparable/Comparator 时必须与 equals 一致，否则会出现「比较相等但 equals 不等」的集合诡异行为。HashSet 查找均摊 O(1)，无序；TreeSet 操作 O(log n)，有序。都不能存改变 hash/比较字段的可变元素（改完会丢）。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Set<String> hs = new HashSet<>();\nhs.add(\"a\"); hs.contains(\"a\");          // hash + equals\n\nSet<Integer> ts = new TreeSet<>();      // 自然序\nts.add(3); ts.add(1);                   // 迭代 1,3\n\n// 危险：比较器与 equals 不一致\nclass Bad implements Comparable<Bad> {\n  int id; String name;\n  public int compareTo(Bad o){ return id - o.id; }\n  public boolean equals(Object o){ return name.equals(((Bad)o).name); }\n}"
   },
-  "p-c2": {
-    "principle": [
-      "LinkedHashMap：HashMap + 双向链表保持插入序或访问序（accessOrder=true）。重写 removeEldestEntry 可做简易 LRU。遍历有序；开销略高于 HashMap。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "Map<K,V> lru = new LinkedHashMap<>(16, 0.75f, true) {\n  protected boolean removeEldestEntry(Map.Entry<K,V> e) {\n    return size() > 100;\n  }\n};"
-    },
-    "asks": [
-      "LinkedHashMap 能做什么？",
-      "LRU？",
-      "accessOrder？",
-      "和 LRU Cache？"
-    ],
-    "followups": [
-      {
-        "q": "并发？",
-        "a": "不安全；用 Caffeine 等。"
-      },
-      {
-        "q": "插入序默认？",
-        "a": "是。"
-      },
-      {
-        "q": "应用？",
-        "a": "本地小缓存、保持顺序 JSON。"
-      }
-    ],
-    "answer": [
-      "总：有序 HashMap，可做 LRU。",
-      "分：accessOrder + removeEldestEntry。",
-      "实践：简单 LRU 或用 Caffeine。",
-      "总结：轻量有序映射。"
-    ],
-    "pitfalls": [
-      "高并发用 LinkedHashMap 当缓存。"
-    ]
+  "asks": [
+   "HashSet 底层是什么？",
+   "和 TreeSet 怎么选？",
+   "比较器要注意什么？",
+   "能放可变对象吗？"
+  ],
+  "followups": [
+   {
+    "q": "HashSet 是线程安全的吗？",
+    "a": "不是，并发要用 ConcurrentHashMap.newKeySet 或外部同步。"
+   },
+   {
+    "q": "TreeSet 能存 null 吗？",
+    "a": "自然顺序下不能存 null；HashSet 可以存一个 null。"
+   },
+   {
+    "q": "LinkedHashSet 呢？",
+    "a": "Hash 基础上保留插入顺序，适合既要去重又要稳定遍历序。"
+   }
+  ],
+  "answer": [
+   "总：HashSet 基于 HashMap 做去重，TreeSet 基于红黑树做排序去重，比较规则必须与 equals 一致。",
+   "分：复杂度与是否有序决定选型；注意可变对象与 null 策略；并发要换并发集合。",
+   "实践：【结合你的项目】去重用【待填】，因为【待填：是否要排序】。",
+   "总结：讲清底层 Map 与相等性契约，就能答稳集合题。"
+  ],
+  "pitfalls": [
+   "说 HashSet 是数组加链表却忘记是 Map。",
+   "Comparator 与 equals 不一致。",
+   "加分：提到 LinkedHashSet 与并发替代。"
+  ]
+ },
+ "p-c2": {
+  "principle": [
+   "LinkedHashMap 在 HashMap 基础上用双向链表维护顺序：默认插入序；开启 accessOrder=true 后为访问序（每次 get/put 把节点移到链表末尾）。因此可用来实现 LRU：重写 removeEldestEntry，当 size>容量时移除最老条目。",
+   "遍历按链表顺序，稳定可预期。注意：它不是线程安全的；作缓存要设上限，否则内存泄漏。也可用来保持「配置项输出顺序」等。",
+   "进一步说：保持插入/访问顺序；可做 LRU（重写 removeEldestEntry）；遍历有序。作答时把这些要点串成因果，而不是并列背诵。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Map<String,String> lru = new LinkedHashMap<>(16, 0.75f, true) {\n  protected boolean removeEldestEntry(Map.Entry<String,String> e) {\n    return size() > 1000;           // 超过容量淘汰最久未访问\n  }\n};\nlru.put(\"a\",\"1\"); lru.get(\"a\");     // a 变成最新\n// 也可用 Caffeine 等专业缓存，生产更常见"
   },
-  "p-c3": {
-    "principle": [
-      "PriorityQueue：堆（默认小顶堆），offer/poll O(log n)，peek O(1)；不能 null；非线程安全；迭代无序。大顶堆传反向 Comparator。线程安全用 PriorityBlockingQueue。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "PriorityQueue<Integer> pq = new PriorityQueue<>(); // 小顶\nPriorityQueue<Integer> max = new PriorityQueue<>(Comparator.reverseOrder());\npq.offer(3); pq.offer(1); pq.poll(); // 1"
-    },
-    "asks": [
-      "PriorityQueue 特点？",
-      "能 null 吗？",
-      "有序遍历？",
-      "阻塞版？"
-    ],
-    "followups": [
-      {
-        "q": "遍历？",
-        "a": "不按优先级，要靠反复 poll。"
-      },
-      {
-        "q": "相同优先级？",
-        "a": "不保证稳定顺序。"
-      },
-      {
-        "q": "TopK？",
-        "a": "维护大小为 K 的堆。"
-      }
-    ],
-    "answer": [
-      "总：堆实现的优先级队列。",
-      "分：默认小顶；无 null；非并发。",
-      "实践：TopK、任务调度。",
-      "总结：要优先级用堆不是排序 List。"
-    ],
-    "pitfalls": [
-      "以为 iterator 按优先级。"
-    ]
+  "asks": [
+   "LinkedHashMap 能做什么？",
+   "如何实现 LRU？",
+   "accessOrder 是什么？",
+   "生产缓存只用它够吗？"
+  ],
+  "followups": [
+   {
+    "q": "和 LinkedHashSet 关系？",
+    "a": "LinkedHashSet 底层就是 LinkedHashMap。"
+   },
+   {
+    "q": "迭代时删除怎么做？",
+    "a": "用 Iterator.remove，或 fail-fast 风险下别边遍历边改结构。"
+   },
+   {
+    "q": "为什么生产更常用 Caffeine？",
+    "a": "有过期、统计、最大权重、异步加载等，比手写 LRU 完整。"
+   }
+  ],
+  "answer": [
+   "总：LinkedHashMap 可保持插入/访问序，并能用 removeEldestEntry 做简易 LRU。",
+   "分：accessOrder 决定是否按访问排序；非线程安全；生产缓存优先成熟库。",
+   "实践：【结合你的项目】本地缓存用【待填：Caffeine/LinkedHashMap】，容量【待填】。",
+   "总结：知道 LRU 怎么用手写，也知道何时换专业缓存。"
+  ],
+  "pitfalls": [
+   "只会说「有序 HashMap」讲不出 accessOrder。",
+   "无上限当缓存导致 OOM。",
+   "加分：对比 Caffeine。"
+  ]
+ },
+ "p-c3": {
+  "principle": [
+   "PriorityQueue 是堆（二叉堆）实现的优先级队列：默认小顶堆，队头是最小元素；可传 Comparator 改成大顶堆。offer/poll 为 O(log n)，peek 为 O(1)。不允许 null；非线程安全，并发用 PriorityBlockingQueue。",
+   "不保证除堆顶外的整体排序，因此迭代顺序不是有序序列。适合 TopK、定时任务按触发时间出队、Dijkstra 等。对象优先级字段变化后不会自动上浮/下沉，需注意。",
+   "进一步说：堆实现；默认小顶堆；不能 null，非线程安全。作答时把这些要点串成因果，而不是并列背诵。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "PriorityQueue<Integer> pq = new PriorityQueue<>(); // 小顶堆\npq.offer(5); pq.offer(1); pq.offer(3);\npq.poll(); // 1\n\nPriorityQueue<Integer> max = new PriorityQueue<>(Comparator.reverseOrder());\nmax.offer(5); max.poll(); // 5\n\n// TopK 大的：维护大小为 K 的小顶堆\nif (heap.size() < K) heap.offer(x);\nelse if (x > heap.peek()) { heap.poll(); heap.offer(x); }"
   },
-  "p-c5": {
-    "principle": [
-      "BlockingQueue：ArrayBlockingQueue 有界数组；LinkedBlockingQueue 可选界链表；SynchronousQueue 不存储直接移交；DelayQueue 延时；PriorityBlockingQueue 优先级。用于生产者-消费者与线程池工作队列（队列种类影响何时创建非核心线程/拒绝）。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "BlockingQueue<Runnable> q = new ArrayBlockingQueue<>(200);\nq.put(task);           // 满则阻塞\nRunnable t = q.take(); // 空则阻塞"
-    },
-    "asks": [
-      "常见 BlockingQueue？",
-      "线程池怎么选队列？",
-      "SynchronousQueue？",
-      "有界意义？"
-    ],
-    "followups": [
-      {
-        "q": "CachedThreadPool？",
-        "a": "SynchronousQueue，任务直接移交线程。"
-      },
-      {
-        "q": "Fixed？",
-        "a": "无界 Linked 有 OOM 风险。"
-      },
-      {
-        "q": "put vs offer？",
-        "a": "put 阻塞，offer 可超时/失败。"
-      }
-    ],
-    "answer": [
-      "总：阻塞队列支撑生产消费与线程池。",
-      "分：有界防 OOM；种类影响池行为。",
-      "实践：自建池用有界 Array+拒绝策略。",
-      "总结：队列是背压点。"
-    ],
-    "pitfalls": [
-      "无界队列不监控。"
-    ]
+  "asks": [
+   "PriorityQueue 有什么特点？",
+   "如何实现大顶堆？",
+   "为什么不能存 null？",
+   "和 TreeSet 差别？"
+  ],
+  "followups": [
+   {
+    "q": "遍历 PriorityQueue 是有序的吗？",
+    "a": "不是，只有反复 poll 才能得到排序序列。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+   },
+   {
+    "q": "元素优先级变了怎么办？",
+    "a": "堆不会自动调整，需移除再插入，或用支持减键的结构。"
+   },
+   {
+    "q": "线程安全版本？",
+    "a": "PriorityBlockingQueue；或外部加锁。"
+   }
+  ],
+  "answer": [
+   "总：PriorityQueue 是堆实现的优先级队列，默认小顶堆，适合 TopK 与按优先级调度。",
+   "分：自定义比较器；禁 null；非线程安全；迭代无序；注意优先级变更。",
+   "实践：【结合你的项目】【待填：延时任务/TopK】用堆实现。",
+   "总结：抓住「堆顶极值 + 对数调整」即可。结合项目说明取舍、验证方式与风险控制。"
+  ],
+  "pitfalls": [
+   "声称迭代就是排序输出。",
+   "往里放 null 导致 NPE。",
+   "加分：手写 TopK 小顶堆。"
+  ]
+ },
+ "p-c5": {
+  "principle": [
+   "BlockingQueue 在队列基础上提供阻塞的 put/take：队列满时生产者阻塞，空时消费者阻塞，是生产者-消费者的核心。常见实现：ArrayBlockingQueue（有界数组，可公平锁）、LinkedBlockingQueue（可选有界链表）、SynchronousQueue（不存元素，直接交接）、DelayQueue（到期才能取出）、PriorityBlockingQueue（阻塞优先队列）。",
+   "线程池工作队列就是 BlockingQueue：有界队列可触发扩到 max 与拒绝策略；无界 LinkedBlockingQueue 可能堆积任务导致 OOM。选型看是否要有界、是否要公平、是否要延时。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "BlockingQueue<Runnable> q = new ArrayBlockingQueue<>(1024);\nq.put(task);                 // 满则阻塞\nRunnable t = q.take();       // 空则阻塞\n\n// 线程池\nnew ThreadPoolExecutor(4, 8, 60, SECONDS, new ArrayBlockingQueue<>(200),\n    new ThreadPoolExecutor.CallerRunsPolicy());\n\n// SynchronousQueue：CachedThreadPool 使用，来一个任务交接给一个线程"
   },
-  "p2-5": {
-    "principle": [
-      "ConcurrentHashMap.size：用 baseCount + 多个 CounterCell（类似 LongAdder）分散累加，避免全局锁；并发下是近似值。JDK7 分段统计不同。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "int n = map.size(); // 并发修改时可能不是精确瞬时值"
-    },
-    "asks": [
-      "size 怎么统计？",
-      "精确吗？",
-      "为何分散？",
-      "mappingCount？"
-    ],
-    "followups": [
-      {
-        "q": "精确？",
-        "a": "要强一致需外部同步。"
-      },
-      {
-        "q": "mappingCount？",
-        "a": "返回 long 防溢出。"
-      },
-      {
-        "q": "空判断？",
-        "a": "isEmpty 同样近似。"
-      }
-    ],
-    "answer": [
-      "总：分散计数，并发近似。",
-      "分：无全局大锁。",
-      "实践：监控用够用。",
-      "总结：并发容器统计有代价。"
-    ],
-    "pitfalls": [
-      "以为绝对精确。"
-    ]
+  "asks": [
+   "BlockingQueue 常见实现有哪些？",
+   "和普通 Queue 差别？",
+   "线程池里怎么选队列？",
+   "SynchronousQueue 适合什么？"
+  ],
+  "followups": [
+   {
+    "q": "offer 和 put 区别？",
+    "a": "put 阻塞；offer 可立即返回失败或超时，线程池提交常用 offer。"
+   },
+   {
+    "q": "LinkedBlockingQueue 默认容量？",
+    "a": "Integer.MAX_VALUE，近乎无界，作线程池队列要警惕。"
+   },
+   {
+    "q": "DrainTo 干什么？",
+    "a": "批量取出，减少锁竞争，适合消费者批量处理。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
+   }
+  ],
+  "answer": [
+   "总：BlockingQueue 用阻塞上下架支撑生产者-消费者，也是线程池任务缓冲的关键。",
+   "分：Array/Linked/Synchronous/Delay 等各有场景；有界才能触发合理拒绝；无界可能 OOM。",
+   "实践：【结合你的项目】线程池队列用【待填】，容量【待填】，拒绝策略【待填】。",
+   "总结：讲清有界与阻塞语义，就能把集合题和线程池题串起来。"
+  ],
+  "pitfalls": [
+   "线程池无脑用无界队列。",
+   "分不清 put/offer/take/poll。",
+   "加分：结合拒绝策略讲背压。"
+  ]
+ },
+ "p2-5": {
+  "principle": [
+   "ConcurrentHashMap.size：用 baseCount + 多个 CounterCell（类似 LongAdder）分散累加，避免全局锁；并发下是近似值。JDK7 分段统计不同。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "int n = map.size(); // 并发修改时可能不是精确瞬时值"
   },
-  "j-col5": {
-    "principle": [
-      "fail-fast：ArrayList 等迭代时若结构被改，modCount 变化抛 ConcurrentModificationException（非绝对可靠）。CopyOnWrite：写时复制数组，迭代快照弱一致，读多写少；写贵、占内存。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "for(Integer i: list) list.remove(i); // 可能 CME → Iterator.remove\nCopyOnWriteArrayList<String> cow=new CopyOnWriteArrayList<>();"
-    },
-    "asks": [
-      "fail-fast？",
-      "COW？",
-      "适用？",
-      "CME？"
-    ],
-    "followups": [
-      {
-        "q": "绝对？",
-        "a": "不一定每次检测到。"
-      },
-      {
-        "q": "写多？",
-        "a": "别用 COW。"
-      },
-      {
-        "q": "并发改？",
-        "a": "用并发容器。"
-      }
-    ],
-    "answer": [
-      "总：快速失败检测并发改；COW 读优化。",
-      "分：写少才 COW。",
-      "实践：监听器列表。",
-      "总结：选型看读写比。"
-    ],
-    "pitfalls": [
-      "多线程用 ArrayList 迭代。"
-    ]
+  "asks": [
+   "size 怎么统计？",
+   "精确吗？",
+   "为何分散？",
+   "mappingCount？"
+  ],
+  "followups": [
+   {
+    "q": "精确？",
+    "a": "要强一致需外部同步。"
+   },
+   {
+    "q": "mappingCount？",
+    "a": "返回 long 防溢出。"
+   },
+   {
+    "q": "空判断？",
+    "a": "isEmpty 同样近似。"
+   }
+  ],
+  "answer": [
+   "总：分散计数，并发近似。",
+   "分：无全局大锁。",
+   "实践：监控用够用。",
+   "总结：并发容器统计有代价。"
+  ],
+  "pitfalls": [
+   "以为绝对精确。"
+  ]
+ },
+ "j-col5": {
+  "principle": [
+   "fail-fast：ArrayList 等迭代时若结构被改，modCount 变化抛 ConcurrentModificationException（非绝对可靠）。CopyOnWrite：写时复制数组，迭代快照弱一致，读多写少；写贵、占内存。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "for(Integer i: list) list.remove(i); // 可能 CME → Iterator.remove\nCopyOnWriteArrayList<String> cow=new CopyOnWriteArrayList<>();"
   },
-  "r-j2": {
-    "principle": [
-      "Java 21：Record Patterns 在 switch/instanceof 解构 record；Sequenced Collections 统一 List/Deque/LinkedHashSet 等有序集合的 getFirst/getLast/reversed。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "record Point(int x,int y){}\nswitch(obj){ case Point(int x,int y) -> x+y; default -> 0; }\nlist.getFirst(); list.reversed();"
-    },
-    "asks": [
-      "Record Patterns？",
-      "Sequenced？",
-      "好处？",
-      "版本？"
-    ],
-    "followups": [
-      {
-        "q": "21？",
-        "a": "LTS。"
-      },
-      {
-        "q": "逆向视图？",
-        "a": "reversed。"
-      },
-      {
-        "q": "模式匹配？",
-        "a": "更简洁。"
-      }
-    ],
-    "answer": [
-      "总：21 语法增强可读性。",
-      "分：解构与有序集合 API。",
-      "实践：升级 21 可用。",
-      "总结：了解新 API。"
-    ],
-    "pitfalls": [
-      "背特性无例子。"
-    ]
+  "asks": [
+   "fail-fast？",
+   "COW？",
+   "适用？",
+   "CME？"
+  ],
+  "followups": [
+   {
+    "q": "绝对？",
+    "a": "不一定每次检测到。"
+   },
+   {
+    "q": "写多？",
+    "a": "别用 COW。"
+   },
+   {
+    "q": "并发改？",
+    "a": "用并发容器。"
+   }
+  ],
+  "answer": [
+   "总：快速失败检测并发改；COW 读优化。",
+   "分：写少才 COW。",
+   "实践：监听器列表。",
+   "总结：选型看读写比。"
+  ],
+  "pitfalls": [
+   "多线程用 ArrayList 迭代。"
+  ]
+ },
+ "r-j2": {
+  "principle": [
+   "Java 21：Record Patterns 在 switch/instanceof 解构 record；Sequenced Collections 统一 List/Deque/LinkedHashSet 等有序集合的 getFirst/getLast/reversed。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "record Point(int x,int y){}\nswitch(obj){ case Point(int x,int y) -> x+y; default -> 0; }\nlist.getFirst(); list.reversed();"
   },
-  "p-c4": {
-    "principle": [
-      "WeakHashMap：键弱引用，键无强引用时条目可被回收，适合暂时缓存；值仍强引用可能需处理。非线程安全。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "Map<Key,Meta> m=new WeakHashMap<>();"
-    },
-    "asks": [
-      "WeakHashMap？",
-      "用途？",
-      "值？",
-      "并发？"
-    ],
-    "followups": [
-      {
-        "q": "值泄漏？",
-        "a": "值引用键则回收不了。"
-      },
-      {
-        "q": "缓存？",
-        "a": "更推荐专业缓存。"
-      },
-      {
-        "q": "谁清？",
-        "a": "GC+过道清理。"
-      }
-    ],
-    "answer": [
-      "总：弱键地图。",
-      "分：缓存场景有限。",
-      "实践：了解即可。",
-      "总结：慎用。"
-    ],
-    "pitfalls": [
-      "当通用缓存。"
-    ]
+  "asks": [
+   "Record Patterns？",
+   "Sequenced？",
+   "好处？",
+   "版本？"
+  ],
+  "followups": [
+   {
+    "q": "21？",
+    "a": "LTS。"
+   },
+   {
+    "q": "逆向视图？",
+    "a": "reversed。"
+   },
+   {
+    "q": "模式匹配？",
+    "a": "更简洁。"
+   }
+  ],
+  "answer": [
+   "总：21 语法增强可读性。",
+   "分：解构与有序集合 API。",
+   "实践：升级 21 可用。",
+   "总结：了解新 API。"
+  ],
+  "pitfalls": [
+   "背特性无例子。"
+  ]
+ },
+ "p-c4": {
+  "principle": [
+   "WeakHashMap：键弱引用，键无强引用时条目可被回收，适合暂时缓存；值仍强引用可能需处理。非线程安全。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Map<Key,Meta> m=new WeakHashMap<>();"
   },
-  "p2-6": {
-    "principle": [
-      "COWArrayList：写复制整数组，读无锁；适合读远多于写；迭代弱一致快照；写多性能差。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "CopyOnWriteArrayList<Listener> ls=new CopyOnWriteArrayList<>();"
-    },
-    "asks": [
-      "适用？",
-      "原理？",
-      "缺点？",
-      "Set？"
-    ],
-    "followups": [
-      {
-        "q": "Set？",
-        "a": "CopyOnWriteArraySet。"
-      },
-      {
-        "q": "大数组？",
-        "a": "写成本高。"
-      },
-      {
-        "q": "替代？",
-        "a": "并发队列等。"
-      }
-    ],
-    "answer": [
-      "总：读多写少。",
-      "分：写贵。",
-      "实践：监听器。",
-      "总结：同 j-col5。"
-    ],
-    "pitfalls": [
-      "写频繁用 COW。"
-    ]
+  "asks": [
+   "WeakHashMap？",
+   "用途？",
+   "值？",
+   "并发？"
+  ],
+  "followups": [
+   {
+    "q": "值泄漏？",
+    "a": "值引用键则回收不了。"
+   },
+   {
+    "q": "缓存？",
+    "a": "更推荐专业缓存。"
+   },
+   {
+    "q": "谁清？",
+    "a": "GC+过道清理。"
+   }
+  ],
+  "answer": [
+   "总：弱键地图。",
+   "分：缓存场景有限。",
+   "实践：了解即可。",
+   "总结：慎用。"
+  ],
+  "pitfalls": [
+   "当通用缓存。"
+  ]
+ },
+ "p2-6": {
+  "principle": [
+   "COWArrayList：写复制整数组，读无锁；适合读远多于写；迭代弱一致快照；写多性能差。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "CopyOnWriteArrayList<Listener> ls=new CopyOnWriteArrayList<>();"
   },
-  "p2-50": {
-    "principle": [
-      "IdentityHashMap：用 == 比键引用而非 equals；允许“相等但不同引用”作不同键；特殊场景（序列化图、调试），日常少用。"
-    ],
-    "example": {
-      "lang": "java",
-      "code": "Map<Object,String> m=new IdentityHashMap<>();"
-    },
-    "asks": [
-      "特点？",
-      "和 HashMap？",
-      "场景？",
-      "hash？"
-    ],
-    "followups": [
-      {
-        "q": "equals？",
-        "a": "不用。"
-      },
-      {
-        "q": "系统身份哈希？",
-        "a": "是。"
-      },
-      {
-        "q": "通用？",
-        "a": "否。"
-      }
-    ],
-    "answer": [
-      "总：引用相等地图。",
-      "分：特殊用途。",
-      "实践：了解。",
-      "总结：别当普通 Map。"
-    ],
-    "pitfalls": [
-      "误当 HashMap。"
-    ]
-  }
+  "asks": [
+   "适用？",
+   "原理？",
+   "缺点？",
+   "Set？"
+  ],
+  "followups": [
+   {
+    "q": "Set？",
+    "a": "CopyOnWriteArraySet。"
+   },
+   {
+    "q": "大数组？",
+    "a": "写成本高。"
+   },
+   {
+    "q": "替代？",
+    "a": "并发队列等。"
+   }
+  ],
+  "answer": [
+   "总：读多写少。",
+   "分：写贵。",
+   "实践：监听器。",
+   "总结：同 j-col5。"
+  ],
+  "pitfalls": [
+   "写频繁用 COW。"
+  ]
+ },
+ "p2-50": {
+  "principle": [
+   "IdentityHashMap：用 == 比键引用而非 equals；允许“相等但不同引用”作不同键；特殊场景（序列化图、调试），日常少用。"
+  ],
+  "example": {
+   "lang": "java",
+   "code": "Map<Object,String> m=new IdentityHashMap<>();"
+  },
+  "asks": [
+   "特点？",
+   "和 HashMap？",
+   "场景？",
+   "hash？"
+  ],
+  "followups": [
+   {
+    "q": "equals？",
+    "a": "不用。"
+   },
+   {
+    "q": "系统身份哈希？",
+    "a": "是。"
+   },
+   {
+    "q": "通用？",
+    "a": "否。"
+   }
+  ],
+  "answer": [
+   "总：引用相等地图。",
+   "分：特殊用途。",
+   "实践：了解。",
+   "总结：别当普通 Map。"
+  ],
+  "pitfalls": [
+   "误当 HashMap。"
+  ]
+ }
 }

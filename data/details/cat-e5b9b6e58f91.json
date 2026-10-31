@@ -471,154 +471,168 @@
  },
  "p-th2": {
   "principle": [
-   "wait/notify 必须在 synchronized 持锁下调用；等待用 while 防虚假唤醒；notify 唤醒一个，notifyAll 全部。Condition 与 Lock 绑定，可多条件队列（精确唤醒），await/signal 对应。"
+   "Object.wait/notify 必须在持有同一对象监视器（synchronized）时调用：wait 释放锁并等待，notify/notifyAll 唤醒。Condition 配合 Lock 使用，可创建多个等待队列（例如边界缓冲区的 notFull/notEmpty），信号更精确。两者都可能虚假唤醒，等待条件要用 while 而不是 if。",
+   "notify 只唤醒一个，notifyAll 唤醒全部再竞争；Condition 的 signal/signalAll 同理。能用更高层并发工具（BlockingQueue、Latch）就少手写 wait/notify。"
   ],
   "example": {
    "lang": "java",
-   "code": "synchronized(lock) {\n  while (!ready) lock.wait();\n  // ...\n  lock.notifyAll();\n}\nlock.lock();\ntry { while (!ready) cond.await(); cond.signal(); }\nfinally { lock.unlock(); }"
+   "code": "// wait/notify\nsynchronized (lock) {\n  while (!ready) lock.wait();\n  // 处理\n  lock.notifyAll();\n}\n\n// Condition\nLock l = new ReentrantLock();\nCondition notEmpty = l.newCondition();\nl.lock();\ntry {\n  while (queue.isEmpty()) notEmpty.await();\n  ...\n  notEmpty.signal();\n} finally { l.unlock(); }"
   },
   "asks": [
-   "wait/notify 注意？",
-   "和 Condition？",
-   "虚假唤醒？",
-   "sleep 区别？"
+   "wait/notify 与 Condition 差别？",
+   "为什么用 while 判断？",
+   "必须持锁吗？",
+   "什么时候用 notifyAll？"
   ],
   "followups": [
    {
-    "q": "虚假唤醒？",
-    "a": "应用 while 重检条件。"
+    "q": "wait 会释放锁吗？",
+    "a": "会释放当前监视器锁并进入等待集；被唤醒后要重新竞争锁。"
    },
    {
-    "q": "notify 丢信号？",
-    "a": "先改条件再 notify。"
+    "q": "sleep 和 wait 差别？",
+    "a": "sleep 不释放锁，也不要求在同步块中；wait 必须持锁并释放。"
    },
    {
-    "q": "sleep？",
-    "a": "不释放锁。"
+    "q": "Condition 能否替代所有 wait/notify？",
+    "a": "在 Lock 体系内可以，且多条件更清晰；synchronized 体系仍用 wait/notify。"
    }
   ],
   "answer": [
-   "总：持锁等待，while 判条件；Condition 更灵活。",
-   "分：多条件精确唤醒。",
-   "实践：阻塞队列源码即范本。",
-   "总结：等待/通知要成对设计。"
+   "总：wait/notify 与 Condition 都是条件等待机制，必须持锁，并用 while 防虚假唤醒；Condition 支持多等待队列。",
+   "分：notify 与 signal 语义类似；优先用高层队列；分清 sleep 与 wait。",
+   "实践：【结合你的项目】若手写同步，用【待填】，更常见是 BlockingQueue。",
+   "总结：能讲清锁释放与虚假唤醒，这题就算过关。结合项目说明取舍、验证方式与风险控制。"
   ],
   "pitfalls": [
-   "用 if 代替 while。"
+   "用 if 等待条件。",
+   "未持锁调用 wait。",
+   "加分：用双 Condition 讲有界缓冲。"
   ]
  },
  "p-th3": {
   "principle": [
-   "ReadWriteLock：读共享写独占，读多写少提吞吐。写锁获取时无读者；注意写饥饿（读不断流）；一般不支持锁升级（读→写易死锁），可降级（写→读）。ReentrantReadWriteLock 可公平。StampedLock 提供乐观读。"
+   "ReadWriteLock（ReentrantReadWriteLock）允许多个读线程共享持锁，写线程独占。适合读多写少且临界区不极端短的场景，例如缓存刷新、配置只读访问。写锁与读锁互斥；锁降级（写→读）有支持模式，锁升级（读→写）易死锁，通常要先释放读锁。",
+   "注意：读写锁有开销，临界区极短时可能不如互斥锁；写线程可能饥饿，可视情况用公平锁。Java 还有 StampedLock 提供乐观读。",
+   "进一步说：读多写少；写独占读共享；饥饿与升级注意。作答时把这些要点串成因果，而不是并列背诵。",
+   "面试作答时先给定义与适用边界，再讲实现要点与对比取舍，最后用项目里的指标或事故复盘收尾，避免只背名词。本题常见追问会落到落地细节：结合「并发」场景讲清参数、失败与观测。"
   ],
   "example": {
    "lang": "java",
-   "code": "ReentrantReadWriteLock rw = new ReentrantReadWriteLock();\nrw.readLock().lock(); try { /* read */ } finally { rw.readLock().unlock(); }\nrw.writeLock().lock(); try { /* write */ } finally { rw.writeLock().unlock(); }"
+   "code": "ReadWriteLock rw = new ReentrantReadWriteLock();\nrw.readLock().lock();\ntry { return cache.get(k); } finally { rw.readLock().unlock(); }\n\nrw.writeLock().lock();\ntry { cache.put(k, v); } finally { rw.writeLock().unlock(); }\n\n// 降级：持写锁中获取读锁，再释放写锁"
   },
   "asks": [
-   "读写锁场景？",
-   "饥饿？",
-   "升级？",
-   "StampedLock？"
+   "ReadWriteLock 适用场景？",
+   "能不能锁升级？",
+   "和 synchronized 比？",
+   "写饥饿怎么办？"
   ],
   "followups": [
    {
-    "q": "缓存？",
-    "a": "典型读多写少。"
+    "q": "读锁之间互斥吗？",
+    "a": "不互斥，多个读可同时持有；与写互斥。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
    },
    {
-    "q": "升级？",
-    "a": "不支持直接升级，需释放读锁再取写锁（窗口期）。"
+    "q": "缓存一定要用读写锁吗？",
+    "a": "ConcurrentHashMap 等并发结构常常更合适；读写锁适合你自定义的互斥资源。"
    },
    {
-    "q": "公平？",
-    "a": "构造 true 防写饥饿。"
+    "q": "公平模式影响？",
+    "a": "公平可缓解写饥饿，但吞吐可能下降。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
    }
   ],
   "answer": [
-   "总：读共享写独占，适合读多写少。",
-   "分：防饥饿；谨慎升级。",
-   "实践：本地缓存地图。",
-   "总结：写少才划算。"
+   "总：读写锁适合读多写少，读共享写独占，注意降级可以、升级危险。",
+   "分：短临界区未必更快；可选公平；很多场景用并发集合更好。",
+   "实践：【结合你的项目】【待填：配置/缓存】用读写锁或【待填：CHM】。",
+   "总结：先证明读多写少且有共享结构，再上读写锁。结合项目说明取舍、验证方式与风险控制。关联知识点：读多写少、写独占读共享。"
   ],
   "pitfalls": [
-   "写密集用读写锁。"
+   "在读锁里直接申请写锁导致死锁。",
+   "不分析场景盲目替换 synchronized。",
+   "加分：提 StampedLock 乐观读。"
   ]
  },
  "p-th4": {
   "principle": [
-   "ForkJoinPool：工作窃取，把大任务递归拆成子任务，空闲线程偷其他双端队列任务。适合 CPU 密集可拆分（计算、排序）。parallelStream 默认公共池；阻塞 IO 会占满公共池，宜自定义池或避免。"
+   "ForkJoinPool 是面向「分治」的线程池：把大任务拆成子任务并行，用工作窃取（work-stealing）让空闲线程从别人的双端队列偷任务，提高多核利用率。RecursiveTask 有返回值，RecursiveAction 无返回值。Java 并行流默认用公共 ForkJoinPool.commonPool。",
+   "适合 CPU 密集、可拆分、子任务相对均匀的计算；不适合长时间阻塞 IO（会占满公共池影响全局）。自定义池可隔离。阈值（threshold）决定拆到多细。"
   ],
   "example": {
    "lang": "java",
-   "code": "long sum = ForkJoinPool.commonPool().submit(\n  () -> LongStream.rangeClosed(1, 1_000_000).parallel().sum()).get();\n// 自定义并行度 new ForkJoinPool(n)"
+   "code": "class Sum extends RecursiveTask<Long> {\n  int[] a; int l,r;\n  protected Long compute() {\n    if (r-l <= 10000) { long s=0; for(int i=l;i<r;i++) s+=a[i]; return s; }\n    int m=(l+r)/2;\n    Sum left=new Sum(a,l,m), right=new Sum(a,m,r);\n    left.fork();\n    long rsum=right.compute();\n    return left.join()+rsum;\n  }\n}\nlong s = new ForkJoinPool().invoke(new Sum(arr,0,arr.length));\n// Arrays.parallelSort / parallelStream 也用 commonPool"
   },
   "asks": [
-   "ForkJoin 是什么？",
-   "工作窃取？",
-   "并行流坑？",
-   "虚拟线程关系？"
+   "ForkJoinPool 是什么？",
+   "什么是工作窃取？",
+   "和普通线程池差别？",
+   "并行流要注意什么？"
   ],
   "followups": [
    {
-    "q": "公共池？",
-    "a": "parallelStream 共用，被堵影响全局。"
+    "q": "阻塞 IO 放并行流里会怎样？",
+    "a": "占用 commonPool 线程，可能拖慢其他并行计算，应换专用池或避免。"
    },
    {
-    "q": "IO？",
-    "a": "不适合放公共池。"
+    "q": "fork 很多很小任务好吗？",
+    "a": "过细会增加调度开销，要用合适阈值。结合业务约束说明取舍，并补充如何验证（监控、单测或压测）。"
    },
    {
-    "q": "阈值？",
-    "a": "任务太小拆分得不偿失。"
+    "q": "异常如何处理？",
+    "a": "在 compute 里捕获或通过 Future/任务结果上抛，需显式处理。"
    }
   ],
   "answer": [
-   "总：偷功调度做可拆分并行计算。",
-   "分：并行流用公共池要小心；IO 隔离。",
-   "实践：纯计算可并行；IO 用专用执行器。",
-   "总结：拆分粒度与任务类型匹配。"
+   "总：ForkJoinPool 用分治+工作窃取跑可拆分计算，并行流默认也用它。",
+   "分：适合 CPU 分治；避免阻塞 IO 占公共池；控制任务粒度。",
+   "实践：【结合你的项目】【待填：计算】用【待填：并行流/自建池】。",
+   "总结：抓住工作窃取与 commonPool 风险就能答出区分度。"
   ],
   "pitfalls": [
-   "并行流里调 HTTP。"
+   "把 ForkJoin 说成普通固定线程池。",
+   "在 commonPool 里大做阻塞 IO。",
+   "加分：讲阈值与偷任务队列。"
   ]
  },
  "p-th5": {
   "principle": [
-   "Future：异步结果，get 阻塞取结果。CompletableFuture：可编排 thenApply/thenCompose/thenCombine、异常 exceptionally/handle、超时 orTimeout，默认 ForkJoin 公共池，可指定 Executor。"
+   "Future 代表异步结果：submit 后可 get 阻塞取回，可 cancel。CompletableFuture 是增强版：支持 thenApply/thenCompose/thenCombine 等函数式编排，能组合多个异步，处理 exceptionally/handle，并可指定执行器。",
+   "注意 get 超时、异常封装为 CompletionException、避免在 commonPool 跑阻塞任务、循环里创建海量 CF。编排复杂时要想清线程落在哪个池。"
   ],
   "example": {
    "lang": "java",
-   "code": "CompletableFuture<String> f = CompletableFuture\n  .supplyAsync(() -> callA(), pool)\n  .thenCombine(CompletableFuture.supplyAsync(() -> callB(), pool), String::concat)\n  .orTimeout(2, TimeUnit.SECONDS)\n  .exceptionally(e -> \"fallback\");"
+   "code": "ExecutorService es = Executors.newFixedThreadPool(4);\nFuture<Integer> f = es.submit(() -> calc());\nInteger v = f.get(1, TimeUnit.SECONDS);\n\nCompletableFuture<String> cf = CompletableFuture\n  .supplyAsync(() -> load(), es)\n  .thenApplyAsync(this::parse, es)\n  .exceptionally(ex -> \"fallback\");\nString s = cf.join();\n\nCompletableFuture.allOf(cf1, cf2).join();"
   },
   "asks": [
-   "Future 和 CF？",
-   "常用编排？",
-   "线程池？",
-   "异常？"
+   "Future 与 CompletableFuture 差别？",
+   "如何组合多个异步？",
+   "异常怎么处理？",
+   "踩过哪些坑？"
   ],
   "followups": [
    {
-    "q": "get 坑？",
-    "a": "阻塞；用 then* 链式。"
+    "q": "join 和 get 差别？",
+    "a": "join 不声明受检异常，失败时抛 CompletionException；get 抛 ExecutionException。"
    },
    {
-    "q": "allOf？",
-    "a": "等一组完成。"
+    "q": "thenApply 和 thenApplyAsync ？",
+    "a": "前者默认在上一阶段线程继续；Async 会提交到池，避免阻塞传播。"
    },
    {
-    "q": "取消？",
-    "a": "cancel 可能只设标志。"
+    "q": "能不能在 CF 里再 get 另一个 Future？",
+    "a": "小心死锁与线程占满；应用 thenCompose 串联。"
    }
   ],
   "answer": [
-   "总：CF 是可组合的异步编排。",
-   "分：指定池；处理异常与超时。",
-   "实践：并行调多个下游。",
-   "总结：别嵌套阻塞 get。"
+   "总：Future 是异步结果句柄，CompletableFuture 可函数式编排组合与异常恢复。",
+   "分：指定执行器；用 allOf/anyOf；注意超时与 commonPool；用 thenCompose 扁平化依赖。",
+   "实践：【结合你的项目】并行调【待填】个下游，用 CF 组合，超时【待填】。",
+   "总结：异步编排要清楚任务跑在哪个线程池。结合项目说明取舍、验证方式与风险控制。"
   ],
   "pitfalls": [
-   "supplyAsync 不传池打满公共池。"
+   "到处 get 导致阻塞。",
+   "不设超时。",
+   "加分：讲 thenCompose 与异常恢复。"
   ]
  },
  "p-th7": {
