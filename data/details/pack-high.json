@@ -1666,582 +1666,842 @@
  },
  "pack-h39": {
   "principle": [
-   "客户端从服务发现或配置中获得实例列表，再按照轮询、随机、加权等策略选择目标。",
-   "健康检查、权重、地域、连接池和负载变化会影响实际效果；策略与行为取决于具体实现。",
-   "故障实例摘除需要时间，仍应配置超时、有限重试和可观测性。"
+   "客户端负载均衡指调用方从注册中心拿到实例列表，在本地按策略选一个实例直接调用，不经过集中式负载均衡器（如 Spring Cloud LoadBalancer、Dubbo、gRPC 客户端）。好处是少一跳、无单点，代价是每个客户端都要维护实例列表和健康状态。",
+   "常见策略：轮询（简单均匀）、加权轮询（按机器能力分配）、随机/加权随机、最少活跃调用（把请求发给当前处理中请求最少的实例，适合处理时间差异大）、一致性哈希（同一参数落到同一实例，适合有本地缓存或会话粘滞）、按响应时间加权（P2C 两次随机选较优）。",
+   "还要结合健康检查与熔断：剔除连续失败或超时的实例、对新启动实例做预热（warmup）逐步加权，避免冷启动 JIT 未热时被打满；跨机房时优先同区域实例。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "客户端本地列表 [A, B, C] → 选择 B → 超时或连接失败时按策略处理。"
+   "lang": "java",
+   "code": "// Spring Cloud LoadBalancer 自定义为随机策略\n@Bean\nReactorLoadBalancer<ServiceInstance> randomLB(Environment env, LoadBalancerClientFactory f) {\n    String name = env.getProperty(LoadBalancerClientFactory.PROPERTY_NAME);\n    return new RandomLoadBalancer(\n        f.getLazyProvider(name, ServiceInstanceListSupplier.class), name);\n}\n// Dubbo：<dubbo:reference loadbalance=\"leastactive\" />\n// 一致性哈希：loadbalance=\"consistenthash\"，按第一个参数路由"
   },
   "asks": [
    "客户端负载均衡如何选择服务实例？",
-   "轮询一定能让各实例负载均衡吗？"
+   "常见负载均衡策略有哪些？",
+   "最少活跃调用适合什么场景？",
+   "新实例为什么需要预热？"
   ],
   "followups": [
    {
-    "q": "轮询一定能让各实例负载均衡吗？",
-    "a": "不一定；请求成本、实例性能和响应时间可能不同。"
+    "q": "客户端和服务端负载均衡怎么选？",
+    "a": "内部服务调用多用客户端负载均衡减少一跳；对外入口通常用 Nginx/网关等服务端负载均衡统一管理。"
+   },
+   {
+    "q": "一致性哈希有什么缺点？",
+    "a": "热点 key 会集中在少数实例造成倾斜，需要虚拟节点缓解，且实例变动时部分请求会迁移。"
+   },
+   {
+    "q": "实例列表过期怎么办？",
+    "a": "注册中心推送加客户端定时拉取，并结合调用失败主动剔除和熔断，避免把请求发给已下线实例。"
    }
   ],
   "answer": [
-   "核心思路：客户端从服务发现或配置中获得实例列表，再按照轮询、随机、加权等策略选择目标。",
-   "展开说明：健康检查、权重、地域、连接池和负载变化会影响实际效果；策略与行为取决于具体实现。",
-   "实践与边界：故障实例摘除需要时间，仍应配置超时、有限重试和可观测性。"
+   "总：客户端负载均衡在调用方本地按策略从实例列表选实例，少一跳无单点，需要自己处理健康与预热。",
+   "分：轮询、加权、随机、最少活跃、一致性哈希各适合不同场景；配合失败剔除、熔断、预热和同区域优先。",
+   "实践：【结合你的项目】说明你们用的框架与策略，是否遇到过新实例启动被打满或节点下线仍被调用的问题。",
+   "总结：策略选择要看请求耗时差异和是否需要粘滞，可靠性靠健康检查与熔断补齐。"
   ],
   "pitfalls": [
-   "把请求数量平均误认为资源负载一定平均。"
+   "只知道轮询，不考虑实例性能差异。",
+   "忽略实例列表过期和冷启动问题。",
+   "加分：讲出 P2C 或最少活跃的原理。"
   ]
  },
  "pack-h40": {
   "principle": [
-   "获取 Mapper 时，MyBatis 为接口创建动态代理；调用方法会进入代理，将接口及方法定位到已注册的映射语句，再通过 SqlSession 执行。",
-   "XML 的 namespace 通常对应接口全限定名，语句 id 对应方法名。参数需要经过命名与绑定，返回值也需匹配查询结果；同名重载不宜用于区分不同 XML 语句。",
-   "排查绑定错误时，先检查 XML 是否被扫描、namespace 与 id 是否一致，再检查参数名、集合与单对象返回方式。并非只要声明接口就能自动生成正确 SQL。"
+   "MyBatis Mapper 接口不需要实现类，是因为 MyBatis 用 JDK 动态代理在运行时为接口生成代理对象 MapperProxy。调用接口方法时，代理根据「接口全限定名 + 方法名」作为 statementId，去 Configuration 中找对应的 MappedStatement（来自 XML 的 namespace+id 或注解），再交给 SqlSession 执行。",
+   "MapperMethod 会根据 SQL 类型（SELECT/INSERT 等）和返回值类型决定调用 selectOne、selectList、update 等方法，并把参数用 ParamNameResolver 转换成参数对象。这也是为什么 XML namespace 必须等于接口全名、id 必须等于方法名，以及方法不能重载（同名会冲突）。",
+   "在 Spring 中，MapperScannerConfigurer / @MapperScan 扫描接口，为每个接口注册 MapperFactoryBean，从而把代理对象作为 Bean 注入到 Service。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "Mapper.getById(7) → Mapper 动态代理 → namespace.getById → SqlSession → Executor → JDBC"
+   "lang": "java",
+   "code": "// 简化版原理\npublic class MapperProxy<T> implements InvocationHandler {\n    private final SqlSession session; private final Class<T> mapperInterface;\n    public Object invoke(Object proxy, Method m, Object[] args) {\n        String statementId = mapperInterface.getName() + \".\" + m.getName();\n        if (List.class.isAssignableFrom(m.getReturnType()))\n            return session.selectList(statementId, args == null ? null : args[0]);\n        return session.selectOne(statementId, args == null ? null : args[0]);\n    }\n}\n// <mapper namespace=\"com.demo.UserMapper\"> <select id=\"findById\" ...>"
   },
   "asks": [
-   "MyBatis Mapper 接口为什么不需要手写实现类？",
-   "能否通过方法重载映射两条同名 XML SQL？"
+   "MyBatis Mapper 接口为什么不需要实现类？",
+   "调用 Mapper 方法时如何找到 SQL？",
+   "Mapper 方法可以重载吗？",
+   "Spring 里 Mapper 是怎么注入的？"
   ],
   "followups": [
    {
-    "q": "能否通过方法重载映射两条同名 XML SQL？",
-    "a": "不应这样设计：XML 映射语句通过 namespace 与 id 定位，无法仅凭 Java 参数签名区分两条同名语句。"
+    "q": "namespace 写错会怎样？",
+    "a": "代理拼出的 statementId 找不到对应 MappedStatement，运行时抛 BindingException: Invalid bound statement。"
+   },
+   {
+    "q": "为什么 Mapper 方法不能重载？",
+    "a": "statementId 只由接口名和方法名组成，不包含参数类型，重载方法会映射到同一个 id 造成冲突。"
+   },
+   {
+    "q": "为什么用 JDK 代理而不是 CGLIB？",
+    "a": "Mapper 是接口且没有实现类，JDK 动态代理正好可以基于接口生成代理，无需继承具体类。"
    }
   ],
   "answer": [
-   "先说明职责：获取 Mapper 时，MyBatis 为接口创建动态代理；调用方法会进入代理，将接口及方法定位到已注册的映射语句，再通过 SqlSession 执行。",
-   "再解释执行边界：XML 的 namespace 通常对应接口全限定名，语句 id 对应方法名。参数需要经过命名与绑定，返回值也需匹配查询结果；同名重载不宜用于区分不同 XML 语句。",
-   "落地时验证：排查绑定错误时，先检查 XML 是否被扫描、namespace 与 id 是否一致，再检查参数名、集合与单对象返回方式。并非只要声明接口就能自动生成正确 SQL。"
+   "总：MyBatis 用 JDK 动态代理为 Mapper 接口生成 MapperProxy，按接口名加方法名找到 SQL 并通过 SqlSession 执行。",
+   "分：MapperMethod 依据 SQL 类型和返回值选择执行方法；namespace 和 id 必须对应；不能重载；Spring 通过 MapperFactoryBean 注册代理 Bean。",
+   "实践：【结合你的项目】可以讲一次 Invalid bound statement 报错，最后发现是 namespace 或 XML 未被扫描。",
+   "总结：理解动态代理和 statementId 映射，就能解释 Mapper 的大部分约束和常见报错。"
   ],
   "pitfalls": [
-   "把接口代理误认为会根据所有方法名自动生成 SQL。"
+   "说 MyBatis 在编译期生成了实现类。",
+   "不知道 BindingException 的原因。",
+   "加分：说出 MapperFactoryBean 与 @MapperScan 的关系。"
   ]
  },
  "pack-h41": {
   "principle": [
-   "TypeHandler 负责 Java 类型与 JDBC 类型间的读写转换，包括为预编译语句设置参数，以及从结果集中读取并转换列值。",
-   "枚举状态字段应定义稳定的存储编码，避免业务含义依赖枚举声明顺序。可以按类型注册处理器，也可以在具体映射中显式指定，处理器的选择受 Java 类型、JDBC 类型和注册范围影响。",
-   "自定义转换需要处理 NULL、未知编码和历史数据兼容。上线前用真实驱动验证参数写入和读取两个方向，避免只验证序列化的一侧。"
+   "TypeHandler 负责 Java 类型与 JDBC 类型之间的转换：设置参数时把 Java 对象写入 PreparedStatement（setParameter），读取结果时从 ResultSet 取出并转成 Java 对象（getResult）。MyBatis 内置了常见类型的处理器，如 String、Long、Date、LocalDateTime。",
+   "自定义 TypeHandler 的典型场景：把枚举按 code 存储（而不是默认的名字或序号）、把 JSON 字段映射成 Java 对象或 List、加密字段读写时自动加解密、逗号分隔字符串与 List 互转。实现方式是继承 BaseTypeHandler<T>，并通过 @MappedTypes/@MappedJdbcTypes 或在 resultMap/参数里显式指定。",
+   "注意要处理 null 值；注册为全局处理器会影响所有该 Java 类型的字段，需谨慎；JSON 处理器要考虑反序列化失败和字段兼容。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "订单状态枚举 PAID ↔ 数据库稳定编码 paid；读取未知编码时按明确策略报错或兼容。"
+   "lang": "java",
+   "code": "@MappedTypes(OrderStatus.class)\npublic class OrderStatusHandler extends BaseTypeHandler<OrderStatus> {\n    public void setNonNullParameter(PreparedStatement ps, int i, OrderStatus s, JdbcType t)\n            throws SQLException { ps.setInt(i, s.getCode()); }\n    public OrderStatus getNullableResult(ResultSet rs, String col) throws SQLException {\n        int code = rs.getInt(col);\n        return rs.wasNull() ? null : OrderStatus.of(code);\n    }\n    public OrderStatus getNullableResult(ResultSet rs, int idx) throws SQLException {\n        int code = rs.getInt(idx); return rs.wasNull() ? null : OrderStatus.of(code); }\n    public OrderStatus getNullableResult(CallableStatement cs, int idx) throws SQLException {\n        int code = cs.getInt(idx); return cs.wasNull() ? null : OrderStatus.of(code); }\n}"
   },
   "asks": [
    "MyBatis TypeHandler 有什么作用？",
-   "为什么不建议直接存枚举 ordinal？"
+   "什么场景需要自定义 TypeHandler？",
+   "枚举默认怎么存储？",
+   "如何注册 TypeHandler？"
   ],
   "followups": [
    {
-    "q": "为什么不建议直接存枚举 ordinal？",
-    "a": "插入或调整枚举常量顺序会改变 ordinal，可能让旧数据被解释为另一种业务状态。"
+    "q": "枚举默认存储有什么问题？",
+    "a": "默认 EnumTypeHandler 存名字，改名会导致历史数据无法解析；EnumOrdinalTypeHandler 存序号，调整顺序更危险，所以常自定义按 code 存。"
+   },
+   {
+    "q": "全局注册和局部指定怎么选？",
+    "a": "通用转换（如所有枚举按 code）适合全局；只有个别字段需要的转换（如某个 JSON 列）建议在 resultMap 或参数上局部指定。"
+   },
+   {
+    "q": "为什么要用 rs.wasNull()？",
+    "a": "getInt 对 NULL 返回 0，必须用 wasNull 区分真实的 0 和数据库 NULL。"
    }
   ],
   "answer": [
-   "先说明职责：TypeHandler 负责 Java 类型与 JDBC 类型间的读写转换，包括为预编译语句设置参数，以及从结果集中读取并转换列值。",
-   "再解释执行边界：枚举状态字段应定义稳定的存储编码，避免业务含义依赖枚举声明顺序。可以按类型注册处理器，也可以在具体映射中显式指定，处理器的选择受 Java 类型、JDBC 类型和注册范围影响。",
-   "落地时验证：自定义转换需要处理 NULL、未知编码和历史数据兼容。上线前用真实驱动验证参数写入和读取两个方向，避免只验证序列化的一侧。"
+   "总：TypeHandler 是 MyBatis 在 Java 类型和 JDBC 类型之间做参数设置与结果转换的扩展点。",
+   "分：内置处理器覆盖常见类型；自定义用于枚举 code、JSON、加密字段等；继承 BaseTypeHandler 并注意 null 处理与注册范围。",
+   "实践：【结合你的项目】举一个枚举按 code 存储或 JSON 字段映射的处理器例子。",
+   "总结：把类型转换收敛到 TypeHandler，能让业务代码不再到处手动转换字段。"
   ],
   "pitfalls": [
-   "处理器吞掉未知状态并默认转成成功状态。"
+   "枚举用序号存储后又调整了枚举顺序。",
+   "自定义处理器不处理 NULL。",
+   "加分：说明全局注册对其他字段的影响。"
   ]
  },
  "pack-h42": {
   "principle": [
-   "SIMPLE 不对语句做特别复用；REUSE 尝试复用预编译语句；BATCH 聚合更新操作，适合经过验证的批量写入场景。",
-   "BATCH 的执行可能推迟到 flush、查询前或提交等时机，因此不能把每次调用返回值立即当成最终影响行数。失败的具体语句和批次边界需要额外检查。",
-   "执行器不改变业务事务的原子性要求。选择时同时考虑批量大小、内存、数据库锁持有时长、驱动支持和框架事务集成，不能简单认为 BATCH 对所有负载都最快。"
+   "MyBatis 有三种执行器。SimpleExecutor（默认）每次执行都新建 Statement，用完关闭，行为简单直观。ReuseExecutor 在同一个 SqlSession 内按 SQL 文本缓存 PreparedStatement，相同 SQL 复用，减少预编译次数。",
+   "BatchExecutor 用于批量更新：把 insert/update/delete 语句 addBatch 累积，在 flushStatements、commit 或执行查询前统一发送，适合大量写入；但它对 select 没有批量效果，而且单条 update 的返回值不是真实影响行数，需要从 BatchResult 中获取。",
+   "另外 CachingExecutor 是装饰器，开启二级缓存时包在上述执行器外层。执行器可以在全局 defaultExecutorType 配置，也可以在 openSession(ExecutorType.BATCH) 时临时指定；Spring 中常通过单独的 SqlSessionTemplate(BATCH) 做批量任务。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "批量更新 → BatchExecutor 暂存 → flushStatements 获取批次结果 → 按事务规则 commit 或 rollback"
+   "lang": "java",
+   "code": "// 全局配置：mybatis.configuration.default-executor-type=simple\n\n// 批量任务单独使用 BATCH\n@Bean\npublic SqlSessionTemplate batchSqlSession(SqlSessionFactory f) {\n    return new SqlSessionTemplate(f, ExecutorType.BATCH);\n}\n\ntry (SqlSession s = factory.openSession(ExecutorType.BATCH)) {\n    UserMapper m = s.getMapper(UserMapper.class);\n    users.forEach(m::insert);\n    List<BatchResult> results = s.flushStatements(); // 取真实影响行数\n    s.commit();\n}"
   },
   "asks": [
    "MyBatis 的 SIMPLE、REUSE 和 BATCH 执行器有什么区别？",
-   "flushStatements 是否代表提交成功？"
+   "BATCH 执行器有什么限制？",
+   "CachingExecutor 是什么？",
+   "Spring 中怎么使用 BATCH 执行器？"
   ],
   "followups": [
    {
-    "q": "flushStatements 是否代表提交成功？",
-    "a": "不是，它用于刷新批次；事务提交仍由 SqlSession 或事务管理器负责。"
+    "q": "为什么不把全局执行器都设为 BATCH？",
+    "a": "BATCH 下 update 返回值不可靠、语句延迟发送，普通业务逻辑依赖返回值和即时执行时会出错，所以只在批量场景使用。"
+   },
+   {
+    "q": "ReuseExecutor 的复用范围多大？",
+    "a": "只在同一个 SqlSession 内有效，会话关闭后缓存的 Statement 也会关闭。"
+   },
+   {
+    "q": "同一事务里混用不同执行器会有问题吗？",
+    "a": "同一个 SqlSession 的执行器类型固定，Spring 中不同 SqlSessionTemplate 在同一事务里切换执行器类型会抛异常，需要拆开处理。"
    }
   ],
   "answer": [
-   "先说明职责：SIMPLE 不对语句做特别复用；REUSE 尝试复用预编译语句；BATCH 聚合更新操作，适合经过验证的批量写入场景。",
-   "再解释执行边界：BATCH 的执行可能推迟到 flush、查询前或提交等时机，因此不能把每次调用返回值立即当成最终影响行数。失败的具体语句和批次边界需要额外检查。",
-   "落地时验证：执行器不改变业务事务的原子性要求。选择时同时考虑批量大小、内存、数据库锁持有时长、驱动支持和框架事务集成，不能简单认为 BATCH 对所有负载都最快。"
+   "总：SIMPLE 每次新建语句，REUSE 在会话内复用预编译语句，BATCH 批量累积写操作统一发送。",
+   "分：BATCH 只对写有效、需 flush、返回值从 BatchResult 取；CachingExecutor 是二级缓存装饰器；可全局配置或按会话指定。",
+   "实践：【结合你的项目】说明批量导入时是否单独配置 BATCH 的 SqlSessionTemplate 以及性能提升。",
+   "总结：默认用 SIMPLE，批量写入时局部切换 BATCH，不要全局开启。"
   ],
   "pitfalls": [
-   "在同一事务集成上下文中随意切换执行器类型。"
+   "全局改成 BATCH 导致业务判断影响行数出错。",
+   "以为 BATCH 能加速查询。",
+   "加分：提到 Spring 事务中切换执行器类型的异常。"
   ]
  },
  "pack-h43": {
   "principle": [
-   "把应用配置外置，使用 application 配置、环境变量和启动参数等来源；同名属性按框架规定的优先级覆盖，应按项目使用的版本核实具体规则。",
-   "Profile 用于选择一组环境配置，但不代表环境隔离或访问控制。排查配置不生效时，先确认激活的 profile、加载位置和实际属性来源，再检查绑定与类型转换。",
-   "敏感值通过部署环境或秘密管理系统注入，避免写入版本库；变更需要可回滚。外置配置并不自动热更新，是否刷新取决于具体组件和属性的消费方式。"
+   "Spring Boot 通过 Profile 管理多环境配置：application.yml 放公共配置，application-dev.yml、application-prod.yml 放环境差异，通过 spring.profiles.active 指定激活的环境，可以来自命令行参数、环境变量（SPRING_PROFILES_ACTIVE）或容器配置。",
+   "配置有明确的优先级：命令行参数 > 系统环境变量 > 外部配置文件（jar 包外 config 目录）> jar 内的 application-{profile} > application.yml 默认值。这让同一个制品在不同环境通过外部注入覆盖配置，做到「一次构建，到处部署」。",
+   "敏感信息（数据库密码、密钥）不要写进仓库的配置文件，应通过环境变量、Kubernetes Secret、Vault 或配置中心（Nacos、Apollo）注入。Spring Boot 2.4 之后可以用 spring.config.import 引入配置中心，并用 spring.config.activate.on-profile 在一个文件中区分环境。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "java -jar app.jar --spring.profiles.active=prod --server.port=8081"
+   "lang": "yaml",
+   "code": "# application.yml\nspring:\n  profiles:\n    active: ${SPRING_PROFILES_ACTIVE:dev}\n  datasource:\n    url: jdbc:mysql://${DB_HOST:localhost}:3306/app\n    password: ${DB_PASSWORD}          # 来自环境变量 / Secret\n---\nspring:\n  config:\n    activate:\n      on-profile: prod\nserver:\n  tomcat:\n    threads:\n      max: 400\n# 启动：java -jar app.jar --spring.profiles.active=prod"
   },
   "asks": [
    "Spring Boot 如何管理不同环境的配置？",
-   "修改配置文件后，所有 Bean 会自动拿到新值吗？"
+   "配置的优先级是怎样的？",
+   "敏感配置应该怎么管理？",
+   "为什么要一次构建多环境部署？"
   ],
   "followups": [
    {
-    "q": "修改配置文件后，所有 Bean 会自动拿到新值吗？",
-    "a": "不会，配置刷新与 Bean 生命周期有关，需要具体的刷新机制或重启策略。"
+    "q": "为每个环境单独打包可以吗？",
+    "a": "不推荐，不同制品可能导致测试过的不是线上运行的版本；应该同一制品通过外部配置区分环境。"
+   },
+   {
+    "q": "profile 可以同时激活多个吗？",
+    "a": "可以，用逗号分隔，后面的覆盖前面的同名配置，也可以用 profile 分组组合。"
+   },
+   {
+    "q": "配置中心和本地文件冲突时以谁为准？",
+    "a": "取决于导入方式和优先级配置，一般配置中心的值会覆盖本地文件，需要在团队内明确约定并测试。"
    }
   ],
   "answer": [
-   "核心思路：把应用配置外置，使用 application 配置、环境变量和启动参数等来源；同名属性按框架规定的优先级覆盖，应按项目使用的版本核实具体规则。",
-   "展开说明：Profile 用于选择一组环境配置，但不代表环境隔离或访问控制。排查配置不生效时，先确认激活的 profile、加载位置和实际属性来源，再检查绑定与类型转换。",
-   "工程实践：敏感值通过部署环境或秘密管理系统注入，避免写入版本库；变更需要可回滚。外置配置并不自动热更新，是否刷新取决于具体组件和属性的消费方式。"
+   "总：用 Profile 区分环境，公共配置放默认文件，差异放环境文件，通过外部参数选择激活环境。",
+   "分：命令行和环境变量优先级最高；敏感信息走环境变量、Secret 或配置中心；同一制品多环境部署。",
+   "实践：【结合你的项目】说明你们 dev/test/prod 怎么切换，密码存放在哪里。",
+   "总结：配置管理的目标是制品不变、配置可追溯、密钥不进仓库。"
   ],
   "pitfalls": [
-   "把 profile 当作权限边界，或忽略启动参数覆盖了文件配置。"
+   "把生产密码提交到 Git。",
+   "每个环境单独打包。",
+   "加分：讲清配置优先级和配置中心接入。"
   ]
  },
  "pack-h44": {
   "principle": [
-   "@Value 适合注入少量独立属性；@ConfigurationProperties 可将同一前缀的一组配置绑定到有明确类型的对象，便于集中管理。",
-   "结构化配置应定义默认值、有效范围和必要的校验，并在应用启动时尽早发现错误。绑定成功不意味着业务值一定合理，还要检查单位、超时范围和必填项。",
-   "配置对象需要通过合适方式注册到容器。调试时可以查看属性来源和绑定结果，但诊断端点的访问与敏感内容展示应受控。"
+   "@Value 适合注入单个简单值，支持 ${} 占位符和 SpEL 表达式，写起来直接；但配置项多时会分散在各处，不支持松散绑定的全部能力，也不方便做校验，类型复杂（如 List、Map、嵌套对象）时较麻烦。",
+   "@ConfigurationProperties 把一组前缀相同的配置绑定到一个类型安全的 POJO：支持松散绑定（max-size、maxSize、MAX_SIZE 都能映射）、嵌套对象和集合、@Validated 加 JSR-303 校验，还能生成配置元数据给 IDE 提示。适合模块级、成组的配置。",
+   "选择原则：一两个零散值、需要 SpEL 时用 @Value；一组相关配置、需要校验或在多处复用时用 @ConfigurationProperties。注意 @Value 不会自动刷新，配置中心动态刷新时需要 @RefreshScope 或使用配置属性类的刷新机制。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "payment.timeout、payment.max-retries → PaymentProperties → 启动校验 → 注入支付客户端"
+   "lang": "java",
+   "code": "@Value(\"${app.order.timeout-minutes:30}\")\nprivate int timeoutMinutes;\n\n@Validated\n@ConfigurationProperties(prefix = \"app.sms\")\npublic record SmsProperties(\n    @NotBlank String endpoint,\n    @Min(1) int maxRetry,\n    Duration timeout,\n    Map<String, String> templates) {}\n\n// 启用：@EnableConfigurationProperties(SmsProperties.class) 或 @ConfigurationPropertiesScan\n# app.sms.endpoint=https://sms.example.com\n# app.sms.max-retry=3\n# app.sms.timeout=2s"
   },
   "asks": [
    "@ConfigurationProperties 与 @Value 如何选择？",
-   "配置中的 timeout=0 应该怎么办？"
+   "什么是松散绑定？",
+   "配置怎么做校验？",
+   "配置动态刷新要注意什么？"
   ],
   "followups": [
    {
-    "q": "配置中的 timeout=0 应该怎么办？",
-    "a": "根据业务语义校验：若不允许无限等待，应在启动时拒绝，而不是等线上请求卡住。"
+    "q": "@Value 里能写 SpEL 吗？",
+    "a": "可以，如 #{'${app.list}'.split(',')}，这是 @Value 的优势，但复杂逻辑会降低可读性。"
+   },
+   {
+    "q": "@ConfigurationProperties 的类需要是 Bean 吗？",
+    "a": "需要被启用，用 @EnableConfigurationProperties 或 @ConfigurationPropertiesScan 注册，或者直接加 @Component。"
+   },
+   {
+    "q": "配置写错类型会怎样？",
+    "a": "@ConfigurationProperties 在启动时绑定失败会直接报错并提示字段，比运行时才发现更安全。"
    }
   ],
   "answer": [
-   "核心思路：@Value 适合注入少量独立属性；@ConfigurationProperties 可将同一前缀的一组配置绑定到有明确类型的对象，便于集中管理。",
-   "展开说明：结构化配置应定义默认值、有效范围和必要的校验，并在应用启动时尽早发现错误。绑定成功不意味着业务值一定合理，还要检查单位、超时范围和必填项。",
-   "工程实践：配置对象需要通过合适方式注册到容器。调试时可以查看属性来源和绑定结果，但诊断端点的访问与敏感内容展示应受控。"
+   "总：零散单值或需要表达式用 @Value，一组相关配置用 @ConfigurationProperties 做类型安全绑定。",
+   "分：后者支持松散绑定、嵌套集合、校验和 IDE 元数据；前者简单但分散且不易校验；动态刷新要额外处理。",
+   "实践：【结合你的项目】举一个第三方服务配置（短信、支付）封装成属性类的例子。",
+   "总结：配置越多越应该集中成属性类，让配置也像代码一样可校验、可复用。"
   ],
   "pitfalls": [
-   "将一组散落的字符串属性当成已完成类型与边界校验。"
+   "几十个 @Value 散落在各个类里。",
+   "以为 @Value 修改配置后会自动刷新。",
+   "加分：提到 @Validated 启动期校验。"
   ]
  },
  "pack-h45": {
   "principle": [
-   "通过接口及注解描述请求路径、参数与返回类型，由代理负责构造和发送 HTTP 请求，减少重复的编码、解码和客户端调用代码。",
-   "声明式调用仍然是远程调用，必须配置超时、错误处理、鉴权与追踪。服务发现、负载均衡和熔断需要相应集成，不应把它们视作接口声明天然具备的能力。",
-   "调用方和服务方通过 HTTP 契约协作，字段和错误响应变化都可能影响兼容性。对写请求的自动重试需谨慎，按业务幂等要求设计。"
+   "声明式 HTTP 客户端（OpenFeign、Spring 6 的 @HttpExchange、Retrofit）让你只定义接口和注解，框架通过动态代理生成实现，把方法调用转换成 HTTP 请求并把响应反序列化成对象。它解决的是手写 RestTemplate/WebClient 时 URL 拼接、参数编码、序列化、错误处理的大量重复代码。",
+   "它通常还能和服务发现与负载均衡集成（按服务名调用），统一配置超时、重试、拦截器（加鉴权头、traceId）、编解码器和错误解码器（把 4xx/5xx 映射为业务异常），并可结合熔断降级。",
+   "需要注意：远程调用不是本地方法，必须设置合理超时；重试要考虑幂等；接口变更需要版本兼容；大量 Feign 接口共享 DTO 时要防止服务之间耦合过紧。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "接口方法 getOrder(id) → 代理生成 GET /orders/{id} → HTTP 客户端 → 解码响应"
+   "lang": "java",
+   "code": "@FeignClient(name = \"inventory-service\", fallbackFactory = InventoryFallback.class)\npublic interface InventoryClient {\n    @GetMapping(\"/stock/{skuId}\")\n    StockDTO getStock(@PathVariable long skuId);\n}\n\n// Spring 6 原生声明式客户端\n@HttpExchange(\"/stock\")\npublic interface StockApi {\n    @GetExchange(\"/{skuId}\") StockDTO get(@PathVariable long skuId);\n}\n# feign.client.config.inventory-service.connect-timeout=500\n# feign.client.config.inventory-service.read-timeout=2000"
   },
   "asks": [
    "声明式 HTTP 客户端解决什么问题？",
-   "声明接口后是否就不需要超时与重试设计了？"
+   "它的实现原理是什么？",
+   "需要配置哪些关键参数？",
+   "有哪些使用风险？"
   ],
   "followups": [
    {
-    "q": "声明接口后是否就不需要超时与重试设计了？",
-    "a": "仍然需要；声明式客户端隐藏了重复代码，没有消除网络的不确定性。"
+    "q": "Feign 默认会重试吗？",
+    "a": "默认 Retryer 是 NEVER_RETRY 不重试，重试通常交给负载均衡或 Resilience4j 配置，并要考虑接口幂等。"
+   },
+   {
+    "q": "怎么统一传递 traceId 和 token？",
+    "a": "实现 RequestInterceptor，在每次请求前把上下文中的 traceId、鉴权信息加到请求头。"
+   },
+   {
+    "q": "远程返回 500 时怎么处理？",
+    "a": "自定义 ErrorDecoder 把状态码和错误体转换成明确的业务或系统异常，再结合降级策略处理。"
    }
   ],
   "answer": [
-   "核心思路：通过接口及注解描述请求路径、参数与返回类型，由代理负责构造和发送 HTTP 请求，减少重复的编码、解码和客户端调用代码。",
-   "展开说明：声明式调用仍然是远程调用，必须配置超时、错误处理、鉴权与追踪。服务发现、负载均衡和熔断需要相应集成，不应把它们视作接口声明天然具备的能力。",
-   "工程实践：调用方和服务方通过 HTTP 契约协作，字段和错误响应变化都可能影响兼容性。对写请求的自动重试需谨慎，按业务幂等要求设计。"
+   "总：声明式 HTTP 客户端用接口和注解描述远程调用，由动态代理生成实现，减少重复的请求构造与解析代码。",
+   "分：集成服务发现与负载均衡，统一超时、拦截器、编解码和错误处理；要注意超时、幂等重试和接口版本兼容。",
+   "实践：【结合你的项目】说明你们 Feign 的超时配置、拦截器做了什么，以及是否有降级。",
+   "总结：声明式让远程调用写起来像本地方法，但设计上必须始终按远程调用对待。"
   ],
   "pitfalls": [
-   "把旧版 Ribbon 或 Hystrix 的默认集成当作所有版本的通用行为。"
+   "不配置超时，使用默认值导致线程被长时间占用。",
+   "对非幂等接口开启自动重试。",
+   "加分：提到 ErrorDecoder 和 Spring 6 @HttpExchange。"
   ]
  },
  "pack-h46": {
   "principle": [
-   "中心化配置负责管理配置内容，实例还需要轮询、监听或事件总线等变更传播机制。传播可能延迟或失败，不能假设所有实例同时更新。",
-   "对关键配置先做格式和业务校验，再按版本灰度发布，观测各实例已应用的版本。连接池、线程池等资源的变更要验证是否支持动态调整，必要时重建或重启。",
-   "配置事件应可重复处理，并具备失败重试、告警及回滚方案。跨多个配置项存在关联约束时，应使用同一版本快照，避免混合新旧值。"
+   "配置变更传播的目标是：变更可控、生效可验证、失败能回滚。常见方式是配置中心（Nacos、Apollo、Spring Cloud Config + Bus）：配置发布后通过长轮询或推送通知客户端，客户端拉取最新值并刷新本地缓存和 Bean 属性。",
+   "安全传播要注意：灰度发布，先推送到少量实例观察指标再全量；配置变更要有版本、审计和一键回滚；客户端要有本地快照，配置中心不可用时用最近一次成功的配置启动；对配置值做校验，防止错误格式直接生效。",
+   "不是所有配置都适合热更新：数据源、线程池核心参数等需要对象重建或带状态的配置，热更新可能导致不一致，应设计显式的刷新逻辑或滚动重启。多个实例收到变更时间不同，短时间内新旧配置并存，业务逻辑要能容忍这种窗口。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "版本 v2 → 小流量实例应用 → 检查版本与指标 → 扩大发布 → 异常时回滚到 v1"
+   "lang": "java",
+   "code": "@RefreshScope\n@RestController\npublic class FeatureController {\n    @Value(\"${feature.new-checkout:false}\")\n    private boolean newCheckout;\n}\n\n// 监听变更并做校验后再应用\n@EventListener\npublic void onChange(EnvironmentChangeEvent e) {\n    if (e.getKeys().contains(\"pool.max-size\")) {\n        int v = env.getProperty(\"pool.max-size\", Integer.class, 20);\n        if (v > 0 && v <= 200) executor.setMaximumPoolSize(v);\n        else log.warn(\"reject invalid pool.max-size={}\", v);\n    }\n}"
   },
   "asks": [
    "配置变更如何安全传播到多个服务实例？",
-   "广播成功是否说明所有实例已经应用成功？"
+   "配置中心怎么通知客户端？",
+   "哪些配置不适合热更新？",
+   "配置中心挂了怎么办？"
   ],
   "followups": [
    {
-    "q": "广播成功是否说明所有实例已经应用成功？",
-    "a": "不是；需要实例侧应用结果与版本反馈，发送成功不等于执行成功。"
+    "q": "配置推送后怎么确认生效？",
+    "a": "在配置中心查看各实例拉取的版本，并在应用侧暴露当前配置版本或日志，结合业务指标确认。"
+   },
+   {
+    "q": "灰度配置怎么做？",
+    "a": "按实例 IP、集群或标签只推送给部分实例，观察错误率和关键指标，再逐步扩大范围。"
+   },
+   {
+    "q": "@RefreshScope 有什么副作用？",
+    "a": "刷新时会销毁并重建 Bean，首次访问有开销，持有状态的 Bean 可能丢状态，不适合所有 Bean。"
    }
   ],
   "answer": [
-   "核心思路：中心化配置负责管理配置内容，实例还需要轮询、监听或事件总线等变更传播机制。传播可能延迟或失败，不能假设所有实例同时更新。",
-   "展开说明：对关键配置先做格式和业务校验，再按版本灰度发布，观测各实例已应用的版本。连接池、线程池等资源的变更要验证是否支持动态调整，必要时重建或重启。",
-   "工程实践：配置事件应可重复处理，并具备失败重试、告警及回滚方案。跨多个配置项存在关联约束时，应使用同一版本快照，避免混合新旧值。"
+   "总：配置变更要经过配置中心推送、灰度、校验、版本审计和回滚，确保多实例安全生效。",
+   "分：长轮询或推送通知客户端；本地快照兜底配置中心故障；有状态配置不宜热更新；新旧配置并存窗口要可容忍。",
+   "实践：【结合你的项目】说明你们配置中心、灰度方式以及一次配置回滚的经历。",
+   "总结：配置也是一种发布，要像代码发布一样有灰度、审计和回滚。"
   ],
   "pitfalls": [
-   "只发刷新事件而不记录配置版本或检查应用结果。"
+   "配置改完直接全量推送不观察。",
+   "对线程池、数据源等随意热刷新。",
+   "加分：讲本地快照和多实例新旧配置并存窗口。"
   ]
  },
  "pack-h47": {
   "principle": [
-   "Failover 失败后可尝试其他实例，适合允许安全重试的操作；Failfast 尽快返回失败，避免额外调用，但仍不能证明服务端没有执行。",
-   "并行请求多个实例并取先成功结果可能降低尾延迟，也会增加资源消耗，并且取消其他请求不一定能取消远端执行。只应用于允许重复执行且经过容量评估的场景。",
-   "容错策略需要结合幂等、超时预算和错误类型配置。不能把忽略错误用于必须可靠保存的审计或资金记录；重要操作失败需有可追踪的处理结果。"
+   "RPC 集群容错策略决定调用失败后怎么办。Failover（失败自动切换）：失败后重试其他实例，适合幂等的读操作，但会增加延迟并放大下游压力，需限制重试次数。Failfast（快速失败）：只调用一次，失败立即报错，适合非幂等写操作，比如下单、扣款。",
+   "Failsafe（失败安全）：出错直接忽略，适合写审计日志等不重要操作；Failback（失败自动恢复）：后台记录失败请求定时重发，适合消息通知；Forking（并行调用）：同时调用多个实例，只要一个成功就返回，用于实时性要求高的读，代价是成倍消耗资源；Broadcast：逐个调用所有实例，用于通知所有节点刷新缓存。",
+   "取舍核心看两点：操作是否幂等、能承受多少额外资源与延迟。写操作要么 Failfast，要么在幂等键保护下才允许重试。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "查询：预算内有限重试；扣款：先定义幂等与结果查询，再决定是否重试；不能简单套默认值。"
+   "lang": "java",
+   "code": "// Dubbo：读接口失败切换，最多重试 2 次\n@DubboReference(cluster = \"failover\", retries = 2, timeout = 300)\nprivate ProductQueryService productQuery;\n\n// 写接口快速失败，避免重复下单\n@DubboReference(cluster = \"failfast\", timeout = 1000)\nprivate OrderCommandService orderCommand;\n\n// 并行调用：任一成功即返回\n@DubboReference(cluster = \"forking\", parameters = {\"forks\", \"2\"})\nprivate PriceService priceService;"
   },
   "asks": [
    "RPC 的 Failover、Failfast 与并行调用如何取舍？",
-   "Failfast 可以保证非幂等写操作不会重复吗？"
+   "Failover 有什么风险？",
+   "写操作应该用什么策略？",
+   "并行调用的代价是什么？"
   ],
   "followups": [
    {
-    "q": "Failfast 可以保证非幂等写操作不会重复吗？",
-    "a": "不能；调用链上其他层重试、客户端重复提交以及未知执行结果仍可能造成重复。"
+    "q": "Dubbo 默认是什么策略？",
+    "a": "默认是 Failover，retries 默认 2，也就是最多调用 3 次，对写接口很危险，需要显式改为 Failfast 或 retries=0。"
+   },
+   {
+    "q": "超时后切换实例会导致重复执行吗？",
+    "a": "会，超时不代表对方没执行，切换后可能执行两次，所以重试只能用于幂等操作。"
+   },
+   {
+    "q": "Forking 适合哪些场景？",
+    "a": "实时性要求很高的只读查询且资源充足时，用资源换延迟，写操作绝对不能用。"
    }
   ],
   "answer": [
-   "核心思路：Failover 失败后可尝试其他实例，适合允许安全重试的操作；Failfast 尽快返回失败，避免额外调用，但仍不能证明服务端没有执行。",
-   "展开说明：并行请求多个实例并取先成功结果可能降低尾延迟，也会增加资源消耗，并且取消其他请求不一定能取消远端执行。只应用于允许重复执行且经过容量评估的场景。",
-   "工程实践：容错策略需要结合幂等、超时预算和错误类型配置。不能把忽略错误用于必须可靠保存的审计或资金记录；重要操作失败需有可追踪的处理结果。"
+   "总：容错策略按幂等性和资源成本取舍，读用 Failover，写用 Failfast，高实时读可用并行调用。",
+   "分：Failover 会重试其他实例并放大流量；Failfast 避免重复执行；Failsafe、Failback 处理不重要或可延后的操作；Forking 以资源换延迟。",
+   "实践：【结合你的项目】说明你们写接口是否关闭了默认重试，以及是否遇到过因重试导致的重复数据。",
+   "总结：选择容错策略前先回答这个操作能不能重复执行。"
   ],
   "pitfalls": [
-   "把某一框架版本的默认重试次数当作业务可靠性设计。"
+   "写接口沿用 Failover 默认重试。",
+   "大量使用 Forking 浪费资源。",
+   "加分：说出 Dubbo 默认 retries 带来的重复下单风险。"
   ]
  },
  "pack-h48": {
   "principle": [
-   "可执行 JAR 通常将应用与所需依赖一起打包，并通过启动器运行；Web 应用可以包含嵌入式容器，便于按统一方式启动。",
-   "传统 WAR 部署由外部 Servlet 容器承载，应用需要满足容器与框架的版本及接口兼容要求。并非所有 Web 技术栈或依赖组合都能随意切换部署方式。",
-   "嵌入式服务器简化交付但不免除运维职责，仍需设置线程和连接资源、健康检查、优雅退出及资源限制。选择取决于部署平台约束与团队运维方式。"
+   "Spring Boot 可执行 JAR 内嵌了 Servlet 容器（Tomcat/Jetty/Undertow），通过 java -jar 直接启动。它使用 Spring Boot 自定义的 JarLauncher 和嵌套 JAR 格式：依赖放在 BOOT-INF/lib，应用类放在 BOOT-INF/classes，由自定义类加载器加载嵌套 JAR。",
+   "传统 WAR 包部署到外部容器（独立安装的 Tomcat 等），容器负责生命周期、端口和线程池，多个应用可以共享同一容器。Spring Boot 也能打 WAR：继承 SpringBootServletInitializer，并把内嵌容器依赖设为 provided。",
+   "取舍：可执行 JAR 自包含、易于容器化和微服务部署，环境一致性好；WAR 适合公司已有统一运维的应用服务器或必须共享容器的场景。云原生环境基本都用 JAR + Docker 镜像，并可用分层 JAR（layertools）优化镜像缓存。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "可执行 JAR：java -jar app.jar；WAR：部署到兼容的外部 Servlet 容器。"
+   "lang": "text",
+   "code": "# 可执行 JAR\njava -jar app.jar --server.port=8080\napp.jar\n ├─ META-INF/MANIFEST.MF   (Main-Class: JarLauncher, Start-Class: com.demo.App)\n ├─ BOOT-INF/classes/\n └─ BOOT-INF/lib/*.jar\n\n# WAR 部署\npublic class App extends SpringBootServletInitializer {\n  protected SpringApplicationBuilder configure(SpringApplicationBuilder b) {\n    return b.sources(App.class); }\n}\n<!-- spring-boot-starter-tomcat 设为 provided -->\n\n# 分层镜像\njava -Djarmode=layertools -jar app.jar extract"
   },
   "asks": [
    "Spring Boot 可执行 JAR 与传统 WAR 部署有何区别？",
-   "把依赖打进 JAR 就不需要配置服务器了吗？"
+   "可执行 JAR 是怎么启动的？",
+   "Spring Boot 怎么打 WAR？",
+   "云原生场景选哪个？"
   ],
   "followups": [
    {
-    "q": "把依赖打进 JAR 就不需要配置服务器了吗？",
-    "a": "仍需管理端口、连接、并发、超时和监控等运行参数。"
+    "q": "为什么普通 java -cp 不能直接加载嵌套 JAR？",
+    "a": "JDK 默认类加载器不支持 JAR 中的 JAR，Spring Boot 通过 JarLauncher 和自定义类加载器解决。"
+   },
+   {
+    "q": "WAR 部署时 server.port 配置还生效吗？",
+    "a": "不生效，WAR 部署时端口、线程池、连接器等都由外部 Tomcat 的 server.xml 等配置决定。"
+   },
+   {
+    "q": "分层 JAR 有什么好处？",
+    "a": "把依赖和业务代码分到不同镜像层，依赖不变时只需重建业务层，构建和推送更快。"
    }
   ],
   "answer": [
-   "核心思路：可执行 JAR 通常将应用与所需依赖一起打包，并通过启动器运行；Web 应用可以包含嵌入式容器，便于按统一方式启动。",
-   "展开说明：传统 WAR 部署由外部 Servlet 容器承载，应用需要满足容器与框架的版本及接口兼容要求。并非所有 Web 技术栈或依赖组合都能随意切换部署方式。",
-   "工程实践：嵌入式服务器简化交付但不免除运维职责，仍需设置线程和连接资源、健康检查、优雅退出及资源限制。选择取决于部署平台约束与团队运维方式。"
+   "总：可执行 JAR 内嵌容器、自包含启动；WAR 部署到外部容器，由容器管理生命周期和资源。",
+   "分：JAR 靠 JarLauncher 和嵌套类加载；Boot 打 WAR 需继承 SpringBootServletInitializer 并把内嵌容器设为 provided；云原生多用 JAR 加分层镜像。",
+   "实践：【结合你的项目】说明你们的部署形态，以及是否做过 WAR 到 JAR 加 Docker 的迁移。",
+   "总结：自包含 JAR 更适合容器化和微服务，WAR 适合传统共享容器的运维体系。"
   ],
   "pitfalls": [
-   "只看包格式，不验证 Servlet 接口与容器版本兼容。"
+   "WAR 部署还在 yml 里改端口并期望生效。",
+   "不清楚 JAR 中依赖是如何加载的。",
+   "加分：提到分层 JAR 优化镜像。"
   ]
  },
  "pack-h49": {
   "principle": [
-   "IoC 将对象创建与依赖装配交给容器，业务对象不必自行构造整个依赖关系；依赖注入是实现这种控制反转的一种方式。",
-   "构造器注入适合表达必需依赖，有利于不可变设计和脱离容器的单元测试；可选依赖可按需采用其他注入方式。",
-   "容器只管理注册的对象；手动 new 出来的普通对象不会自动获得同样的注入与代理能力。"
+   "IoC（控制反转）是一种设计思想：对象的创建、依赖装配和生命周期管理不再由对象自己 new，而是交给容器控制，从而降低组件之间的耦合。依赖注入（DI）是实现 IoC 的具体方式：容器在创建对象时，把它需要的依赖通过构造器、Setter 或字段注入进去。",
+   "Spring 中容器读取配置（注解、Java Config）生成 BeanDefinition，按依赖关系实例化 Bean、注入属性、执行初始化回调和 AOP 代理。业务类只依赖接口，具体实现由容器决定，便于替换实现和单元测试时注入 Mock。",
+   "推荐构造器注入：依赖不可变（final）、对象创建后即完整、便于测试，并能及时暴露循环依赖；字段注入虽然简洁，但隐藏依赖、无法声明 final、脱离容器难以测试。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "OrderService(PaymentClient client) 通过构造器声明依赖；测试时传入替身实现。"
+   "lang": "java",
+   "code": "// 没有 IoC：自己创建依赖，强耦合\nclass OrderService { private final PayClient pay = new AlipayClient(); }\n\n// 依赖注入：依赖由容器提供\n@Service\npublic class OrderService {\n    private final PayClient pay;\n    public OrderService(PayClient pay) { this.pay = pay; } // 构造器注入\n}\n\n// 单元测试中直接注入 Mock，无需启动容器\nOrderService s = new OrderService(mock(PayClient.class));"
   },
   "asks": [
    "IoC 与依赖注入分别是什么？",
-   "构造器注入能解决所有循环依赖吗？"
+   "两者是什么关系？",
+   "有哪些注入方式？",
+   "为什么推荐构造器注入？"
   ],
   "followups": [
    {
-    "q": "构造器注入能解决所有循环依赖吗？",
-    "a": "不能，构造器循环依赖通常应通过拆分职责或调整依赖结构解决。"
+    "q": "IoC 只有依赖注入一种实现吗？",
+    "a": "不是，还有依赖查找（如从 ApplicationContext getBean），但依赖注入更解耦，是主流方式。"
+   },
+   {
+    "q": "字段注入有什么问题？",
+    "a": "依赖被隐藏，不能用 final，脱离 Spring 无法直接构造对象，测试只能靠反射或启动容器。"
+   },
+   {
+    "q": "同一接口多个实现怎么注入？",
+    "a": "用 @Primary 指定默认实现，或用 @Qualifier 按名称选择，也可以注入 List 或 Map 获取全部实现。"
    }
   ],
   "answer": [
-   "核心机制：IoC 将对象创建与依赖装配交给容器，业务对象不必自行构造整个依赖关系；依赖注入是实现这种控制反转的一种方式。",
-   "展开说明：构造器注入适合表达必需依赖，有利于不可变设计和脱离容器的单元测试；可选依赖可按需采用其他注入方式。",
-   "使用边界：容器只管理注册的对象；手动 new 出来的普通对象不会自动获得同样的注入与代理能力。"
+   "总：IoC 是把对象创建和装配的控制权交给容器的思想，依赖注入是由容器把依赖传给对象的具体实现方式。",
+   "分：Spring 通过 BeanDefinition 实例化、注入、初始化和代理 Bean；支持构造器、Setter、字段注入；推荐构造器注入；多实现用 @Primary 或 @Qualifier。",
+   "实践：【结合你的项目】举支付渠道多实现通过注入 Map 实现策略模式的例子。",
+   "总结：IoC 的价值是解耦与可测试，依赖注入让这种解耦落到代码上。"
   ],
   "pitfalls": [
-   "把容器管理等同于任意对象都能自动注入。"
+   "把 IoC 和 DI 说成完全无关或完全相同。",
+   "全项目字段注入且依赖越来越多。",
+   "加分：讲清构造器注入暴露循环依赖和便于测试。"
   ]
  },
  "pack-h50": {
   "principle": [
-   "BeanFactory 定义获取和管理 Bean 的基本能力；ApplicationContext 在其基础上提供更完整的应用上下文能力。",
-   "应用上下文还整合事件发布、资源访问和国际化等功能，启动时会执行容器扩展与生命周期处理。",
-   "实例化时机取决于容器类型、作用域和懒加载配置，不能简单断言一种永远懒加载、另一种永远立即创建所有对象。"
+   "BeanFactory 是 Spring 最基础的 IoC 容器接口，提供 getBean、依赖注入等核心能力，默认对单例 Bean 采用延迟加载（第一次 getBean 时才创建）。ApplicationContext 继承了 BeanFactory，并在其上扩展了企业级功能：国际化（MessageSource）、事件发布（ApplicationEventPublisher）、资源加载、环境与 Profile，以及自动注册 BeanPostProcessor、BeanFactoryPostProcessor。",
+   "ApplicationContext 在 refresh 时会预先实例化所有非懒加载的单例 Bean，因此配置错误能在启动阶段暴露，而不是运行时才发现。它内部组合了一个 DefaultListableBeanFactory 来真正管理 Bean。",
+   "实际开发几乎都使用 ApplicationContext（Spring Boot 中是 AnnotationConfigServletWebServerApplicationContext 等），BeanFactory 更多出现在框架扩展点和资源极其受限的场景。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "应用启动创建上下文 → 加载 Bean 定义 → 注册扩展 → 初始化所需单例 → 发布生命周期事件。"
+   "lang": "java",
+   "code": "// BeanFactory：手动注册后处理器，延迟创建\nDefaultListableBeanFactory bf = new DefaultListableBeanFactory();\nnew XmlBeanDefinitionReader(bf).loadBeanDefinitions(\"beans.xml\");\nOrderService s = bf.getBean(OrderService.class);   // 此时才实例化\n\n// ApplicationContext：启动即创建单例，自动处理后处理器、事件等\nApplicationContext ctx = new AnnotationConfigApplicationContext(AppConfig.class);\nctx.publishEvent(new OrderCreatedEvent(1L));\nString msg = ctx.getMessage(\"order.ok\", null, Locale.CHINA);"
   },
   "asks": [
    "BeanFactory 和 ApplicationContext 有什么关系？",
-   "设置懒加载后启动检查是否仍然足够？"
+   "两者在 Bean 加载时机上有什么区别？",
+   "ApplicationContext 多了哪些功能？",
+   "实际开发中用哪个？"
   ],
   "followups": [
    {
-    "q": "设置懒加载后启动检查是否仍然足够？",
-    "a": "不一定，初始化错误可能推迟到首次请求，应增加关键路径预热或验证。"
+    "q": "为什么 ApplicationContext 启动时就创建单例？",
+    "a": "为了尽早暴露配置错误和依赖问题，并让应用启动后请求不再承担 Bean 创建开销。"
+   },
+   {
+    "q": "BeanFactory 会自动执行 BeanPostProcessor 吗？",
+    "a": "普通 BeanFactory 需要手动注册，ApplicationContext 在 refresh 过程中会自动检测并注册。"
+   },
+   {
+    "q": "怎么在 Bean 里拿到 ApplicationContext？",
+    "a": "实现 ApplicationContextAware 接口，或者直接通过构造器注入 ApplicationContext。"
    }
   ],
   "answer": [
-   "核心机制：BeanFactory 定义获取和管理 Bean 的基本能力；ApplicationContext 在其基础上提供更完整的应用上下文能力。",
-   "展开说明：应用上下文还整合事件发布、资源访问和国际化等功能，启动时会执行容器扩展与生命周期处理。",
-   "使用边界：实例化时机取决于容器类型、作用域和懒加载配置，不能简单断言一种永远懒加载、另一种永远立即创建所有对象。"
+   "总：ApplicationContext 继承并扩展了 BeanFactory，是功能更完整的容器，内部仍委托 BeanFactory 管理 Bean。",
+   "分：BeanFactory 延迟加载、只提供核心 IoC；ApplicationContext 预加载单例，自动注册后处理器，支持事件、国际化、资源和环境。",
+   "实践：【结合你的项目】可以提到用 ApplicationEventPublisher 发布领域事件，这是 ApplicationContext 提供的能力。",
+   "总结：日常开发用 ApplicationContext，理解 BeanFactory 有助于看懂 Spring 扩展点。"
   ],
   "pitfalls": [
-   "仅用是否立即创建对象区分两种接口。"
+   "说 ApplicationContext 和 BeanFactory 没有继承关系。",
+   "不知道单例预加载带来的启动期报错。",
+   "加分：讲到 refresh 流程和后处理器注册。"
   ]
  },
  "pack-h51": {
   "principle": [
-   "sleep 暂停当前线程一段时间，不释放已持有的对象监视器；wait 在持有对应监视器时等待，并释放该监视器。",
-   "notify 或 notifyAll 唤醒等待者后，不会立即把锁移交；被唤醒线程仍需重新竞争锁。",
-   "等待业务条件应放在 while 循环中，处理虚假唤醒和多个等待者竞争；所有条件检查与修改都应遵循同一同步规则。"
+   "sleep 是 Thread 的静态方法，让当前线程暂停指定时间，不释放已持有的锁，也不需要在同步块中调用，时间到后自动恢复为就绪状态。wait 是 Object 的方法，必须在持有该对象监视器（synchronized 块）时调用，调用后释放锁并进入该对象的等待集合，直到被 notify/notifyAll 唤醒、超时或中断。",
+   "notify 随机唤醒一个等待线程，notifyAll 唤醒全部；被唤醒的线程不会立刻执行，要重新竞争锁成功后才从 wait 返回。由于存在虚假唤醒以及条件可能已被其他线程改变，wait 必须放在 while 循环中检查条件。",
+   "sleep 和 wait 都响应中断，抛出 InterruptedException 并清除中断标志。实际开发中更推荐使用 Condition、BlockingQueue、CountDownLatch 等高层工具替代手写 wait/notify。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "synchronized(lock) { while (!ready) lock.wait(); consume(); }"
+   "lang": "java",
+   "code": "// wait/notify 必须持有同一个锁，条件用 while\nsynchronized (queue) {\n    while (queue.isEmpty()) {\n        queue.wait();              // 释放 queue 的锁\n    }\n    Task t = queue.poll();\n}\nsynchronized (queue) {\n    queue.add(task);\n    queue.notifyAll();             // 唤醒后等待线程需重新抢锁\n}\n\n// sleep 不释放锁\nsynchronized (lock) { Thread.sleep(1000); } // 其他线程这 1 秒拿不到 lock"
   },
   "asks": [
    "sleep、wait 与 notify 有什么区别？",
-   "为什么不能用 if 只检查一次？"
+   "wait 为什么必须在 synchronized 中调用？",
+   "为什么 wait 要放在 while 循环中？",
+   "notify 和 notifyAll 怎么选？"
   ],
   "followups": [
    {
-    "q": "为什么不能用 if 只检查一次？",
-    "a": "唤醒不保证业务条件仍满足，重新获得锁后必须再次检查。"
+    "q": "不持锁调用 wait 会怎样？",
+    "a": "抛出 IllegalMonitorStateException，因为 wait 需要释放当前持有的监视器锁。"
+   },
+   {
+    "q": "notify 有什么风险？",
+    "a": "只唤醒一个线程，如果唤醒的不是能处理当前条件的线程，可能导致其他线程一直等待，所以多条件场景常用 notifyAll 或 Condition。"
+   },
+   {
+    "q": "sleep(0) 有什么作用？",
+    "a": "让出当前时间片给其他线程调度的机会，但不释放锁，行为依赖操作系统，一般不用来做同步。"
    }
   ],
   "answer": [
-   "核心机制：sleep 暂停当前线程一段时间，不释放已持有的对象监视器；wait 在持有对应监视器时等待，并释放该监视器。",
-   "展开说明：notify 或 notifyAll 唤醒等待者后，不会立即把锁移交；被唤醒线程仍需重新竞争锁。",
-   "使用边界：等待业务条件应放在 while 循环中，处理虚假唤醒和多个等待者竞争；所有条件检查与修改都应遵循同一同步规则。"
+   "总：sleep 是 Thread 方法，暂停但不释放锁；wait 是 Object 方法，必须持锁并在等待时释放锁，由 notify 唤醒。",
+   "分：wait 防虚假唤醒用 while；被唤醒后需重新获取锁；notify 只唤醒一个可能导致遗漏；实际推荐 Condition 或阻塞队列。",
+   "实践：【结合你的项目】可以说明生产者消费者模型最终用 BlockingQueue 替代了手写 wait/notify。",
+   "总结：区分点在于属于哪个类、是否释放锁以及是否必须持锁调用。"
   ],
   "pitfalls": [
-   "认为 sleep 会释放 synchronized 锁。"
+   "说 sleep 会释放锁。",
+   "用 if 而不是 while 包裹 wait。",
+   "加分：讲出 IllegalMonitorStateException 的原因。"
   ]
  },
  "pack-h52": {
   "principle": [
-   "execute 提交 Runnable，不直接返回任务结果；submit 返回 Future，任务结果或失败可通过 Future 获取。",
-   "submit 包装任务后，异常通常保存在 Future 中，调用 get 时以 ExecutionException 等形式暴露；未观察 Future 容易遗漏任务失败。",
-   "execute 的未捕获异常处理受线程执行和异常处理器影响，应为任务设计统一的记录、告警与取消策略。"
+   "execute 提交 Runnable，没有返回值；任务抛出未捕获异常时，异常会传播到工作线程，打印到 stderr（或交给线程的 UncaughtExceptionHandler），该工作线程终止，线程池会新建线程替补。",
+   "submit 会把任务包装成 FutureTask，任务里的异常被捕获并保存在 Future 中，不会打印也不会终止工作线程；只有调用 future.get() 时才会以 ExecutionException 抛出。如果调用方从不 get，异常就被「吞掉」，这是线上问题排查困难的常见原因。",
+   "处理方式：任务内部自己 try-catch 并记录日志；使用 submit 时一定要 get 或在 CompletableFuture 中用 exceptionally/whenComplete；自定义 ThreadFactory 设置 UncaughtExceptionHandler（只对 execute 有效）；或重写 ThreadPoolExecutor.afterExecute 统一检查 Runnable 和 Future 中的异常。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "Future<?> f = pool.submit(task); // 调用 f.get() 观察结果与异常"
+   "lang": "java",
+   "code": "ExecutorService pool = Executors.newFixedThreadPool(2);\npool.execute(() -> { throw new RuntimeException(\"boom\"); }); // 打印堆栈，线程被替换\nFuture<?> f = pool.submit(() -> { throw new RuntimeException(\"silent\"); }); // 无输出\ntry { f.get(); } catch (ExecutionException e) { log.error(\"task failed\", e.getCause()); }\n\n// 统一兜底\nclass LoggingPool extends ThreadPoolExecutor {\n    protected void afterExecute(Runnable r, Throwable t) {\n        if (t == null && r instanceof Future<?> fu && fu.isDone()) {\n            try { fu.get(); } catch (ExecutionException e) { t = e.getCause(); }\n              catch (InterruptedException e) { Thread.currentThread().interrupt(); }\n        }\n        if (t != null) log.error(\"task error\", t);\n    }\n}"
   },
   "asks": [
    "线程池 execute 和 submit 的异常处理有什么区别？",
-   "提交成功是否代表任务执行成功？"
+   "为什么 submit 的异常会被吞掉？",
+   "怎么统一处理线程池任务异常？",
+   "UncaughtExceptionHandler 对 submit 有效吗？"
   ],
   "followups": [
    {
-    "q": "提交成功是否代表任务执行成功？",
-    "a": "不是，提交只说明任务被接受，仍可能在执行阶段失败或被取消。"
+    "q": "execute 抛异常后线程池会少一个线程吗？",
+    "a": "不会，异常线程会终止，但线程池会创建新的工作线程替补，只是频繁替换有开销。"
+   },
+   {
+    "q": "UncaughtExceptionHandler 为什么对 submit 无效？",
+    "a": "submit 的异常已经被 FutureTask 捕获保存，没有传播到线程，所以不会触发未捕获异常处理器。"
+   },
+   {
+    "q": "CompletableFuture 的异常怎么处理？",
+    "a": "用 exceptionally、handle 或 whenComplete 处理，否则异常同样只存在于 future 中不会被打印。"
    }
   ],
   "answer": [
-   "核心机制：execute 提交 Runnable，不直接返回任务结果；submit 返回 Future，任务结果或失败可通过 Future 获取。",
-   "展开说明：submit 包装任务后，异常通常保存在 Future 中，调用 get 时以 ExecutionException 等形式暴露；未观察 Future 容易遗漏任务失败。",
-   "使用边界：execute 的未捕获异常处理受线程执行和异常处理器影响，应为任务设计统一的记录、告警与取消策略。"
+   "总：execute 的异常会抛到工作线程并打印，submit 的异常被封装进 Future，只有 get 时才会抛出。",
+   "分：submit 不 get 会导致异常被吞；任务内 try-catch、get 结果、CompletableFuture 异常回调、afterExecute 都可以兜底；UncaughtExceptionHandler 只对 execute 有效。",
+   "实践：【结合你的项目】讲一次异步任务失败无日志，最后发现是 submit 吞异常的排查经历。",
+   "总结：用线程池时必须明确谁负责处理任务异常，否则问题会悄无声息地发生。"
   ],
   "pitfalls": [
-   "只捕获 submit 调用处的异常，忽略异步执行失败。"
+   "用 submit 提交后从不 get 结果。",
+   "以为 UncaughtExceptionHandler 能捕获所有任务异常。",
+   "加分：给出 afterExecute 统一兜底的写法。"
   ]
  },
  "pack-h53": {
   "principle": [
-   "Thread.interrupted() 是静态方法，检查当前线程的中断标记并清除该标记；isInterrupted() 检查目标线程的标记而不清除。",
-   "中断是协作取消信号；部分阻塞方法抛出 InterruptedException 时也会清除标记，应传播异常或在合适边界恢复状态。",
-   "取消逻辑要明确由谁消费信号以及何时退出，不能在多层循环中无意清除中断后继续工作。"
+   "Thread.interrupted() 是静态方法，检查的是当前线程的中断状态，并且会清除中断标志：连续调用两次，第二次通常返回 false。isInterrupted() 是实例方法，检查调用对象所代表线程的中断状态，不会清除标志。",
+   "中断是协作式的：interrupt() 只是设置标志；如果线程正阻塞在 sleep、wait、join 等方法上，会被唤醒并抛出 InterruptedException，同时中断标志被清除。因此捕获异常后，如果不打算向上抛出，应调用 Thread.currentThread().interrupt() 恢复中断状态，让上层代码仍能感知取消请求。",
+   "循环任务通常用 while (!Thread.currentThread().isInterrupted()) 检查；只有在明确需要「读取并消费」中断信号时才使用 interrupted()。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "Thread.currentThread().isInterrupted()：只检查；Thread.interrupted()：检查并清除。"
+   "lang": "java",
+   "code": "Thread.currentThread().interrupt();\nSystem.out.println(Thread.interrupted());   // true，并清除标志\nSystem.out.println(Thread.interrupted());   // false\n\nThread t = new Thread(() -> {\n    while (!Thread.currentThread().isInterrupted()) {  // 不清除标志\n        try { doWork(); Thread.sleep(100); }\n        catch (InterruptedException e) {\n            Thread.currentThread().interrupt();          // 恢复标志后退出循环\n        }\n    }\n});\nt.start(); t.interrupt();"
   },
   "asks": [
    "interrupted 和 isInterrupted 有什么区别？",
-   "通过 other.interrupted() 会检查 other 吗？"
+   "为什么捕获 InterruptedException 后要恢复中断？",
+   "中断会强制停止线程吗？",
+   "循环任务应该怎么检查中断？"
   ],
   "followups": [
    {
-    "q": "通过 other.interrupted() 会检查 other 吗？",
-    "a": "不会，静态方法仍检查当前执行线程，应避免通过实例调用静态方法的误导写法。"
+    "q": "sleep 被中断后标志还在吗？",
+    "a": "不在了，抛出 InterruptedException 时 JVM 会清除中断标志，所以需要手动恢复。"
+   },
+   {
+    "q": "吞掉 InterruptedException 有什么后果？",
+    "a": "上层代码和线程池无法知道任务被取消，可能导致关闭线程池时任务无法停止，shutdownNow 失效。"
+   },
+   {
+    "q": "对正在执行普通计算的线程调用 interrupt 会怎样？",
+    "a": "只设置标志，不会中断计算，线程必须自己检查 isInterrupted 才会响应。"
    }
   ],
   "answer": [
-   "核心机制：Thread.interrupted() 是静态方法，检查当前线程的中断标记并清除该标记；isInterrupted() 检查目标线程的标记而不清除。",
-   "展开说明：中断是协作取消信号；部分阻塞方法抛出 InterruptedException 时也会清除标记，应传播异常或在合适边界恢复状态。",
-   "使用边界：取消逻辑要明确由谁消费信号以及何时退出，不能在多层循环中无意清除中断后继续工作。"
+   "总：interrupted 是静态方法，检查当前线程并清除标志；isInterrupted 是实例方法，检查目标线程且不清除标志。",
+   "分：中断是协作式信号；阻塞方法抛异常时会清标志，所以捕获后要恢复；循环检查用 isInterrupted。",
+   "实践：【结合你的项目】说明你们长时间运行的任务如何响应 shutdownNow 实现优雅停止。",
+   "总结：正确处理中断的关键是不吞信号，要么抛出要么恢复。"
   ],
   "pitfalls": [
-   "意外清除中断后让上层无法观察取消。"
+   "catch InterruptedException 后什么都不做。",
+   "在循环条件里用 interrupted() 导致标志被清掉。",
+   "加分：结合 shutdownNow 讲中断传播。"
   ]
  },
  "pack-h54": {
   "principle": [
-   "当 JVM 只剩守护线程时，可以结束进程；守护线程不能保证后台任务一定执行完成。",
-   "线程是否为守护线程应在启动前设置；需要可靠完成的任务应显式管理生命周期、等待结果并持久化必要状态。",
-   "守护线程不是虚拟机专属，也不等于低优先级线程；不要用它承担必须完成的支付或审计落盘。"
+   "Java 线程分为用户线程和守护线程。JVM 只要还有任何一个用户线程在运行就不会退出；当所有用户线程结束后，JVM 会直接退出，不等待守护线程执行完毕，守护线程会被强制终止，其 finally 块也不保证执行。",
+   "守护线程通过 setDaemon(true) 设置，必须在 start() 之前调用，否则抛 IllegalThreadStateException；守护线程创建的子线程默认也是守护线程。典型的守护线程有 GC 线程、JIT 编译线程，以及业务中的心跳、监控、定期清理等后台任务。",
+   "因为守护线程可能在任意时刻被终止，所以不能用它执行写文件、提交事务、发送消息等需要完整执行的操作。线程池默认创建的是用户线程（DefaultThreadFactory 会把 daemon 设为 false），若忘记关闭线程池，JVM 就无法正常退出。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "主线程提交关键任务 → 等待完成或持久化交接 → 关闭资源 → 退出。"
+   "lang": "java",
+   "code": "Thread heartbeat = new Thread(() -> {\n    while (true) { sendHeartbeat(); sleepQuietly(5000); }\n}, \"heartbeat\");\nheartbeat.setDaemon(true);   // 必须在 start 前设置\nheartbeat.start();\n\n// 自定义线程工厂创建守护线程\nThreadFactory tf = r -> { Thread t = new Thread(r, \"cleaner\"); t.setDaemon(true); return t; };\nScheduledExecutorService cleaner = Executors.newSingleThreadScheduledExecutor(tf);"
   },
   "asks": [
    "守护线程与用户线程有什么区别？",
-   "把关键清理放在守护线程 finally 中就可靠吗？"
+   "什么时候 JVM 会退出？",
+   "守护线程适合做什么？",
+   "守护线程有什么风险？"
   ],
   "followups": [
    {
-    "q": "把关键清理放在守护线程 finally 中就可靠吗？",
-    "a": "不可靠，进程退出时不能保证守护线程完成这些工作。"
+    "q": "守护线程的 finally 一定会执行吗？",
+    "a": "不一定，JVM 退出时守护线程被直接终止，finally 中的清理逻辑可能来不及执行。"
+   },
+   {
+    "q": "为什么程序执行完 main 却不退出？",
+    "a": "通常是还有用户线程在运行，例如没有 shutdown 的线程池，可以用 jstack 查看存活的非守护线程。"
+   },
+   {
+    "q": "start 之后再 setDaemon 会怎样？",
+    "a": "抛出 IllegalThreadStateException，守护属性只能在线程启动前设置。"
    }
   ],
   "answer": [
-   "核心机制：当 JVM 只剩守护线程时，可以结束进程；守护线程不能保证后台任务一定执行完成。",
-   "展开说明：线程是否为守护线程应在启动前设置；需要可靠完成的任务应显式管理生命周期、等待结果并持久化必要状态。",
-   "使用边界：守护线程不是虚拟机专属，也不等于低优先级线程；不要用它承担必须完成的支付或审计落盘。"
+   "总：JVM 在所有用户线程结束时退出，不会等待守护线程，守护线程会被直接终止。",
+   "分：setDaemon 必须在 start 前调用，子线程继承守护属性；适合心跳、监控、清理等后台任务；不能执行需要完整完成的关键操作。",
+   "实践：【结合你的项目】可以讲一个程序不退出的问题，原因是线程池创建的用户线程没有关闭。",
+   "总结：判断线程是否设为守护，就看 JVM 退出时它被中断是否可以接受。"
   ],
   "pitfalls": [
-   "认为守护线程只由 JVM 创建。"
+   "在守护线程里写文件或提交事务。",
+   "start 之后再设置 setDaemon。",
+   "加分：用 jstack 定位阻止 JVM 退出的线程。"
   ]
  },
  "pack-h55": {
   "principle": [
-   "Comparable 在类型中定义自然顺序；Comparator 是独立的比较策略，可为同一类型提供多种排序。",
-   "比较结果要满足一致的顺序规则；排序集合中比较结果为 0 可能被视为同一个排序键，因此应与业务上的唯一性要求协调。",
-   "数值比较应使用 compare 方法，避免用直接相减造成溢出；复合排序要明确空值规则和最终兜底字段。"
+   "Comparable 是类自身实现的接口（compareTo），定义该类的「自然顺序」，比如 String、Integer、LocalDate；实现后可以直接用 Collections.sort、TreeSet、TreeMap 排序。一个类只能有一种自然顺序，并且需要修改类的源码。",
+   "Comparator 是外部比较器（compare），可以为同一个类定义多种排序规则，不需要修改类本身，适合第三方类或按不同字段排序。Java 8 提供了 Comparator.comparing、thenComparing、reversed、nullsFirst 等组合方法，写法非常简洁。",
+   "选择：类有公认唯一的自然顺序用 Comparable；需要多种排序或无法修改类时用 Comparator。注意 compareTo 应与 equals 保持一致，否则 TreeSet 等可能把 equals 不等的元素当作重复；比较整数时用 Integer.compare，避免 a - b 溢出。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "Comparator.comparing(User::getName).thenComparingLong(User::getId)"
+   "lang": "java",
+   "code": "public class Employee implements Comparable<Employee> {\n    long id; String name; int age; BigDecimal salary;\n    @Override public int compareTo(Employee o) { return Long.compare(id, o.id); } // 自然顺序\n}\n\nlist.sort(Comparator.comparing(Employee::getSalary).reversed()\n          .thenComparing(Employee::getAge)\n          .thenComparing(Employee::getName, Comparator.nullsLast(String::compareTo)));\n\n// 错误：可能溢出\nComparator<Integer> bad = (a, b) -> a - b;\nComparator<Integer> good = Integer::compare;"
   },
   "asks": [
    "Comparable 和 Comparator 如何选择？",
-   "两个不相等对象比较为 0 会怎样？"
+   "两者的接口方法分别是什么？",
+   "Java 8 中 Comparator 怎么组合使用？",
+   "compareTo 和 equals 不一致会怎样？"
   ],
   "followups": [
    {
-    "q": "两个不相等对象比较为 0 会怎样？",
-    "a": "在 TreeSet 等排序集合中可能被当作重复元素，需明确比较器与相等语义。"
+    "q": "为什么不能用 a - b 比较整数？",
+    "a": "当 a 和 b 相差超过 int 范围时会溢出，导致符号反转、排序错误，应使用 Integer.compare。"
+   },
+   {
+    "q": "TreeSet 用 compareTo 判断重复吗？",
+    "a": "是的，TreeSet 和 TreeMap 依据比较结果为 0 判断重复，而不是 equals。"
+   },
+   {
+    "q": "对 null 值怎么排序？",
+    "a": "用 Comparator.nullsFirst 或 nullsLast 包装，否则比较 null 会抛 NullPointerException。"
    }
   ],
   "answer": [
-   "核心机制：Comparable 在类型中定义自然顺序；Comparator 是独立的比较策略，可为同一类型提供多种排序。",
-   "展开说明：比较结果要满足一致的顺序规则；排序集合中比较结果为 0 可能被视为同一个排序键，因此应与业务上的唯一性要求协调。",
-   "使用边界：数值比较应使用 compare 方法，避免用直接相减造成溢出；复合排序要明确空值规则和最终兜底字段。"
+   "总：Comparable 定义类内部唯一的自然顺序，Comparator 在外部定义可替换的多种排序规则。",
+   "分：Comparable 需要修改类源码；Comparator 可组合 comparing、thenComparing、reversed 和 null 处理；比较要与 equals 一致并避免减法溢出。",
+   "实践：【结合你的项目】举订单列表按金额倒序再按时间排序的 Comparator 链式写法。",
+   "总结：自然顺序用 Comparable，业务排序用 Comparator，写比较逻辑时注意溢出和 null。"
   ],
   "pitfalls": [
-   "用 a.id - b.id 比较可能溢出的整数。"
+   "用减法实现比较导致溢出。",
+   "compareTo 与 equals 不一致导致 TreeSet 丢元素。",
+   "加分：熟练使用 Comparator 组合 API。"
   ]
  },
  "pack-h56": {
   "principle": [
-   "Iterator 提供向前遍历和按约定删除当前元素；ListIterator 面向 List，支持双向移动及部分原地修改能力。",
-   "迭代期间能否修改以及如何反映并发更新由集合实现约定，fail-fast 只是尽力检测错误，不能用来保证线程安全。",
-   "需要删除时可使用受支持的迭代器删除方法；并发遍历应选择适当的同步或并发集合语义。"
+   "Iterator 是所有 Collection 通用的迭代器，只能单向向前遍历，提供 hasNext、next 和 remove，其中 remove 是遍历中安全删除当前元素的方式。ListIterator 只适用于 List，继承 Iterator 并扩展了双向遍历（hasPrevious、previous）、获取索引（nextIndex、previousIndex），以及遍历中修改（set）和插入（add）元素的能力。",
+   "遍历时如果直接调用集合的 add/remove 修改结构，ArrayList 等 fail-fast 集合会在下次 next 时检测到 modCount 变化，抛出 ConcurrentModificationException；通过迭代器自身的 remove/add 修改则会同步 expectedModCount，不会报错。",
+   "Java 8 以后也可以用 removeIf 删除满足条件的元素；并发场景应使用 CopyOnWriteArrayList、ConcurrentHashMap 等 fail-safe 集合，它们遍历的是快照或弱一致视图，不会抛该异常。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "Iterator<T> it = list.iterator(); while (it.hasNext()) { if (expired(it.next())) it.remove(); }"
+   "lang": "java",
+   "code": "List<String> list = new ArrayList<>(List.of(\"a\", \"b\", \"c\"));\nfor (String s : list) { if (s.equals(\"b\")) list.remove(s); } // 可能抛 ConcurrentModificationException\n\nIterator<String> it = list.iterator();\nwhile (it.hasNext()) if (it.next().equals(\"b\")) it.remove();   // 安全删除\n\nListIterator<String> li = list.listIterator();\nwhile (li.hasNext()) {\n    String s = li.next();\n    if (s.equals(\"a\")) li.set(\"A\");     // 修改当前元素\n    if (s.equals(\"c\")) li.add(\"d\");     // 在当前位置后插入\n}\nlist.removeIf(s -> s.startsWith(\"x\"));"
   },
   "asks": [
    "Iterator 和 ListIterator 有什么区别？",
-   "所有集合的迭代器都支持 remove 吗？"
+   "遍历时怎么安全删除元素？",
+   "什么是 fail-fast？",
+   "ListIterator 能做哪些额外操作？"
   ],
   "followups": [
    {
-    "q": "所有集合的迭代器都支持 remove 吗？",
-    "a": "不支持，部分实现会抛出 UnsupportedOperationException，应查具体集合约定。"
+    "q": "为什么 foreach 里删除元素会报错？",
+    "a": "foreach 底层用迭代器，集合的 remove 修改了 modCount，迭代器下次 next 检查到与 expectedModCount 不一致就抛异常。"
+   },
+   {
+    "q": "fail-fast 能保证一定抛异常吗？",
+    "a": "不能，它只是尽力检测，不保证并发修改一定被发现，不能依赖它实现线程安全。"
+   },
+   {
+    "q": "ListIterator 能用于 Set 吗？",
+    "a": "不能，它只通过 List 的 listIterator 方法获得，因为依赖索引和顺序。"
    }
   ],
   "answer": [
-   "核心机制：Iterator 提供向前遍历和按约定删除当前元素；ListIterator 面向 List，支持双向移动及部分原地修改能力。",
-   "展开说明：迭代期间能否修改以及如何反映并发更新由集合实现约定，fail-fast 只是尽力检测错误，不能用来保证线程安全。",
-   "使用边界：需要删除时可使用受支持的迭代器删除方法；并发遍历应选择适当的同步或并发集合语义。"
+   "总：Iterator 适用于所有集合、单向遍历并可删除；ListIterator 只用于 List，支持双向遍历、索引以及 set 和 add。",
+   "分：遍历中直接修改集合会触发 fail-fast 异常；应使用迭代器的 remove 或 removeIf；并发场景使用 fail-safe 集合。",
+   "实践：【结合你的项目】可以提到一次 ConcurrentModificationException 的排查和用 removeIf 修复。",
+   "总结：遍历中修改集合时，修改操作必须通过迭代器或专用 API 完成。"
   ],
   "pitfalls": [
-   "遍历时直接修改集合，再依赖是否抛异常判断正确性。"
+   "在 foreach 中直接调用 list.remove。",
+   "认为 fail-fast 是线程安全机制。",
+   "加分：解释 modCount 与 expectedModCount 的检查过程。"
   ]
  },
  "pack-h57": {
   "principle": [
-   "Before 在目标调用前执行；AfterReturning 在正常返回后执行；AfterThrowing 在目标抛出异常后执行；After 按类似 finally 的退出语义执行。",
-   "Around 包围目标调用，可以决定是否继续执行、修改返回值或处理异常；必须谨慎保证返回类型和异常语义。",
-   "通知发生在代理调用链中，不等于数据库事务已最终提交。记录成功事件时应明确成功指方法返回、事务提交还是外部业务确认。"
+   "Spring AOP 有五种通知类型。@Before 前置通知：在目标方法执行前运行，不能阻止方法执行（除非抛异常）。@AfterReturning 返回通知：方法正常返回后执行，可以拿到返回值。@AfterThrowing 异常通知：方法抛出异常后执行，可以拿到异常对象。@After 后置（最终）通知：无论正常还是异常都会执行，类似 finally。",
+   "@Around 环绕通知最强大：通过 ProceedingJoinPoint.proceed() 自己决定是否以及何时调用目标方法，可以修改参数和返回值、捕获异常、计时、重试。同一切面中执行顺序（Spring 5.2.7+）为：Around 前半部分 → Before → 目标方法 → AfterReturning/AfterThrowing → After → Around 后半部分。",
+   "多个切面之间用 @Order 或 Ordered 控制先后，数字越小越外层。选择原则是使用能满足需求的最弱通知类型；只有需要控制执行流程时才用 @Around，且必须调用 proceed 并返回结果，否则目标方法不执行或返回 null。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "Around → Before → 目标方法 → 正常返回通知或异常通知 → 退出处理（具体链顺序受配置影响）"
+   "lang": "java",
+   "code": "@Aspect @Component @Order(1)\npublic class LogAspect {\n    @Around(\"@annotation(com.demo.Timed)\")\n    public Object time(ProceedingJoinPoint pjp) throws Throwable {\n        long start = System.nanoTime();\n        try { return pjp.proceed(); }                  // 必须调用并返回\n        finally { log.info(\"{} cost {}ms\", pjp.getSignature(),\n                           (System.nanoTime() - start) / 1_000_000); }\n    }\n    @AfterReturning(pointcut = \"execution(* com.demo.order..*(..))\", returning = \"r\")\n    public void ok(Object r) { log.debug(\"result={}\", r); }\n    @AfterThrowing(pointcut = \"execution(* com.demo.order..*(..))\", throwing = \"e\")\n    public void fail(Exception e) { alarm.send(e); }\n}"
   },
   "asks": [
    "Spring AOP 的通知类型如何区分？",
-   "AfterReturning 能证明数据库已提交吗？"
+   "几种通知的执行顺序是怎样的？",
+   "什么时候必须用 @Around？",
+   "多个切面怎么控制顺序？"
   ],
   "followups": [
    {
-    "q": "AfterReturning 能证明数据库已提交吗？",
-    "a": "不能，事务边界和通知链顺序需要单独分析。"
+    "q": "@Around 忘记调用 proceed 会怎样？",
+    "a": "目标方法不会被执行，调用方得到 null 或默认值，常导致非常隐蔽的业务错误。"
+   },
+   {
+    "q": "@AfterThrowing 能吞掉异常吗？",
+    "a": "不能，它只能观察异常，异常仍会继续抛出；要吞掉或转换异常需要用 @Around 捕获。"
+   },
+   {
+    "q": "@After 和 @AfterReturning 区别？",
+    "a": "@After 无论是否异常都会执行，@AfterReturning 只在正常返回时执行并能获取返回值。"
    }
   ],
   "answer": [
-   "Before 在目标调用前执行；AfterReturning 在正常返回后执行；AfterThrowing 在目标抛出异常后执行；After 按类似 finally 的退出语义执行。",
-   "Around 包围目标调用，可以决定是否继续执行、修改返回值或处理异常；必须谨慎保证返回类型和异常语义。",
-   "通知发生在代理调用链中，不等于数据库事务已最终提交。记录成功事件时应明确成功指方法返回、事务提交还是外部业务确认。"
+   "总：Spring AOP 有前置、返回、异常、最终和环绕五种通知，环绕通知可以完全控制目标方法的执行。",
+   "分：同一切面有固定执行顺序，多个切面用 @Order 控制；能用弱通知就不用 @Around；@Around 必须调用 proceed 并返回结果。",
+   "实践：【结合你的项目】举接口耗时统计、操作日志或异常告警切面的例子。",
+   "总结：选通知类型的标准是能不能满足需求的同时影响最小。"
   ],
   "pitfalls": [
-   "把 AfterReturning 与 finally 语义混淆。"
+   "@Around 中不调用 proceed 或不返回结果。",
+   "以为 @AfterThrowing 可以吞掉异常。",
+   "加分：说出多切面 @Order 的嵌套顺序。"
   ]
  },
  "pack-h58": {
   "principle": [
-   "容器事件可用于应用内组件解耦，由发布者发布事件、监听器处理；监听器的同步或异步执行取决于配置。",
-   "同步监听可能影响发布方法的延迟与异常传播；异步监听要考虑线程池、上下文传递和失败处理。",
-   "普通内存事件不提供跨进程可靠投递；关键业务事件应结合事务时机、持久化和补偿设计，不能代替可靠消息方案。"
+   "Spring 事件基于观察者模式：发布方用 ApplicationEventPublisher.publishEvent 发布事件，监听方用 @EventListener 处理，从而把主流程和附属逻辑解耦，比如注册成功后发欢迎邮件、记录积分。默认情况下监听器在发布者线程中同步执行，监听器抛异常会传播回发布方。",
+   "加上 @Async 可以异步执行，但要配置专用线程池；@TransactionalEventListener 可以在事务提交后（AFTER_COMMIT）再执行，避免事务回滚了邮件却已经发出。",
+   "可靠性边界：Spring 事件只在单个 JVM 内存中传递，没有持久化——进程崩溃、异步线程池队列满、监听器异常都可能导致事件丢失，也没有重试机制；它不能跨服务通信。需要可靠投递、重试或跨服务时，应该使用本地消息表加 MQ 等方案。"
   ],
   "example": {
-   "lang": "示意",
-   "code": "订单方法发布事件 → 应用内监听器处理；若要求崩溃后可恢复，另外设计持久事件记录。"
+   "lang": "java",
+   "code": "public record UserRegistered(long userId) {}\n\n@Service\npublic class UserService {\n    private final ApplicationEventPublisher publisher;\n    @Transactional\n    public void register(User u) {\n        userRepo.save(u);\n        publisher.publishEvent(new UserRegistered(u.getId()));\n    }\n}\n\n@Component\npublic class WelcomeListener {\n    @Async(\"eventExecutor\")\n    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)\n    public void onRegistered(UserRegistered e) { mailService.sendWelcome(e.userId()); }\n}"
   },
   "asks": [
-   "Spring 事件适合什么场景，有哪些可靠性边界？",
-   "提交事务后监听就一定不会丢事件吗？"
+   "Spring 事件适合什么场景？",
+   "Spring 事件默认是同步还是异步？",
+   "@TransactionalEventListener 有什么作用？",
+   "Spring 事件有哪些可靠性边界？"
   ],
   "followups": [
    {
-    "q": "提交事务后监听就一定不会丢事件吗？",
-    "a": "不一定，进程崩溃仍可能使内存事件丢失，需持久化和补偿。"
+    "q": "监听器抛异常会影响主流程吗？",
+    "a": "同步监听时会，异常会传回发布方，可能导致事务回滚；异步监听时不会影响主流程，但异常需要自行处理。"
+   },
+   {
+    "q": "事务回滚后 AFTER_COMMIT 监听还会执行吗？",
+    "a": "不会，只有事务成功提交后才执行，这正是用它来避免发送错误通知的原因。"
+   },
+   {
+    "q": "Spring 事件能替代 MQ 吗？",
+    "a": "不能，它没有持久化、重试和跨进程能力，只适合进程内对可靠性要求不高的解耦。"
    }
   ],
   "answer": [
-   "容器事件可用于应用内组件解耦，由发布者发布事件、监听器处理；监听器的同步或异步执行取决于配置。",
-   "同步监听可能影响发布方法的延迟与异常传播；异步监听要考虑线程池、上下文传递和失败处理。",
-   "普通内存事件不提供跨进程可靠投递；关键业务事件应结合事务时机、持久化和补偿设计，不能代替可靠消息方案。"
+   "总：Spring 事件适合进程内的主流程与附属逻辑解耦，默认同步执行，可配合异步和事务阶段监听。",
+   "分：@Async 需要专用线程池；@TransactionalEventListener 保证提交后再处理；事件不持久化、不重试、不跨服务，可能丢失。",
+   "实践：【结合你的项目】举注册后发通知或积分的例子，并说明为什么用 AFTER_COMMIT。",
+   "总结：关键业务的可靠通知要用本地消息表加 MQ，Spring 事件只用于可容忍丢失的内部解耦。"
   ],
   "pitfalls": [
-   "把应用内事件当成持久消息队列。"
+   "用 Spring 事件做跨服务或必须送达的通知。",
+   "事务内同步监听发邮件，事务回滚后邮件已发出。",
+   "加分：说清进程崩溃导致异步事件丢失的边界。"
   ]
  },
  "pack-h59": {
