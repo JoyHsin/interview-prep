@@ -303,83 +303,86 @@
  },
  "a-a6": {
   "principle": [
-   "MCP：Model Context Protocol，纵向连接 Agent/宿主与工具、资源、提示模板，解决 M×N 集成。传输 stdio / Streamable HTTP。",
-   "A2A：Agent to Agent，横向 Agent 之间发现、委派任务、协作（不同厂商在推相关标准/框架）。",
-   "常组合：编排 Agent 用 A2A 把子任务派给专家 Agent，专家通过 MCP 调工具。面试一句话：MCP 接工具，A2A 接 Agent。"
+   "MCP（Model Context Protocol）偏「纵向」：让模型以标准协议连接工具、数据源、文件系统等资源，解决的是 Agent 如何安全、可发现地使用外部能力（tools/resources/prompts）。A2A（Agent-to-Agent）偏「横向」：解决多个 Agent 之间如何发现、委派任务与协作，强调 Agent 名片、任务生命周期与互通。",
+   "对比 Function Calling：FC 是单次模型输出里选工具并填参的机制；MCP 是工具侧的互操作协议与运行时生态；A2A 是 Agent 之间的协作协议。常见组合：编排 Agent 用 A2A 把子任务派给专家 Agent，专家 Agent 再通过 MCP 调数据库、浏览器、代码沙箱。",
+   "面试别背定义就完：要说清安全边界（鉴权、最小权限）、发现机制、以及和业务编排（工作流/状态机）的关系。DeerFlow 一类系统里，子 Agent + 沙箱往往同时涉及「协作」与「工具执行」。"
   ],
   "example": {
    "lang": "text",
-   "code": "用户 → 主 Agent ──A2A──> 研究 Agent\n                      └─A2A──> 执行 Agent ──MCP──> DB/API/文件系统"
+   "code": "职责切分示意：\n用户 → 路由/规划 Agent  --A2A--> 研究 Agent\n                              --A2A--> 编码 Agent --MCP--> 文件系统/CI/浏览器\n主 Agent 汇总结果，不把所有工具都挂在一个超级 Agent 上。\n\n选型：\n- 只要接内部 HTTP API：Function Calling / 工具注册也可能够用\n- 要跨产品复用工具与资源描述：倾向 MCP\n- 要多团队 Agent 互通：谈 A2A 或等价的任务总线"
   },
   "asks": [
-   "MCP 和 A2A 区别？",
-   "能一起用吗？",
+   "MCP 和 A2A 有什么区别？",
+   "两者能一起用吗？",
    "各自解决什么问题？",
-   "和 Function Calling？"
+   "和 Function Calling 什么关系？"
   ],
   "followups": [
    {
-    "q": "和 FC？",
-    "a": "FC 是模型决定调什么；MCP 是工具接入标准。"
+    "q": "没有 A2A 就做不了多 Agent 吗？",
+    "a": "可以，很多系统用消息队列或自研 RPC 做委派；A2A 是标准化互通的一种，不是唯一实现。"
    },
    {
-    "q": "A2A 成熟度？",
-    "a": "仍在演进，讲清概念与组合即可。"
+    "q": "MCP 会取代 Function Calling 吗？",
+    "a": "不会简单取代；模型侧仍要有选工具与填参的能力，MCP 更像工具世界的 USB 协议。"
    },
    {
-    "q": "何时只要 MCP？",
-    "a": "单 Agent 多工具。"
+    "q": "安全上最大差异是什么？",
+    "a": "MCP 要管工具鉴权与资源暴露面；A2A 要管 Agent 身份、任务权限与防滥用委派。"
    }
   ],
   "answer": [
-   "总：MCP 纵向接工具，A2A 横向接 Agent。",
-   "分：常组合使用；FC 是模型侧能力。",
-   "实践：【结合你的项目】【待填】。",
-   "总结：分工清晰再选型。"
+   "总：MCP 管 Agent 怎么接工具，A2A 管 Agent 怎么互相协作，常与 Function Calling 分层组合。",
+   "分：FC 是调用机制；MCP 是工具互操作；A2A 是多 Agent 委派；实际系统常「A2A 分派 + MCP 执行」。",
+   "实践：【结合你的项目】【待填：DeerFlow/自研】里用【待填】做工具，用【待填】做子 Agent 分工。",
+   "总结：按「工具协议 vs 协作协议」来讲，比背缩写更清晰。"
   ],
   "pitfalls": [
-   "两者说成一个东西。"
+   "把 MCP 说成聊天协议或把 A2A 说成数据库协议。",
+   "声称必须上某协议才能做 Agent。",
+   "加分：结合鉴权与最小权限讲安全。"
   ]
  },
  "a-a7": {
   "principle": [
-   "多 Agent：按角色拆（Planner 规划、Researcher 检索、Coder 写代码、Critic 审核），上下文隔离避免互相污染，通过明确输入输出协议协作。",
-   "好处：专精、上下文更短；代价：延迟成本、协调失败、循环委派。DeerFlow 思路：子 Agent + 记忆 + 沙箱执行。",
-   "落地先单 Agent，复杂再拆；限制委派深度；共享状态要显式。"
+   "多 Agent 分工把复杂任务拆成角色：常见 Planner（拆解目标）、Researcher（检索/浏览）、Coder（改代码）、Critic/Reviewer（挑错与验收）、Executor（调工具落地）。每个 Agent 有独立系统提示、工具集和上下文，避免一个超级提示词包打天下。",
+   "好处是上下文隔离与专业提示更稳；代价是延迟、费用、错误传播和调试变难。何时不要多 Agent：任务短、工具少、单次 ReAct 就能完成时，硬上多 Agent 只会更慢更贵。防死循环：跳数上限、同一工具重复调用熔断、Critic 与 Executor 权限分离、全局状态机强制终止。",
+   "DeerFlow 一类「子 Agent + 沙箱」思路：主 Agent 规划，子 Agent 在受限环境执行，结果回传再汇总。上下文隔离可用「只传任务说明书 + 必要产物」，而不是共享全部聊天历史。"
   ],
   "example": {
    "lang": "text",
-   "code": "Planner → 任务列表\n  ├ Researcher（只读检索）→ 资料包\n  ├ Analyst（计算/代码沙箱）→ 结论\n  └ Writer → 报告；Critic 打回修改\n约束：最大委派深度、共享 blackboard、人工终审"
+   "code": "伪编排：\nstate = {goal, artifacts, step}\nwhile step < MAX:\n  plan = Planner(goal, artifacts)\n  if plan.done: break\n  if plan.need_research:\n    artifacts += Researcher(plan.query)          # 独立上下文\n  if plan.need_code:\n    artifacts += Coder(plan.spec)                # 沙箱工具\n  ok = Critic(artifacts)\n  if not ok: plan = replan(...)\n  step += 1"
   },
   "asks": [
    "多 Agent 怎么分工？",
-   "何时不要多 Agent？",
+   "什么时候不要用多 Agent？",
    "怎么防互相调用死循环？",
    "上下文怎么隔离？"
   ],
   "followups": [
    {
-    "q": "何时不用？",
-    "a": "任务线性简单时，多 Agent 徒增成本。"
+    "q": "多 Agent 一定比单 Agent 强吗？",
+    "a": "不一定；协作开销大，简单任务单 Agent + 好工具往往更好，要用评测说话。"
    },
    {
-    "q": "死循环？",
-    "a": "委派深度、重复任务检测。"
+    "q": "角色是不是越多越好？",
+    "a": "不是，角色要对应真实失败模式；过多角色会让责任稀释、日志难读。"
    },
    {
-    "q": "共享状态？",
-    "a": "显式状态对象/黑板，不要靠各自隐式记忆。"
+    "q": "子 Agent 失败怎么恢复？",
+    "a": "主状态机记录失败原因，允许重试、换工具或降级人工；不要无上限自动递归。"
    }
   ],
   "answer": [
-   "总：角色拆分 + 上下文隔离 + 深度限制。",
-   "分：Planner/专家/审核；先单后多；沙箱跑副作用。",
-   "实践：【结合你的项目】DeerFlow/自研【待填】。",
-   "总结：复杂任务才拆，拆了要治理。"
+   "总：多 Agent 用角色拆分和上下文隔离换稳定性，但要用跳数上限，并只在复杂度配得上时使用。",
+   "分：Planner/Researcher/Coder/Critic 是常见切法；简单任务别上；防死循环靠上限与熔断；只同步产物不共享全部历史。",
+   "实践：【结合你的项目】【待填：DeerFlow/自研】里【待填：角色】，最大步数【待填】，沙箱限制【待填】。",
+   "总结：多 Agent 是工程架构选择，不是炫技默认项。"
   ],
   "pitfalls": [
-   "为拆而拆。",
-   "无深度限制。"
+   "把多 Agent 吹成万能。",
+   "不谈终止条件导致死循环。",
+   "加分：结合沙箱与权限分离讲安全。"
   ]
  },
  "a-a8": {
@@ -503,42 +506,44 @@
  },
  "r-a4": {
   "principle": [
-   "ReAct：边想边做，每步 Thought→Action→Observation，灵活，适合工具路径不明；步数多、成本高、易偏航。",
-   "Plan-and-Execute：先产出完整计划再逐步执行，必要时根据观察重规划；长任务、步骤清晰时更稳、更好展示进度；计划错了要能重规划。",
-   "实践可混合：高层 Plan，步骤内 ReAct。"
+   "ReAct 的模式是边推理边行动：一步思考、调用工具、观察结果，再决定下一步。它灵活，适合工具返回值不可预期、需要探索的任务，例如未知 API 排查、开放式调研。代价是路径可能绕、步数多、费用与延迟不容易事先估准，必须有最大步数、工具白名单和重复动作检测。",
+   "Plan-and-Execute 则先生成较完整的计划，再按步骤执行；在检查点可以根据失败或新信息重规划。它适合目标可分解、有 SOP 或长流程的任务，便于挂监控、人审与进度展示。风险是前期计划过时，所以「执行失败 → 重规划」是一等公民，而不是一次性写死计划。",
+   "实践中经常混合：高层用 Plan-and-Execute 控制阶段，步内允许小型 ReAct 探索。多 Agent 里 Planner 出计划、Executor 执行，本质上也是可控的计划-执行结构。成本上要评测：探索过多会烧掉工具调用；计划过粗又会导致频繁重规划。"
   ],
   "example": {
    "lang": "text",
-   "code": "Plan: 1查库 2分析 3写报告\nExecute step1 → observe → (ok) step2 …\n若失败：Replan 后继续\n对比 ReAct：每步都重新决策，无显式全局计划"
+   "code": "ReAct 环：\nThought → Action(tool) → Observation → ... → Final Answer\n\nPlan-and-Execute：\nPlan = [s1, s2, s3]\nfor s in Plan:\n  result = execute(s)        # 步内可再跑短 ReAct\n  if fail or stale:\n    Plan = replan(world_state)\n\n选用：\n- 未知面大、要试探 → ReAct 为主\n- 标准长流程、要给业务看进度 → Plan-and-Execute 为主\n- 两者都要：上限步数 + 关键步骤人审"
   },
   "asks": [
-   "Plan-and-Execute 和 ReAct？",
-   "何时用哪个？",
-   "重规划？",
-   "成本？"
+   "Plan-and-Execute 和 ReAct 有什么区别？",
+   "什么时候用哪个？",
+   "什么是重规划？",
+   "成本上怎么看？"
   ],
   "followups": [
    {
-    "q": "长报告？",
-    "a": "偏 Plan。"
+    "q": "详细计划会不会限制模型把事情做对？",
+    "a": "可能会；所以应在步骤内部允许工具探索，或在检查点根据观察结果改计划，而不是把计划当成不可更改的剧本。"
    },
    {
-    "q": "工具探索？",
-    "a": "偏 ReAct。"
+    "q": "ReAct 怎么防止思路跑飞或死循环？",
+    "a": "设置最大步数、工具白名单、相同动作重复熔断，并对支付等关键步骤加人工确认。"
    },
    {
-    "q": "混合？",
-    "a": "常见。"
+    "q": "这和多 Agent 架构是什么关系？",
+    "a": "常见是 Planner Agent 产出计划，多个 Executor Agent 执行，相当于把 Plan-and-Execute 做成分布式协作。"
    }
   ],
   "answer": [
-   "总：先计划后执行更稳，边想边做更灵活。",
-   "分：长任务 Plan；未知路径 ReAct；可重规划。",
-   "实践：【结合你的项目】【待填】。",
-   "总结：按任务确定性选型。"
+   "总：ReAct 灵活探索，Plan-and-Execute 擅长长任务的可控执行，失败后可以重规划，也可以在同系统里混合使用。",
+   "分：按任务可预测性选择主模式；无论哪种都要终止条件与工具限制；用评测比较步数、成功率与费用，而不是只看演示效果。",
+   "实践：【结合你的项目】【待填：场景】采用【待填：模式】，步数上限【待填】，失败时【待填：重规划/转人工】。",
+   "总结：选择推理模式是为了可控性与成本，而不是为了堆名词，要能结合你接过的 DeerFlow 一类流程来讲。"
   ],
   "pitfalls": [
-   "只会背名字。"
+   "只背模式名称却讲不出适用场景与终止条件。",
+   "既没有重规划也没有步数上限。",
+   "加分：结合真实项目说明为何混合或为何不用多 Agent。"
   ]
  },
  "r-a5": {

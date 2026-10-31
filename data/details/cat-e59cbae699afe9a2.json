@@ -132,42 +132,45 @@
  },
  "j-sc3": {
   "principle": [
-   "对比方案：① DB 条件更新 WHERE stock>=n：实现简单、强一致，热点行锁排队，适合中低并发。② 乐观锁 version：冲突少时好，冲突多重试多。③ SELECT FOR UPDATE：悲观，持锁久。④ Redis DECR/Lua 原子扣：高并发，异步落库 + DB 条件更新兜底，需回补与对账。⑤ 库存分片：打散热点。",
-   "选型：日常用 DB 条件更新；大促/秒杀用 Redis+Lua+MQ+DB 兜底；一律要有取消归还幂等和对账。"
+   "库存扣减的核心矛盾是超卖与性能：读改写不是原子的，高并发下「先查后扣」必然超卖。常见方案：① 数据库条件更新（乐观）：UPDATE stock SET num=num-#{n} WHERE id=? AND num>=#{n}，影响行数为 0 则失败。实现简单、强一致，瓶颈在行锁与热点行。",
+   "② Redis + Lua 原子扣减：在脚本里判断余量再 DECR，成功后再异步或事务消息写 DB；性能高，但要处理 Redis 与 DB 最终一致、宕机对账、超卖回补。③ 分段库存/库存分片：把热点 SKU 拆成多个桶降低锁竞争。④ 队列串行化：同一 SKU 进单线程/单分区处理，易正确但吞吐受限。",
+   "大促常见组合：前置缓存热点、Lua 扣减预减、下单成功再落 DB、取消/超时归还要幂等。归还库存要防「重复归还」和「扣减失败却归还」。对账任务扫 DB 与缓存差异做补偿。",
+   "不要在应用里「get 再 set」扣库存；也不要只靠前端禁用按钮。"
   ],
   "example": {
    "lang": "java",
-   "code": "// DB\nUPDATE t_stock SET qty=qty-#{n} WHERE sku=#{id} AND qty>=#{n};\n\n// Redis Lua 判断并扣\n// if stock>=n then decrby else return -1\n// 成功后发 MQ，消费端再 DB 条件更新"
+   "code": "// DB 乐观扣减\n@Update(\"UPDATE sku_stock SET num = num - #{n}, version = version + 1 \" +\n        \"WHERE sku_id = #{id} AND num >= #{n}\")\nint deduct(@Param(\"id\") long id, @Param(\"n\") int n);\n\n// Redis Lua 原子扣减（伪代码）\n// if redis.call('get', KEYS[1]) >= ARGV[1] then return redis.call('decrby', KEYS[1], ARGV[1]) else return -1 end\n\nString lua = \"local s=tonumber(redis.call('get',KEYS[1]) or '0');\" +\n             \"local n=tonumber(ARGV[1]); if s<n then return -1 end; \" +\n             \"return redis.call('decrby',KEYS[1],n)\";\nLong left = redis.execute(lua, List.of(\"stock:\"+skuId), String.valueOf(n));\nif (left == null || left < 0) throw new BizException(\"库存不足\");\n// 再发事务消息 / 本地消息表异步落 DB，定时对账"
   },
   "asks": [
-   "库存扣减方案对比？",
+   "库存扣减方案怎么对比？",
    "为什么不能先查再扣？",
-   "大促怎么做？",
-   "归还库存注意什么？"
+   "大促一般怎么做？",
+   "归还库存要注意什么？"
   ],
   "followups": [
    {
-    "q": "先查再扣？",
-    "a": "并发下两请求都读到够，超卖。"
+    "q": "乐观锁失败很频繁怎么办？",
+    "a": "热点行竞争激烈时重试成本高，可改分段库存、队列串行或 Redis 预减，把冲突从 DB 行锁上移走。"
    },
    {
-    "q": "归还？",
-    "a": "按订单号幂等，防重复归还虚增。"
+    "q": "Redis 扣成功但写 DB 失败会怎样？",
+    "a": "会出现缓存已减、DB 未减；需消息重试、补偿任务和对账，下单状态机要能回滚或人工处理。"
    },
    {
-    "q": "分片？",
-    "a": "多 key/多行分散，汇总时注意。"
+    "q": "用分布式锁串行扣库存可以吗？",
+    "a": "能防超卖但吞吐差，只适合极低并发；大促热点 SKU 更常见 Lua/分段而不是全局锁。"
    }
   ],
   "answer": [
-   "总：原子扣减 + 层次选型 + 对账。",
-   "分：低并发 DB，高并发 Redis+兜底；归还幂等。",
-   "实践：【结合你的项目】【待填】。",
-   "总结：正确性优先，性能分层。"
+   "总：库存扣减要在原子性下防超卖，并在性能与一致性之间做组合方案。",
+   "分：DB 条件更新正确但怕热点；Redis+Lua 快但要异步落库与对账；还可分段库存或队列串行；禁止应用层先查后改。",
+   "实践：【结合你的项目】SKU【待填】用【待填：DB/Lua/分段】，大促 QPS【待填】，对账周期【待填】。",
+   "总结：正确性靠原子扣减与幂等归还，性能靠缓存和分片，最终靠对账兜底。"
   ],
   "pitfalls": [
-   "只说加锁。",
-   "无对账。"
+   "讲先查库存再 update 当方案。",
+   "只上 Redis 不谈与 DB 一致和对账。",
+   "加分：分段库存、事务消息、取消单幂等归还。"
   ]
  },
  "j-sc4": {

@@ -132,43 +132,45 @@
  },
  "j-t3": {
   "principle": [
-   "频繁 Young GC：分配速率过高——短命对象太多（一次性大 List、JSON 反序列化、日志拼接）。处理：减分配（复用缓冲、流式处理）、加大新生代、看是否误用大对象。",
-   "频繁 Full GC / Old 涨：晋升过快、内存泄漏、大对象直接进老年代、Metaspace 满。看 GC 日志：Full 后 Old 是否降得下来；降不下来就 dump 查泄漏。调大堆只是暂缓。",
-   "工具：-Xlog:gc*、jstat、MAT、异步 profiler 看分配热点。"
+   "频繁 Young GC 通常是分配速率过高：短命对象太多，Eden 很快满。频繁 Full GC 则更严重：老年代增长快、晋升失败、大对象直接进老年代、或内存泄漏导致老年代居高不下。先分清是 Young 频繁还是 Full 频繁，再看 GC 日志里的分配速率、晋升年龄、老年代占比。",
+   "排查路径：① 打开 GC 日志（或用 GCEasy/GCViewer）；② 看分配速率（MB/s）和 GC 前后堆曲线；③ 频繁 Young：优化对象创建（缓存、对象复用、减少装箱、避免大循环里拼字符串）、适当增大新生代、检查是否有大对象。④ 频繁 Full：jmap/jcmd 做 heap dump，MAT 查 Dominator Tree 找泄漏；看是否 Metaspace/直内存问题。",
+   "分配速率下降靠代码：减少无意义的临时对象、日志与 JSON 序列化优化、线程局部缓冲。大对象（大数组、大 ByteBuffer）尽量复用或池化，避免直接挤占老年代。调参是辅助：改新生代比例、换 G1/ZGC 要有监控对照，不能只靠「把堆调大」。",
+   "判断泄漏：Full GC 后老年代仍持续上升，或同场景堆直方图某类型只增不减。"
   ],
   "example": {
-   "lang": "bash",
-   "code": "jstat -gcutil <pid> 1000\n# 看 YGC/FGC 频率、E/O 占比、FGC 后 O 是否回落\njmap -histo:live <pid> | head\n# 或 jcmd GC.heap_dump"
+   "lang": "text",
+   "code": "# 快速定位\n1. -Xlog:gc*:file=gc.log:time,uptime,level,tags  （或用运维平台看 GC）\n2. 看 GC 频率、暂停、分配速率；区分 Young / Mixed / Full\n3. 频繁 Full：jcmd <pid> GC.heap_dump /tmp/heap.hprof\n4. MAT：Leak Suspects + Dominator Tree\n5. 对比优化前后：GC 次数、P99、分配速率\n\n# 常见代码味道\n- 循环里 + 拼接字符串 → StringBuilder\n- 热路径 new 大 byte[] → 复用/池化\n- 无界缓存 → Caffeine 设上限"
   },
   "asks": [
    "频繁 Young/Full GC 怎么查？",
    "分配速率怎么降？",
-   "怎么判断泄漏？",
-   "大对象怎么办？"
+   "怎么判断是内存泄漏？",
+   "大对象怎么处理？"
   ],
   "followups": [
    {
-    "q": "Full 后降得下？",
-    "a": "能降→容量或晋升问题；不降→泄漏。"
+    "q": "Young GC 很勤但暂停很短要不要管？",
+    "a": "若吞吐和 P99 可接受可以先观察；若占用过多 CPU 或伴随晋升失败，仍应降分配速率。"
    },
    {
-    "q": "日志关键字段？",
-    "a": "停顿时间、回收前后各代大小、触发原因。"
+    "q": "堆一直调大就能解决吗？",
+    "a": "只能推迟 Full GC，泄漏或分配过快最终仍会出问题，且停顿可能更长，必须结合分析。"
    },
    {
-    "q": "G1 Mixed？",
-    "a": "老年代回收跟不上也会最终 Full。"
+    "q": "G1 下没有 Full 就一定健康吗？",
+    "a": "不一定，Mixed GC 频繁、to-space exhausted、Humongous 过多同样伤延迟，要看区域和暂停目标。"
    }
   ],
   "answer": [
-   "总：Young 看分配，Full 看晋升与泄漏。",
-   "分：减分配、调代大小、dump 查泄漏、避免大对象。",
-   "实践：【结合你的项目】【待填】。",
-   "总结：日志 + dump，别只加堆。"
+   "总：先分清 Young 还是 Full 频繁，再用日志和 dump 定位分配过快还是泄漏。",
+   "分：Young 靠降分配与新生代；Full 查晋升、大对象、泄漏；调参辅助，代码和缓存上限才是根治。",
+   "实践：【结合你的项目】曾出现【待填：Full GC/延迟毛刺】，通过【待填：dump 分析/改缓存/池化】把 GC 次数降到【待填】。",
+   "总结：GC 问题是分配行为与生命周期问题，不是只会改 -Xmx。"
   ],
   "pitfalls": [
-   "只加大 -Xmx。",
-   "不留 dump 就重启。"
+   "只说「加大堆」不看日志。",
+   "不区分 Young/Full 就调参。",
+   "加分：会用 MAT 讲清泄漏引用链。"
   ]
  },
  "j-t4": {
