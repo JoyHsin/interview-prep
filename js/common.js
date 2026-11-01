@@ -64,7 +64,8 @@
     },
   };
 
-  applyTheme(state.settings.theme || 'system');
+  const queryTheme = new URLSearchParams(location.search).get('theme');
+  applyTheme(queryTheme || state.settings.theme || 'system');
 
   // Enhance brand logo
   const brand = document.querySelector('.nav .brand');
@@ -131,6 +132,14 @@
       nav.classList.remove('open');
       btn.textContent = '☰';
     }));
+
+    // Close nav on click outside
+    document.addEventListener('click', (e) => {
+      if (!nav.contains(e.target) && nav.classList.contains('open')) {
+        nav.classList.remove('open');
+        btn.textContent = '☰';
+      }
+    });
   }
 
   // Active link highlight
@@ -147,14 +156,36 @@
     } catch (e) {}
   });
 
-  // Setup theme button toggle listener
+  // Setup theme button toggle listener (capture phase to override & prevent duplicate inline handlers)
   const themeBtn = document.getElementById('themeBtn');
-  if (themeBtn) {
-    themeBtn.addEventListener('click', () => {
+  if (themeBtn && !window.__themeBtnBound) {
+    window.__themeBtnBound = true;
+    themeBtn.addEventListener('click', (e) => {
+      e.stopImmediatePropagation();
       const cur = AppCommon.state.settings.theme || 'system';
       const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
       AppCommon.setTheme(next);
-      AppCommon.toast('已切换主题：' + ({light:'浅色', dark:'深色', system:'跟随系统'})[next]);
-    });
+      AppCommon.toast('主题：' + ({ light: '浅色', dark: '深色', system: '跟随系统' })[next]);
+    }, true);
   }
+
+  // Floating Back to Top Button
+  const backToTop = document.createElement('button');
+  backToTop.type = 'button';
+  backToTop.className = 'back-to-top';
+  backToTop.setAttribute('aria-label', '返回顶部');
+  backToTop.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>`;
+  document.body.appendChild(backToTop);
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 300) {
+      backToTop.classList.add('visible');
+    } else {
+      backToTop.classList.remove('visible');
+    }
+  }, { passive: true });
+
+  backToTop.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 })();
